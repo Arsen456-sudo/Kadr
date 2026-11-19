@@ -1,3 +1,4 @@
+import SwiftUI
 import UIKit
 
 @main
@@ -12,23 +13,26 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
 
 final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     var window: UIWindow?
+    private var tabs: KadrTabs?
 
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options: UIScene.ConnectionOptions) {
         guard let scene = scene as? UIWindowScene else { return }
         let window = UIWindow(windowScene: scene)
         window.overrideUserInterfaceStyle = .dark
         window.tintColor = .kadrPeach
-        window.rootViewController = KadrTabs()
+        let tabs = KadrTabs()
+        self.tabs = tabs
+        window.rootViewController = UIHostingController(rootView: KadrNavigationShell(tabs: tabs, state: tabs.toolbarState))
         self.window = window
         window.makeKeyAndVisible()
     }
 
     func sceneDidBecomeActive(_ scene: UIScene) {
-        (window?.rootViewController as? KadrTabs)?.sceneActive = true
+        tabs?.sceneActive = true
     }
 
     func sceneWillResignActive(_ scene: UIScene) {
-        (window?.rootViewController as? KadrTabs)?.sceneActive = false
+        tabs?.sceneActive = false
     }
 }
 
@@ -42,19 +46,14 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
     private lazy var saved = SavedController(store: store)
     private lazy var profile = ProfileController(store: store, profileID: nil)
     private let segments = FeedSectionPicker()
-    private let header = UINavigationBar()
-    private let immersiveButton = UIButton()
+    let toolbarState = KadrToolbarState()
+    var feedSectionPicker: FeedSectionPicker { segments }
     private var immersive = false
 
     override var prefersStatusBarHidden: Bool { immersive }
     override var childForStatusBarHidden: UIViewController? { nil }
     override var preferredStatusBarUpdateAnimation: UIStatusBarAnimation { .fade }
     override var prefersHomeIndicatorAutoHidden: Bool { immersive }
-    private let feedHeader = UINavigationItem()
-    private let savedHeader = UINavigationItem(title: "Збережене")
-    private let inboxHeader = UINavigationItem(title: "Вхідні")
-    private let profileHeader = UINavigationItem(title: "Профіль")
-    private let guestProfileHeader = UINavigationItem(title: "Профіль")
     private let topEdge = UIScrollEdgeElementContainerInteraction()
     private let bottomEdge = UIScrollEdgeElementContainerInteraction()
     private let addTab = UIViewController()
@@ -110,6 +109,14 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
         profile.onClip = { [weak self] clip in self?.openClip(clip) }
         profile.onAccount = { [weak self] in self?.openAccount() }
 
+        toolbarState.onSearch = { [weak self] in self?.openSearch() }
+        toolbarState.onSignOut = { [weak self] in self?.signOut() }
+        toolbarState.onBanner = { [weak self] in self?.profile.editBanner(from: nil) }
+        toolbarState.onImmersive = { [weak self] in
+            guard let self else { return }
+            self.setImmersive(!self.immersive)
+        }
+
         segments.onSelection = { [weak self] section in
             guard let self else { return }
             if section == .following && self.store.active == nil {
@@ -123,69 +130,24 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
     }
 
     private func configureChrome() {
-        header.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(header)
-        NSLayoutConstraint.activate([
-            header.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
-            header.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            header.trailingAnchor.constraint(equalTo: view.trailingAnchor)
-        ])
-        header.isTranslucent = true
-        header.tintColor = .label
-        feedHeader.titleView = segments
-        for item in [feedHeader, savedHeader, inboxHeader, guestProfileHeader] {
-            let search = UIBarButtonItem(systemItem: .search, primaryAction: UIAction { [weak self] _ in
-                self?.openSearch()
-            })
-            search.accessibilityLabel = "Пошук"
-            search.accessibilityIdentifier = "header.action"
-            search.identifier = "header.context"
-            item.rightBarButtonItem = search
-        }
-        var immersiveStyle = UIButton.Configuration.glass()
-        immersiveStyle.cornerStyle = .capsule
-        immersiveStyle.baseForegroundColor = .label
-        immersiveStyle.image = UIImage(systemName: "arrow.up.left.and.arrow.down.right")
-        immersiveStyle.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold)
-        immersiveStyle.symbolContentTransition = UISymbolContentTransition(.replace)
-        immersiveButton.configuration = immersiveStyle
-        immersiveButton.accessibilityLabel = "Безкінечний екран"
-        immersiveButton.accessibilityIdentifier = "feed.immersive"
-        immersiveButton.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(immersiveButton)
-        NSLayoutConstraint.activate([
-            immersiveButton.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 16),
-            immersiveButton.centerYAnchor.constraint(equalTo: header.centerYAnchor),
-            immersiveButton.widthAnchor.constraint(equalToConstant: 44),
-            immersiveButton.heightAnchor.constraint(equalTo: immersiveButton.widthAnchor)
-        ])
-        immersiveButton.addAction(UIAction { [weak self] _ in
-            guard let self else { return }
-            self.setImmersive(!self.immersive)
-        }, for: .primaryActionTriggered)
-        let logout = UIBarButtonItem(primaryAction: UIAction(title: "Вийти") { [weak self] _ in
-            self?.signOut()
-        })
-        logout.accessibilityIdentifier = "header.action"
-        logout.identifier = "header.context"
-        profileHeader.rightBarButtonItem = logout
-        let editBanner = UIBarButtonItem(primaryAction: UIAction(image: UIImage(systemName: "photo.on.rectangle")) { [weak self] _ in
-            self?.profile.editBanner(from: self?.profileHeader.leftBarButtonItem)
-        })
-        editBanner.accessibilityLabel = "Змінити банер"
-        profileHeader.leftBarButtonItem = editBanner
-
         topEdge.edge = .top
-        header.addInteraction(topEdge)
         bottomEdge.edge = .bottom
         tabBar.addInteraction(bottomEdge)
     }
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        view.bringSubviewToFront(header)
-        view.bringSubviewToFront(immersiveButton)
-        if profile.isViewLoaded, header.topItem === profileHeader {
+        // Keep the existing full-bleed UIKit screens anchored to the window's top safe area.
+        if let window = view.window {
+            let inheritedTop = view.safeAreaInsets.top - additionalSafeAreaInsets.top
+            let adjustment = window.safeAreaInsets.top - inheritedTop
+            if abs(additionalSafeAreaInsets.top - adjustment) > 0.25 {
+                additionalSafeAreaInsets.top = adjustment
+            }
+        }
+        guard let header = navigationController?.navigationBar else { return }
+        if topEdge.view !== header { header.addInteraction(topEdge) }
+        if profile.isViewLoaded, selectedViewController === profile, store.active != nil {
             let glassFrame = navigationGlassFrame(in: header, relativeTo: profile.view)
             let bottom = glassFrame?.maxY ?? profile.view.convert(header.bounds, from: header).maxY
             if let frame = glassFrame, frame.width > profile.view.bounds.width / 2 {
@@ -198,11 +160,7 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
             let top = bottom + 2
             if profile.sectionPinTop != top { profile.sectionPinTop = top }
         }
-        if header.topItem === feedHeader {
-            segments.matchSearchHeight(44)
-        }
     }
-
 
     private func navigationGlassFrame(in container: UIView, relativeTo target: UIView) -> CGRect? {
         var frame: CGRect?
@@ -220,13 +178,7 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
     private func setImmersive(_ enabled: Bool) {
         immersive = enabled
         feed.immersive = enabled
-        header.isHidden = enabled
-        var style = immersiveButton.configuration
-        style?.image = UIImage(systemName: enabled ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
-        style?.symbolContentTransition = UIAccessibility.isReduceMotionEnabled ? nil : UISymbolContentTransition(.replace)
-        immersiveButton.configuration = style
-        immersiveButton.accessibilityValue = enabled ? "Увімкнено" : "Вимкнено"
-        immersiveButton.accessibilityHint = enabled ? "Повернути кнопки та навігацію" : "Приховати кнопки та текст"
+        toolbarState.immersive = enabled
         setTabBarHidden(enabled, animated: !UIAccessibility.isReduceMotionEnabled)
         setNeedsStatusBarAppearanceUpdate()
         setNeedsUpdateOfHomeIndicatorAutoHidden()
@@ -259,8 +211,6 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
     private func updateChrome(for controller: UIViewController?, animated: Bool) {
         let isFeed = controller === feed
         if !isFeed && immersive { setImmersive(false) }
-        immersiveButton.isHidden = !isFeed
-        header.isHidden = isFeed && immersive
         let isProfile = controller === profile
         segments.updateSelection(feed.section)
         let scroll: UIScrollView? = isFeed ? feed.edgeScrollView
@@ -273,18 +223,18 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
     }
 
     private func showHeader(for controller: UIViewController?, animated: Bool) {
-        let item: UINavigationItem
-        if controller === profile {
-            item = store.active == nil ? guestProfileHeader : profileHeader
-        } else if controller === inbox {
-            item = inboxHeader
-        } else if controller === saved {
-            item = savedHeader
-        } else {
-            item = feedHeader
+        let screen: KadrToolbarState.Screen
+        if controller === profile { screen = .profile }
+        else if controller === inbox { screen = .inbox }
+        else if controller === saved { screen = .saved }
+        else { screen = .feed }
+        let canSignOut = screen == .profile && store.active != nil
+        guard toolbarState.screen != screen || toolbarState.canSignOut != canSignOut else { return }
+        withAnimation(animated && !UIAccessibility.isReduceMotionEnabled ? .default : nil) {
+            toolbarState.screen = screen
+            toolbarState.canSignOut = canSignOut
         }
-        guard header.topItem !== item else { return }
-        header.setItems([item], animated: animated)
+        view.setNeedsLayout()
     }
 
     private func updatePlayback() {
