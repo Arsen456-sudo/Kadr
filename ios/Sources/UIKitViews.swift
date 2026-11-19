@@ -127,42 +127,68 @@ func glassIsland(style: UIGlassEffect.Style = .regular) -> UIVisualEffectView {
 
 final class HeaderActionButton: UIButton {
     static let side: CGFloat = 46
-    private lazy var iconWidth = widthAnchor.constraint(equalTo: heightAnchor)
+    private lazy var width = widthAnchor.constraint(equalToConstant: Self.side)
+    private let contentBlur = UIVisualEffectView(effect: nil)
+    private var revision = 0
 
     init() {
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
-        widthAnchor.constraint(greaterThanOrEqualToConstant: Self.side).isActive = true
+        width.isActive = true
         heightAnchor.constraint(equalToConstant: Self.side).isActive = true
-        setContentHuggingPriority(.defaultHigh, for: .horizontal)
+        contentBlur.isUserInteractionEnabled = false
+        contentBlur.accessibilityElementsHidden = true
+        contentBlur.cornerConfiguration = .capsule()
+        contentBlur.pin(to: self, insets: .init(top: 3, leading: 3, bottom: 3, trailing: 3))
         setLogout(false, animated: false)
     }
 
     required init?(coder: NSCoder) { fatalError("Use init()") }
 
     func setLogout(_ logout: Bool, animated: Bool) {
-        let update = {
-            var style = UIButton.Configuration.glass()
-            style.cornerStyle = .capsule
-            style.buttonSize = .medium
-            style.baseForegroundColor = .label
-            style.image = UIImage(systemName: logout ? "rectangle.portrait.and.arrow.right" : "magnifyingglass")
-            style.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
-                pointSize: logout ? 20 : 18, weight: .semibold)
-            style.title = logout ? "Вийти" : nil
-            style.imagePadding = 6
-            self.configuration = style
-            self.iconWidth.isActive = !logout
-            self.accessibilityLabel = logout ? "Вийти" : "Пошук"
-            self.superview?.layoutIfNeeded()
+        revision += 1
+        let request = revision
+        var style = UIButton.Configuration.glass()
+        style.cornerStyle = .capsule
+        style.buttonSize = .medium
+        style.baseForegroundColor = .label
+        style.image = UIImage(systemName: logout ? "rectangle.portrait.and.arrow.right" : "magnifyingglass")
+        style.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
+            pointSize: logout ? 20 : 18, weight: .semibold)
+        style.title = logout ? "Вийти" : nil
+        style.imagePadding = 6
+        let titleWidth = ("Вийти" as NSString).size(withAttributes: [.font: UIFont.preferredFont(forTextStyle: .body)]).width
+        let targetWidth = logout ? max(104, ceil(titleWidth + 57)) : Self.side
+        accessibilityLabel = logout ? "Вийти" : "Пошук"
+
+        guard let host = superview, animated, window != nil, !UIAccessibility.isReduceMotionEnabled else {
+            configuration = style
+            width.constant = targetWidth
+            contentBlur.effect = nil
+            return
         }
-        if animated && window != nil && !UIAccessibility.isReduceMotionEnabled {
-            superview?.layoutIfNeeded()
-            UIView.animate(withDuration: 0.21, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction],
-                           animations: update)
-        } else {
-            update()
+
+        host.layoutIfNeeded()
+        width.constant = targetWidth
+        let resize = UIViewPropertyAnimator(duration: 0.28, dampingRatio: 0.84) {
+            host.layoutIfNeeded()
         }
+        resize.startAnimation()
+
+        bringSubviewToFront(contentBlur)
+        let options: UIView.AnimationOptions = [.beginFromCurrentState, .allowUserInteraction]
+        UIView.animate(withDuration: 0.10, delay: 0, options: options, animations: {
+            self.contentBlur.effect = UIBlurEffect(style: .systemUltraThinMaterialDark)
+        }, completion: { [weak self] _ in
+            guard let self, self.revision == request else { return }
+            UIView.performWithoutAnimation {
+                self.configuration = style
+                self.bringSubviewToFront(self.contentBlur)
+            }
+            UIView.animate(withDuration: 0.18, delay: 0, options: options) {
+                self.contentBlur.effect = nil
+            }
+        })
     }
 }
 
@@ -211,6 +237,9 @@ final class FeedSectionPicker: UIView {
         style.cornerStyle = .capsule
         style.buttonSize = .small
         style.baseForegroundColor = .label
+        if selected {
+            style.background.backgroundColor = UIColor(white: 0.12, alpha: 0.72)
+        }
         style.title = title
         style.titleLineBreakMode = .byTruncatingTail
         style.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in

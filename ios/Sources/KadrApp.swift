@@ -152,6 +152,7 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
             openPublisher()
             return false
         }
+        updateHeaderAction(for: controller, animated: true)
         return true
     }
 
@@ -181,13 +182,16 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
         scroll?.topEdgeEffect.style = .soft
         bottomEdge.scrollView = scroll
         topEdge.scrollView = isFeed ? nil : scroll
-        let canSignOut = isProfile && store.active != nil
-        if canSignOut != showingProfileAction {
-            showingProfileAction = canSignOut
-            headerAction.setLogout(canSignOut, animated: animated)
-        }
+        updateHeaderAction(for: controller, animated: animated)
         segments.isHidden = !isFeed
         sectionTitle.isHidden = isFeed
+    }
+
+    private func updateHeaderAction(for controller: UIViewController?, animated: Bool) {
+        let canSignOut = controller === profile && store.active != nil
+        guard canSignOut != showingProfileAction else { return }
+        showingProfileAction = canSignOut
+        headerAction.setLogout(canSignOut, animated: animated)
     }
 
     private func updatePlayback() {
