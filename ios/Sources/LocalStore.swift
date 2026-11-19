@@ -7,6 +7,8 @@ struct Profile: Codable, Identifiable {
     let bio: String
     var avatar: Data?
     var bannerFile: String? = nil
+    var avatarRemoteURL: URL? = nil
+    var avatarRevision: UUID? = nil
 
     var bannerURL: URL? { bannerFile.map { LocalStore.directory.appending(path: $0) } }
 }
@@ -180,7 +182,11 @@ final class LocalStore {
         guard state.activeID == id, let index = state.profiles.firstIndex(where: { $0.id == id }) else { return false }
         var next = state
         next.profiles[index].avatar = data
-        return save(next)
+        next.profiles[index].avatarRemoteURL = nil
+        next.profiles[index].avatarRevision = UUID()
+        guard save(next) else { return false }
+        NotificationCenter.default.post(name: .kadrProfileDidChange, object: self, userInfo: ["profileID": id])
+        return true
     }
 
     @discardableResult
@@ -301,4 +307,9 @@ final class LocalStore {
 
 enum FeedSection: Equatable {
     case recommended, following, saved
+}
+
+
+extension Notification.Name {
+    static let kadrProfileDidChange = Notification.Name("Kadr.profileDidChange")
 }

@@ -129,24 +129,33 @@ class GlassSectionPicker: UIView {
     private let control = UISegmentedControl()
     private let titles: [String]
     private let symbols: [String]
+    private let contentInset: CGFloat
     private var controlHeight: NSLayoutConstraint!
     private var lastWidth: CGFloat = -1
     var onIndexSelection: ((Int) -> Void)?
 
     override var intrinsicContentSize: CGSize { CGSize(width: 184, height: 44) }
 
-    init(titles: [String], symbols: [String] = []) {
+    init(titles: [String], symbols: [String] = [], glassContainer: Bool = false) {
         self.titles = titles
         self.symbols = symbols
+        contentInset = glassContainer ? 4 : 0
         super.init(frame: .zero)
         for (index, title) in titles.enumerated() { control.insertSegment(withTitle: title, at: index, animated: false) }
+        let container: UIView
+        if glassContainer {
+            let island = glassIsland()
+            island.pin(to: self)
+            container = island.contentView
+            control.backgroundColor = .clear
+        } else { container = self }
         control.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(control)
-        controlHeight = control.heightAnchor.constraint(equalToConstant: 40)
+        container.addSubview(control)
+        controlHeight = control.heightAnchor.constraint(equalToConstant: 40 - contentInset * 2)
         NSLayoutConstraint.activate([
-            control.topAnchor.constraint(equalTo: topAnchor),
-            control.leadingAnchor.constraint(equalTo: leadingAnchor),
-            control.trailingAnchor.constraint(equalTo: trailingAnchor), controlHeight
+            control.topAnchor.constraint(equalTo: container.topAnchor, constant: contentInset),
+            control.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: contentInset),
+            control.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -contentInset), controlHeight
         ])
         let font = UIFont.preferredFont(forTextStyle: .footnote)
         control.setTitleTextAttributes([.font: font], for: .normal)
@@ -167,7 +176,8 @@ class GlassSectionPicker: UIView {
 
     func matchSearchHeight(_ height: CGFloat) {
         guard height.isFinite, height >= 28, height <= 60 else { return }
-        if abs(controlHeight.constant - height) > 0.25 { controlHeight.constant = height }
+        let innerHeight = height - contentInset * 2
+        if abs(controlHeight.constant - innerHeight) > 0.25 { controlHeight.constant = innerHeight }
     }
 
     func selectIndex(_ index: Int) {
@@ -181,7 +191,7 @@ class GlassSectionPicker: UIView {
         lastWidth = bounds.width
         let base = UIFont.preferredFont(forTextStyle: .footnote)
         let natural = titles.reduce(CGFloat(0)) { $0 + ($1 as NSString).size(withAttributes: [.font: base]).width + base.pointSize + 17 }
-        let font = base.withSize(base.pointSize * min(1, max(0.65, bounds.width / natural)))
+        let font = base.withSize(base.pointSize * min(1, max(0.65, (bounds.width - contentInset * 2) / natural)))
         let color = UIColor.label.resolvedColor(with: traitCollection)
         control.apportionsSegmentWidthsByContent = true
         for index in titles.indices {

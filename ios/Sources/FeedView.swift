@@ -18,7 +18,9 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
                                        message: "Підпишись на авторів, щоб бачити їхні публікації.",
                                        symbol: "person.2")
     private let reactionIsland = glassIsland()
-    private let sound = GlyphButton(symbol: "speaker.slash", label: "Увімкнути звук")
+    private let sound = UIButton()
+    private let authorAvatar = UIButton()
+    private let actionStack = UIStackView()
     var edgeScrollView: UIScrollView? {
         pager.viewIfLoaded?.subviews.compactMap { $0 as? UIScrollView }.first
     }
@@ -28,10 +30,16 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
     private var page: VideoPage? { pager.viewControllers?.first as? VideoPage }
     private(set) var section = FeedSection.recommended
 
+    var onAuthor: ((UUID) -> Void)?
     var onReaction: ((Clip, Bool) -> Void)?
     var onComments: ((Clip) -> Void)?
     var playbackEnabled = false { didSet { syncPlayback() } }
-    var muted = true { didSet { syncPlayback() } }
+    var muted = true {
+        didSet {
+            if isViewLoaded { sound.isSelected = !muted }
+            syncPlayback()
+        }
+    }
 
     init(store: LocalStore) {
         self.store = store
@@ -72,9 +80,36 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
         let controls = UIStackView(arrangedSubviews: [like, comments, bookmark])
         controls.axis = .vertical
         controls.spacing = 4
-        reactionIsland.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(reactionIsland)
-        view.addSubview(sound)
+        var soundStyle = UIButton.Configuration.glass()
+        soundStyle.cornerStyle = .capsule
+        soundStyle.image = UIImage(systemName: "speaker.slash")
+        soundStyle.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 20, weight: .semibold)
+        soundStyle.symbolContentTransition = UISymbolContentTransition(.replace)
+        soundStyle.automaticallyUpdateForSelection = false
+        sound.configuration = soundStyle
+        sound.configurationUpdateHandler = { button in
+            var style = button.configuration
+            style?.image = UIImage(systemName: button.isSelected ? "speaker.wave.2" : "speaker.slash")
+            style?.symbolContentTransition = UIAccessibility.isReduceMotionEnabled ? nil : UISymbolContentTransition(.replace)
+            button.accessibilityLabel = button.isSelected ? "Вимкнути звук" : "Увімкнути звук"
+            button.configuration = style
+        }
+        sound.isSelected = !muted
+        sound.translatesAutoresizingMaskIntoConstraints = false
+        authorAvatar.translatesAutoresizingMaskIntoConstraints = false
+        authorAvatar.accessibilityIdentifier = "feed.author"
+        authorAvatar.addAction(UIAction { [weak self] _ in
+            guard let self, let id = self.page?.clip.authorID, self.store.profile(id) != nil else { return }
+            self.onAuthor?(id)
+        }, for: .primaryActionTriggered)
+        actionStack.axis = .vertical
+        actionStack.alignment = .center
+        actionStack.spacing = 8
+        for item in [authorAvatar, reactionIsland, sound] { actionStack.addArrangedSubview(item) }
+        actionStack.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(actionStack)
+        NotificationCenter.default.addObserver(self, selector: #selector(profileDidChange(_:)),
+                                               name: .kadrProfileDidChange, object: store)
         sound.accessibilityIdentifier = "feed.sound"
         like.accessibilityIdentifier = "feed.like"
         comments.accessibilityIdentifier = "feed.comments"
@@ -82,8 +117,6 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
         sound.addAction(UIAction { [weak self] _ in
             guard let self else { return }
             self.muted.toggle()
-            self.sound.update(symbol: self.muted ? "speaker.slash" : "speaker.wave.2",
-                              label: self.muted ? "Увімкнути звук" : "Вимкнути звук")
         }, for: .primaryActionTriggered)
         controls.translatesAutoresizingMaskIntoConstraints = false
         reactionIsland.contentView.addSubview(controls)
@@ -93,10 +126,12 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
             controls.centerYAnchor.constraint(equalTo: reactionIsland.contentView.centerYAnchor),
             reactionIsland.widthAnchor.constraint(equalTo: sound.widthAnchor),
             reactionIsland.heightAnchor.constraint(equalTo: controls.heightAnchor, constant: 8),
-            reactionIsland.trailingAnchor.constraint(equalTo: safe.trailingAnchor, constant: -16),
-            reactionIsland.bottomAnchor.constraint(equalTo: safe.bottomAnchor, constant: -62),
-            sound.bottomAnchor.constraint(equalTo: reactionIsland.topAnchor, constant: -8),
-            sound.centerXAnchor.constraint(equalTo: reactionIsland.centerXAnchor),
+            sound.widthAnchor.constraint(equalToConstant: 48),
+            sound.heightAnchor.constraint(equalTo: sound.widthAnchor),
+            authorAvatar.widthAnchor.constraint(equalTo: sound.widthAnchor),
+            authorAvatar.heightAnchor.constraint(equalTo: sound.heightAnchor),
+            actionStack.trailingAnchor.constraint(equalTo: safe.trailingAnchor, constant: -16),
+            actionStack.bottomAnchor.constraint(equalTo: safe.bottomAnchor, constant: -2),
             captionStack.leadingAnchor.constraint(equalTo: safe.leadingAnchor, constant: 18),
             captionStack.trailingAnchor.constraint(equalTo: safe.trailingAnchor, constant: -130),
             captionStack.bottomAnchor.constraint(equalTo: safe.bottomAnchor, constant: -14)
@@ -144,6 +179,7 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
 
     private func updateCurrent() {
         let active = clips.isEmpty ? nil : page?.clip
+        actionStack.isHidden = active == nil
         captionStack.isHidden = active == nil
         reactionIsland.isHidden = active == nil
         sound.isHidden = active == nil || active?.isPhoto == true
@@ -152,7 +188,34 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
             caption.text = [active.caption, active.settings.tags, active.settings.location].filter { !$0.isEmpty }.joined(separator: "\n")
             updateReactions()
         }
+        refreshAuthorAvatar()
         syncPlayback()
+    }
+
+    @objc private func profileDidChange(_ notification: Notification) {
+        guard let id = notification.userInfo?["profileID"] as? UUID, page?.clip.authorID == id else { return }
+        refreshAuthorAvatar()
+    }
+
+    private func refreshAuthorAvatar() {
+        let profile = store.profile(page?.clip.authorID)
+        var style = UIButton.Configuration.glass()
+        style.cornerStyle = .capsule
+        style.contentInsets = .init(top: 6, leading: 6, bottom: 6, trailing: 6)
+        if let image = profile?.avatar.flatMap({ UIImage(data: $0) }) {
+            let thumbnail = UIGraphicsImageRenderer(size: CGSize(width: 36, height: 36)).image { _ in
+                image.draw(in: CGRect(x: 0, y: 0, width: 36, height: 36))
+            }
+            style.image = thumbnail.withRenderingMode(.alwaysOriginal)
+        } else {
+            style.image = UIImage(systemName: "person.crop.circle.fill",
+                                  withConfiguration: UIImage.SymbolConfiguration(pointSize: 32))
+        }
+        authorAvatar.configuration = style
+        authorAvatar.imageView?.layer.cornerRadius = 18
+        authorAvatar.imageView?.clipsToBounds = true
+        authorAvatar.isEnabled = profile != nil
+        authorAvatar.accessibilityLabel = profile.map { "Відкрити профіль @\($0.handle)" } ?? "Автор демонстраційного відео"
     }
 
     func updateReactions(bounce: Reaction? = nil) {

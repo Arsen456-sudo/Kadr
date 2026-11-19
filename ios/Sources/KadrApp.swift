@@ -96,6 +96,7 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
 
     private func configureActions() {
         feed.onReaction = { [weak self] clip, bookmark in self?.react(to: clip, bookmark: bookmark) }
+        feed.onAuthor = { [weak self] id in self?.openAuthor(id) }
         feed.onComments = { [weak self] clip in self?.openComments(clip) }
         saved.onClip = { [weak self] clip in self?.openClip(clip) }
         saved.onAccount = { [weak self] in self?.openAccount() }
@@ -155,8 +156,16 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         view.bringSubviewToFront(header)
-        if profile.isViewLoaded {
-            let bottom = navigationGlassBottom(in: header, relativeTo: profile.view) ?? profile.view.convert(header.bounds, from: header).maxY
+        if profile.isViewLoaded, header.topItem === profileHeader {
+            let glassFrame = navigationGlassFrame(in: header, relativeTo: profile.view)
+            let bottom = glassFrame?.maxY ?? profile.view.convert(header.bounds, from: header).maxY
+            if let frame = glassFrame, frame.width > profile.view.bounds.width / 2 {
+                let leading = max(0, frame.minX)
+                let trailing = max(0, profile.view.bounds.width - frame.maxX)
+                if abs(profile.sectionInsets.leading - leading) > 0.25 || abs(profile.sectionInsets.trailing - trailing) > 0.25 {
+                    profile.sectionInsets = .init(top: 0, leading: leading, bottom: 0, trailing: trailing)
+                }
+            }
             let top = bottom + 2
             if profile.sectionPinTop != top { profile.sectionPinTop = top }
         }
@@ -169,18 +178,17 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
         }
     }
 
-    private func navigationGlassBottom(in container: UIView, relativeTo target: UIView) -> CGFloat? {
-        var bottom: CGFloat?
+    private func navigationGlassFrame(in container: UIView, relativeTo target: UIView) -> CGRect? {
+        var frame: CGRect?
         if let effect = container as? UIVisualEffectView, effect.effect is UIGlassEffect,
-           container.bounds.height >= 28, container.bounds.height <= 60 {
-            bottom = container.convert(container.bounds, to: target).maxY
+           container.bounds.height >= 28, container.bounds.height <= 60,
+           container.bounds.width <= target.bounds.width * 0.6 {
+            frame = container.convert(container.bounds, to: target)
         }
         for child in container.subviews {
-            if let edge = navigationGlassBottom(in: child, relativeTo: target) {
-                bottom = max(bottom ?? edge, edge)
-            }
+            if let rect = navigationGlassFrame(in: child, relativeTo: target) { frame = frame.map { $0.union(rect) } ?? rect }
         }
-        return bottom
+        return frame
     }
 
     private func searchGlassDiameter(in container: UIView, searchFrame: CGRect) -> CGFloat? {
@@ -323,6 +331,22 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
             }
         }
         showSheet(publisher)
+    }
+
+    private func openAuthor(_ id: UUID) {
+        guard store.profile(id) != nil else { return }
+        if store.active?.id == id {
+            selectedViewController = profile
+            selectedScreen = profile
+            refresh()
+            return
+        }
+        let author = ProfileController(store: store, profileID: id)
+        author.onClip = { [weak self, weak author] clip in
+            self?.openClip(clip, from: author?.navigationController)
+        }
+        author.onChange = { [weak self] in self?.feed.refresh() }
+        showSheet(author)
     }
 
     private func openClip(_ clip: Clip, from presenter: UIViewController? = nil) {

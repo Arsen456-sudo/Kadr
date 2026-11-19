@@ -9,6 +9,7 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
     private let profileID: UUID?
     private var selectedSection = ProfileSection.posts
     private let sectionIsland = ProfileSectionPicker()
+    var sectionInsets = NSDirectionalEdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16) { didSet { updateSectionPosition() } }
     var sectionPinTop: CGFloat? { didSet { updateSectionPosition() } }
     private enum PhotoDestination { case banner, avatar }
     private var pickerDestination = PhotoDestination.banner
@@ -117,7 +118,10 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
                                               showsFollow: followState != nil)
         let naturalY = headerHeight - 50 - grid.contentOffset.y
         let pin = sectionPinTop ?? (navigationController == nil ? view.safeAreaInsets.top + 46 : view.safeAreaInsets.top + 2)
-        sectionIsland.frame = CGRect(x: 0, y: max(pin, naturalY), width: view.bounds.width, height: 40)
+        let leading = max(view.safeAreaInsets.left, sectionInsets.leading)
+        let trailing = max(view.safeAreaInsets.right, sectionInsets.trailing)
+        sectionIsland.frame = CGRect(x: leading, y: max(pin, naturalY),
+                                     width: max(0, view.bounds.width - leading - trailing), height: 40)
         view.bringSubviewToFront(sectionIsland)
     }
 
