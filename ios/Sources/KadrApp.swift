@@ -43,6 +43,13 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
     private lazy var profile = ProfileController(store: store, profileID: nil)
     private let segments = FeedSectionPicker()
     private let header = UINavigationBar()
+    private let immersiveButton = UIButton()
+    private var immersive = false
+
+    override var prefersStatusBarHidden: Bool { immersive }
+    override var childForStatusBarHidden: UIViewController? { nil }
+    override var preferredStatusBarUpdateAnimation: UIStatusBarAnimation { .fade }
+    override var prefersHomeIndicatorAutoHidden: Bool { immersive }
     private let feedHeader = UINavigationItem()
     private let savedHeader = UINavigationItem(title: "Збережене")
     private let inboxHeader = UINavigationItem(title: "Вхідні")
@@ -135,6 +142,27 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
             search.identifier = "header.context"
             item.rightBarButtonItem = search
         }
+        var immersiveStyle = UIButton.Configuration.glass()
+        immersiveStyle.cornerStyle = .capsule
+        immersiveStyle.baseForegroundColor = .label
+        immersiveStyle.image = UIImage(systemName: "arrow.up.left.and.arrow.down.right")
+        immersiveStyle.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold)
+        immersiveStyle.symbolContentTransition = UISymbolContentTransition(.replace)
+        immersiveButton.configuration = immersiveStyle
+        immersiveButton.accessibilityLabel = "Безкінечний екран"
+        immersiveButton.accessibilityIdentifier = "feed.immersive"
+        immersiveButton.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(immersiveButton)
+        NSLayoutConstraint.activate([
+            immersiveButton.leadingAnchor.constraint(equalTo: view.safeAreaLayoutGuide.leadingAnchor, constant: 16),
+            immersiveButton.centerYAnchor.constraint(equalTo: header.centerYAnchor),
+            immersiveButton.widthAnchor.constraint(equalToConstant: 44),
+            immersiveButton.heightAnchor.constraint(equalTo: immersiveButton.widthAnchor)
+        ])
+        immersiveButton.addAction(UIAction { [weak self] _ in
+            guard let self else { return }
+            self.setImmersive(!self.immersive)
+        }, for: .primaryActionTriggered)
         let logout = UIBarButtonItem(primaryAction: UIAction(title: "Вийти") { [weak self] _ in
             self?.signOut()
         })
@@ -156,6 +184,7 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         view.bringSubviewToFront(header)
+        view.bringSubviewToFront(immersiveButton)
         if profile.isViewLoaded, header.topItem === profileHeader {
             let glassFrame = navigationGlassFrame(in: header, relativeTo: profile.view)
             let bottom = glassFrame?.maxY ?? profile.view.convert(header.bounds, from: header).maxY
@@ -170,13 +199,12 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
             if profile.sectionPinTop != top { profile.sectionPinTop = top }
         }
         if header.topItem === feedHeader {
-            // Measure the rendered circular glass, rather than its larger accessibility target.
-            if let frame = feedHeader.rightBarButtonItem?.accessibilityFrame, frame.width > 0 {
-                let diameter = searchGlassDiameter(in: header, searchFrame: frame)
-                segments.matchSearchHeight(diameter ?? 40)
-            }
+            let frame = feedHeader.rightBarButtonItem?.accessibilityFrame ?? .zero
+            let diameter = min(frame.width, frame.height)
+            segments.matchSearchHeight(diameter > 0 && diameter.isFinite ? min(44, diameter) : 44)
         }
     }
+
 
     private func navigationGlassFrame(in container: UIView, relativeTo target: UIView) -> CGRect? {
         var frame: CGRect?
@@ -191,20 +219,19 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
         return frame
     }
 
-    private func searchGlassDiameter(in container: UIView, searchFrame: CGRect) -> CGFloat? {
-        if let effect = container as? UIVisualEffectView, effect.effect is UIGlassEffect,
-           let window = container.window {
-            let rect = container.convert(container.bounds, to: window)
-            let target = window.convert(searchFrame, from: window.screen.coordinateSpace)
-            if abs(rect.midX - target.midX) < 4, abs(rect.midY - target.midY) < 8,
-               abs(rect.width - rect.height) < 2, rect.height >= 28, rect.height <= 60 {
-                return rect.height
-            }
-        }
-        for child in container.subviews {
-            if let height = searchGlassDiameter(in: child, searchFrame: searchFrame) { return height }
-        }
-        return nil
+    private func setImmersive(_ enabled: Bool) {
+        immersive = enabled
+        feed.immersive = enabled
+        header.isHidden = enabled
+        var style = immersiveButton.configuration
+        style?.image = UIImage(systemName: enabled ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right")
+        style?.symbolContentTransition = UIAccessibility.isReduceMotionEnabled ? nil : UISymbolContentTransition(.replace)
+        immersiveButton.configuration = style
+        immersiveButton.accessibilityValue = enabled ? "Увімкнено" : "Вимкнено"
+        immersiveButton.accessibilityHint = enabled ? "Повернути кнопки та навігацію" : "Приховати кнопки та текст"
+        setTabBarHidden(enabled, animated: !UIAccessibility.isReduceMotionEnabled)
+        setNeedsStatusBarAppearanceUpdate()
+        setNeedsUpdateOfHomeIndicatorAutoHidden()
     }
 
     func tabBarController(_ tabBarController: UITabBarController, shouldSelect controller: UIViewController) -> Bool {
@@ -233,6 +260,9 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
 
     private func updateChrome(for controller: UIViewController?, animated: Bool) {
         let isFeed = controller === feed
+        if !isFeed && immersive { setImmersive(false) }
+        immersiveButton.isHidden = !isFeed
+        header.isHidden = isFeed && immersive
         let isProfile = controller === profile
         segments.updateSelection(feed.section)
         let scroll: UIScrollView? = isFeed ? feed.edgeScrollView

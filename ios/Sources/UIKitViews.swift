@@ -148,12 +148,17 @@ class GlassSectionPicker: UIView {
             island.pin(to: self)
             container = island.contentView
             control.backgroundColor = .clear
+            let clear = UIGraphicsImageRenderer(size: CGSize(width: 1, height: 1)).image { _ in }
+            control.setBackgroundImage(clear, for: .normal, barMetrics: .default)
+            control.setDividerImage(clear, forLeftSegmentState: .normal, rightSegmentState: .normal, barMetrics: .default)
+            control.selectedSegmentTintColor = nil
+            control.tintColor = .label
         } else { container = self }
         control.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(control)
-        controlHeight = control.heightAnchor.constraint(equalToConstant: 40 - contentInset * 2)
+        controlHeight = control.heightAnchor.constraint(equalToConstant: glassContainer ? 32 : 44)
         NSLayoutConstraint.activate([
-            control.topAnchor.constraint(equalTo: container.topAnchor, constant: contentInset),
+            control.centerYAnchor.constraint(equalTo: container.centerYAnchor),
             control.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: contentInset),
             control.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -contentInset), controlHeight
         ])

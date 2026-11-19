@@ -33,10 +33,16 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
     var onAuthor: ((UUID) -> Void)?
     var onReaction: ((Clip, Bool) -> Void)?
     var onComments: ((Clip) -> Void)?
+    var immersive = false {
+        didSet {
+            guard isViewLoaded else { return }
+            updateCurrent()
+        }
+    }
     var playbackEnabled = false { didSet { syncPlayback() } }
     var muted = true {
         didSet {
-            if isViewLoaded { sound.isSelected = !muted }
+            if isViewLoaded { updateSound() }
             syncPlayback()
         }
     }
@@ -86,15 +92,10 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
         soundStyle.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 20, weight: .semibold)
         soundStyle.symbolContentTransition = UISymbolContentTransition(.replace)
         soundStyle.automaticallyUpdateForSelection = false
+        soundStyle.baseForegroundColor = .label
         sound.configuration = soundStyle
-        sound.configurationUpdateHandler = { button in
-            var style = button.configuration
-            style?.image = UIImage(systemName: button.isSelected ? "speaker.wave.2" : "speaker.slash")
-            style?.symbolContentTransition = UIAccessibility.isReduceMotionEnabled ? nil : UISymbolContentTransition(.replace)
-            button.accessibilityLabel = button.isSelected ? "Вимкнути звук" : "Увімкнути звук"
-            button.configuration = style
-        }
-        sound.isSelected = !muted
+        sound.tintColor = .label
+        updateSound()
         sound.translatesAutoresizingMaskIntoConstraints = false
         authorAvatar.translatesAutoresizingMaskIntoConstraints = false
         authorAvatar.accessibilityIdentifier = "feed.author"
@@ -131,7 +132,7 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
             authorAvatar.widthAnchor.constraint(equalTo: sound.widthAnchor),
             authorAvatar.heightAnchor.constraint(equalTo: sound.heightAnchor),
             actionStack.trailingAnchor.constraint(equalTo: safe.trailingAnchor, constant: -16),
-            actionStack.bottomAnchor.constraint(equalTo: safe.bottomAnchor, constant: -2),
+            actionStack.bottomAnchor.constraint(equalTo: safe.bottomAnchor, constant: -6),
             captionStack.leadingAnchor.constraint(equalTo: safe.leadingAnchor, constant: 18),
             captionStack.trailingAnchor.constraint(equalTo: safe.trailingAnchor, constant: -130),
             captionStack.bottomAnchor.constraint(equalTo: safe.bottomAnchor, constant: -14)
@@ -179,8 +180,10 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
 
     private func updateCurrent() {
         let active = clips.isEmpty ? nil : page?.clip
-        actionStack.isHidden = active == nil
-        captionStack.isHidden = active == nil
+        actionStack.isHidden = active == nil || immersive
+        captionStack.isHidden = active == nil || immersive
+        empty.isHidden = active != nil || immersive
+        page?.setImmersive(immersive)
         reactionIsland.isHidden = active == nil
         sound.isHidden = active == nil || active?.isPhoto == true
         if let active {
@@ -190,6 +193,16 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
         }
         refreshAuthorAvatar()
         syncPlayback()
+    }
+
+    private func updateSound() {
+        var style = sound.configuration
+        style?.image = UIImage(systemName: muted ? "speaker.slash" : "speaker.wave.2")
+        style?.symbolContentTransition = UIAccessibility.isReduceMotionEnabled ? nil : UISymbolContentTransition(.replace)
+        style?.baseForegroundColor = .label
+        sound.configuration = style
+        sound.accessibilityLabel = muted ? "Увімкнути звук" : "Вимкнути звук"
+        sound.accessibilityValue = muted ? "Звук вимкнено" : "Звук увімкнено"
     }
 
     @objc private func profileDidChange(_ notification: Notification) {
@@ -272,6 +285,9 @@ private final class VideoPage: UIViewController {
     private let resumeButton = makePlaybackButton(symbol: "play.fill", label: "Відтворити")
     private var enabled = false
     private var paused = false
+    private var immersive = false
+    private let shade = GradientView()
+    private var album: PhotoAlbumController?
 
     init(clip: Clip) {
         self.clip = clip
@@ -284,12 +300,15 @@ private final class VideoPage: UIViewController {
         super.viewDidLoad()
         view.backgroundColor = .black
         if clip.isPhoto {
-            embed(PhotoAlbumController(media: clip.media ?? []), in: view)
+            let album = PhotoAlbumController(media: clip.media ?? [])
+            self.album = album
+            album.setImmersive(immersive)
+            embed(album, in: view)
             return
         }
         video.pin(to: view)
         video.load(clip.url, adaptsLandscape: true)
-        let shade = GradientView()
+        shade.isHidden = immersive
         shade.gradient.colors = [UIColor.black.withAlphaComponent(0.44).cgColor,
                                   UIColor.clear.cgColor, UIColor.clear.cgColor,
                                   UIColor.black.withAlphaComponent(0.74).cgColor]
@@ -306,6 +325,7 @@ private final class VideoPage: UIViewController {
             tapArea?.accessibilityLabel = self.paused ? "Відтворити відео" : "Призупинити відео"
             self.updatePauseIndicator()
         }, for: .primaryActionTriggered)
+        resumeButton.isHidden = immersive
         resumeButton.alpha = 0
         resumeButton.addAction(UIAction { [weak self, weak tapArea] _ in
             self?.paused = false
@@ -317,6 +337,13 @@ private final class VideoPage: UIViewController {
             resumeButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             resumeButton.centerYAnchor.constraint(equalTo: view.centerYAnchor)
         ])
+    }
+
+    func setImmersive(_ enabled: Bool) {
+        immersive = enabled
+        shade.isHidden = enabled
+        resumeButton.isHidden = enabled
+        album?.setImmersive(enabled)
     }
 
     func setPlaying(_ enabled: Bool, muted: Bool) {

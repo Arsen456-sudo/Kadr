@@ -19,6 +19,7 @@ final class PhotoAlbumController: UIPageViewController, UIPageViewControllerData
     private let media: [PostMedia]
     private let counter = UILabel()
     private var index = 0
+    private var immersive = false
 
     init(media: [PostMedia], index: Int = 0) {
         self.media = media
@@ -51,10 +52,15 @@ final class PhotoAlbumController: UIPageViewController, UIPageViewControllerData
         updateCounter()
     }
 
+    func setImmersive(_ enabled: Bool) {
+        immersive = enabled
+        counter.isHidden = enabled || media.count < 2
+    }
+
     private func page(_ index: Int) -> PhotoPage { PhotoPage(url: media[index].url, index: index) }
     private func updateCounter() {
         counter.text = "  \(index + 1) / \(media.count)  "
-        counter.isHidden = media.count < 2
+        counter.isHidden = media.count < 2 || immersive
         counter.accessibilityLabel = "Фото \(index + 1) із \(media.count)"
     }
     func pageViewController(_ pageViewController: UIPageViewController, viewControllerBefore controller: UIViewController) -> UIViewController? {
