@@ -1,10 +1,12 @@
 # Підписаний IPA для iPhone
 
-Workflow **iOS signed IPA** запускається вручну з `main`. Він збирає Release для iPhoneOS, перевіряє підпис і пакує справжній `Kadr.ipa` для iPhone з iOS 26 або новішою, зареєстрованих у профілі Ad Hoc.
+Workflow **iOS signed IPA** запускається вручну з `main`. Він збирає Release для iPhoneOS, перевіряє підпис і пакує `Kadr.ipa` для iPhone з iOS 26 або новішою, зареєстрованих у профілі Ad Hoc.
+
+Workflow **iOS device build** автоматично збирає `Kadr-unsigned.ipa` для iPhoneOS після пушу в `main`. Артефакт **Kadr-iOS-Unsigned** можна використати для окремого підпису перед встановленням.
 
 ## Налаштування GitHub
 
-У **Settings → Environments** створи середовище `ios-signing` і дозволь його використання лише з гілки `main`. У цьому середовищі додай такі secrets.
+У репозиторії Kadr середовище `ios-signing` вже обмежене гілкою `main`. У **Settings → Environments → ios-signing** додай такі secrets.
 
 | GitHub Secret | Значення |
 | --- | --- |

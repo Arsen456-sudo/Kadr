@@ -1,0 +1,52 @@
+name: iOS device build
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: macos-26
+    timeout-minutes: 20
+    steps:
+      - name: Check out the source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Generate Xcode project
+        run: |
+          xcodebuild -version
+          brew install xcodegen
+          xcodegen generate --spec ios/project.yml
+      - name: Build Release for iPhoneOS
+        run: |
+          xcodebuild -project ios/Kadr.xcodeproj -scheme Kadr \
+            -configuration Release -destination 'generic/platform=iOS' \
+            -derivedDataPath ios/build/device CODE_SIGNING_ALLOWED=NO \
+            "CURRENT_PROJECT_VERSION=$GITHUB_RUN_NUMBER" build
+      - name: Package and verify the unsigned device IPA
+        run: |
+          set -euo pipefail
+          app=ios/build/device/Build/Products/Release-iphoneos/Kadr.app
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleSupportedPlatforms:0' "$app/Info.plist")" = iPhoneOS
+          lipo -verify_arch arm64 "$app/Kadr"
+          test -s "$app/bunny.mp4"
+          test -s "$app/sintel.mp4"
+          mkdir -p "$RUNNER_TEMP/kadr-device/Payload" ios/build/ipa
+          ditto "$app" "$RUNNER_TEMP/kadr-device/Payload/Kadr.app"
+          ipa=ios/build/ipa/Kadr-unsigned.ipa
+          ditto -c -k --keepParent "$RUNNER_TEMP/kadr-device/Payload" "$ipa"
+          unzip -tq "$ipa"
+          zipinfo -1 "$ipa" > "$RUNNER_TEMP/kadr-device/entries.txt"
+          grep -Fx 'Payload/Kadr.app/Kadr' "$RUNNER_TEMP/kadr-device/entries.txt"
+      - name: Upload the unsigned device IPA
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: Kadr-iOS-Unsigned
+          path: ios/build/ipa/Kadr-unsigned.ipa
+          if-no-files-found: error
+          retention-days: 7
