@@ -138,6 +138,8 @@ final class ClipPreviewController: UIViewController {
     private let clip: Clip
     private let video = VideoSurface(frame: .zero)
     private var paused = false
+    private let playbackButton = makePlaybackButton(symbol: "pause.fill", label: "Призупинити")
+    private let tapArea = UIButton(type: .custom)
 
     init(clip: Clip) {
         self.clip = clip
@@ -156,7 +158,14 @@ final class ClipPreviewController: UIViewController {
         }
         video.pin(to: view)
         video.load(clip.url, adaptsLandscape: true)
-        let control = makePlaybackButton(symbol: "pause.fill", label: "Призупинити")
+        tapArea.accessibilityIdentifier = "video.playbackArea"
+        tapArea.accessibilityLabel = "Призупинити відео"
+        tapArea.pin(to: view)
+        tapArea.addAction(UIAction { [weak self] _ in
+            guard let self else { return }
+            self.setPaused(!self.paused)
+        }, for: .primaryActionTriggered)
+        let control = playbackButton
         view.addSubview(control)
         NSLayoutConstraint.activate([
             control.centerXAnchor.constraint(equalTo: view.centerXAnchor),
@@ -164,18 +173,27 @@ final class ClipPreviewController: UIViewController {
         ])
         control.addAction(UIAction { [weak self, weak control] _ in
             guard let self, let control else { return }
-            self.paused = control.isSelected
-            self.video.setPlaying(!self.paused)
+            self.setPaused(control.isSelected)
         }, for: .primaryActionTriggered)
     }
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         video.setPlaying(!paused, muted: false)
+        if !clip.isPhoto { playbackButton.showForInteraction() }
+    }
+
+    private func setPaused(_ value: Bool) {
+        paused = value
+        playbackButton.isSelected = value
+        tapArea.accessibilityLabel = value ? "Відтворити відео" : "Призупинити відео"
+        video.setPlaying(!value)
+        playbackButton.showForInteraction()
     }
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         video.setPlaying(false)
+        playbackButton.hideAfterContextChange()
     }
 }

@@ -44,6 +44,7 @@ struct KadrNavigationShell: View {
         NavigationStack {
             KadrTabContent(tabs: tabs)
                 .ignoresSafeArea(.container)
+                .scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
                 .navigationTitle(state.screen.title)
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {

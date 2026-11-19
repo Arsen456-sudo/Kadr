@@ -144,6 +144,7 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
                 additionalSafeAreaInsets.top = adjustment
             }
         }
+        updateEdgeEffects(for: selectedViewController)
         guard let header = navigationController?.navigationBar else { return }
         if topEdge.view !== header { header.addInteraction(topEdge) }
         if profile.isViewLoaded, selectedViewController === profile, store.active != nil {
@@ -210,15 +211,21 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
     private func updateChrome(for controller: UIViewController?, animated: Bool) {
         let isFeed = controller === feed
         if !isFeed && immersive { setImmersive(false) }
-        let isProfile = controller === profile
         if toolbarState.feedSection != feed.section { toolbarState.feedSection = feed.section }
-        let scroll: UIScrollView? = isFeed ? feed.edgeScrollView
-            : isProfile ? profile.edgeScrollView : controller === inbox ? inbox.scrollView : saved.tableView
-        scroll?.bottomEdgeEffect.style = .soft
-        scroll?.topEdgeEffect.style = .soft
-        bottomEdge.scrollView = scroll
-        topEdge.scrollView = scroll
+        updateEdgeEffects(for: controller)
         showHeader(for: controller, animated: animated)
+    }
+
+    private func updateEdgeEffects(for controller: UIViewController?) {
+        let isFeed = controller === feed
+        let scroll: UIScrollView? = isFeed ? feed.edgeScrollView
+            : controller === profile ? profile.edgeScrollView : controller === inbox ? inbox.scrollView : saved.tableView
+        scroll?.topEdgeEffect.style = .soft
+        scroll?.bottomEdgeEffect.style = .soft
+        scroll?.topEdgeEffect.isHidden = isFeed && immersive
+        scroll?.bottomEdgeEffect.isHidden = isFeed && immersive
+        if bottomEdge.scrollView !== scroll { bottomEdge.scrollView = scroll }
+        if topEdge.scrollView !== scroll { topEdge.scrollView = scroll }
     }
 
     private func showHeader(for controller: UIViewController?, animated: Bool) {

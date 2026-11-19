@@ -24,7 +24,13 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
     private let authorAvatar = UIButton()
     private let actionStack = UIStackView()
     var edgeScrollView: UIScrollView? {
-        pager.viewIfLoaded?.subviews.compactMap { $0 as? UIScrollView }.first
+        guard let root = pager.viewIfLoaded else { return nil }
+        var level = [root]
+        while !level.isEmpty {
+            if let scroll = level.compactMap({ $0 as? UIScrollView }).first { return scroll }
+            level = level.flatMap(\.subviews)
+        }
+        return nil
     }
     private lazy var captionStack = UIStackView(arrangedSubviews: [author, caption])
     private var clips: [Clip] = []
@@ -150,6 +156,12 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
             captionStack.bottomAnchor.constraint(equalTo: safe.bottomAnchor, constant: -14)
         ])
         refresh()
+    }
+
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        let scroll = edgeScrollView
+        if actionEdge.scrollView !== scroll { actionEdge.scrollView = scroll }
     }
 
     override func viewWillDisappear(_ animated: Bool) {
@@ -297,7 +309,6 @@ private final class VideoPage: UIViewController {
     private var enabled = false
     private var paused = false
     private var immersive = false
-    private let shade = GradientView()
     private var album: PhotoAlbumController?
 
     init(clip: Clip) {
@@ -319,12 +330,7 @@ private final class VideoPage: UIViewController {
         }
         video.pin(to: view)
         video.load(clip.url, adaptsLandscape: true)
-        shade.isHidden = immersive
-        shade.gradient.colors = [UIColor.clear.cgColor,
-                                  UIColor.clear.cgColor, UIColor.clear.cgColor,
-                                  UIColor.black.withAlphaComponent(0.74).cgColor]
-        shade.isUserInteractionEnabled = false
-        shade.pin(to: view)
+        tapArea.accessibilityIdentifier = "video.playbackArea"
         tapArea.isAccessibilityElement = true
         tapArea.accessibilityTraits = .button
         tapArea.accessibilityLabel = "Призупинити відео"
@@ -333,7 +339,7 @@ private final class VideoPage: UIViewController {
             guard let self else { return }
             self.setPaused(!self.paused)
         }, for: .primaryActionTriggered)
-        playbackButton.isHidden = immersive
+        playbackButton.hideAfterContextChange()
         playbackButton.addAction(UIAction { [weak self] _ in
             guard let self else { return }
             self.setPaused(self.playbackButton.isSelected)
@@ -347,14 +353,14 @@ private final class VideoPage: UIViewController {
 
     func setImmersive(_ enabled: Bool) {
         immersive = enabled
-        shade.isHidden = enabled
-        playbackButton.isHidden = enabled
+        if enabled { playbackButton.hideAfterContextChange() }
         album?.setImmersive(enabled)
     }
 
     func setPlaying(_ enabled: Bool, muted: Bool) {
         loadViewIfNeeded()
         self.enabled = enabled
+        if !enabled { playbackButton.hideAfterContextChange() }
         video.setPlaying(enabled && !paused, muted: muted)
     }
 
@@ -363,22 +369,54 @@ private final class VideoPage: UIViewController {
         playbackButton.isSelected = value
         tapArea.accessibilityLabel = value ? "Відтворити відео" : "Призупинити відео"
         video.setPlaying(enabled && !value)
+        if !immersive { playbackButton.showForInteraction() }
     }
 }
 
-func makePlaybackButton(symbol: String, label: String) -> UIButton {
+final class PlaybackButton: UIButton {
+    private var hideTask: Task<Void, Never>?
+
+    func showForInteraction() {
+        hideTask?.cancel()
+        isHidden = false
+        hideTask = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(2)) }
+            catch { return }
+            guard !Task.isCancelled else { return }
+            self?.isHidden = true
+        }
+    }
+
+    func hideAfterContextChange() {
+        hideTask?.cancel()
+        hideTask = nil
+        isHidden = true
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        if window == nil { hideAfterContextChange() }
+    }
+
+    deinit { hideTask?.cancel() }
+}
+
+func makePlaybackButton(symbol: String, label: String) -> PlaybackButton {
     var style = UIButton.Configuration.glass()
     style.cornerStyle = .capsule
     style.symbolContentTransition = UIAccessibility.isReduceMotionEnabled ? nil : UISymbolContentTransition(.replace)
     style.image = UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 30, weight: .semibold))
-    style.baseForegroundColor = .white
+    style.baseForegroundColor = .label
+    style.baseBackgroundColor = .clear
     style.automaticallyUpdateForSelection = false
-    let button = UIButton(configuration: style)
+    let button = PlaybackButton(configuration: style)
     button.changesSelectionAsPrimaryAction = true
     button.isSelected = symbol == "play.fill"
     button.isPointerInteractionEnabled = true
     button.configurationUpdateHandler = { button in
         var configuration = button.configuration
+        configuration?.baseForegroundColor = .label
+        configuration?.baseBackgroundColor = .clear
         configuration?.image = UIImage(systemName: button.isSelected ? "play.fill" : "pause.fill",
             withConfiguration: UIImage.SymbolConfiguration(pointSize: 30, weight: .semibold))
         configuration?.symbolContentTransition = UIAccessibility.isReduceMotionEnabled ? nil : UISymbolContentTransition(.replace)

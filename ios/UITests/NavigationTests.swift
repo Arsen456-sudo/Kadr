@@ -19,13 +19,15 @@ final class NavigationTests: XCTestCase {
         XCTAssertEqual(header.label, "Пошук")
         let searchWidth = header.frame.width
         XCTAssertTrue(app.staticTexts["Big Buck Bunny"].waitForExistence(timeout: 5))
-        let pause = app.buttons["Призупинити"]
-        XCTAssertTrue(pause.waitForExistence(timeout: 5))
-        pause.tap()
+        let playbackArea = app.buttons["video.playbackArea"].firstMatch
+        XCTAssertTrue(playbackArea.waitForExistence(timeout: 5))
+        playbackArea.tap()
         let play = app.buttons["Відтворити"]
         XCTAssertTrue(play.waitForExistence(timeout: 3))
         play.tap()
+        let pause = app.buttons["Призупинити"]
         XCTAssertTrue(pause.waitForExistence(timeout: 3))
+        XCTAssertTrue(pause.waitForNonExistence(timeout: 4))
         capture(app, named: "Kadr-Portrait")
         app.swipeUp()
         XCTAssertTrue(app.staticTexts["Sintel"].waitForExistence(timeout: 7))
@@ -98,7 +100,10 @@ final class NavigationTests: XCTestCase {
         XCTAssertTrue(clip.waitForExistence(timeout: 5))
         XCTAssertTrue(profile.isHittable)
         clip.tap()
-        XCTAssertTrue(app.buttons["Призупинити"].waitForExistence(timeout: 5))
+        let previewArea = app.buttons["video.playbackArea"].firstMatch
+        XCTAssertTrue(previewArea.waitForExistence(timeout: 5))
+        previewArea.tap()
+        XCTAssertTrue(app.buttons["Відтворити"].waitForExistence(timeout: 3))
     }
 
     @MainActor

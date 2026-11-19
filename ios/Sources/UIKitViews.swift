@@ -125,15 +125,13 @@ func glassGroup(spacing: CGFloat = 12) -> UIVisualEffectView {
 class GlassSectionPicker: UIView {
     private var control = UISegmentedControl()
     private let titles: [String]
-    private let contentInset: CGFloat
     private var controlHeight: NSLayoutConstraint!
     var onIndexSelection: ((Int) -> Void)?
 
     override var intrinsicContentSize: CGSize { CGSize(width: 184, height: 44) }
 
-    init(titles: [String], symbols: [String] = [], glassContainer: Bool = false) {
+    init(titles: [String], symbols: [String] = []) {
         self.titles = titles
-        contentInset = glassContainer ? 4 : 0
         super.init(frame: .zero)
         if symbols.isEmpty {
             control = UISegmentedControl(items: titles)
@@ -151,21 +149,13 @@ class GlassSectionPicker: UIView {
             }
             control = UISegmentedControl(frame: .zero, actions: actions)
         }
-        let container: UIView
-        if glassContainer {
-            let island = glassIsland()
-            island.pin(to: self)
-            container = island.contentView
-            control.backgroundColor = .clear
-            control.tintColor = .label
-        } else { container = self }
         control.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(control)
-        controlHeight = control.heightAnchor.constraint(equalToConstant: glassContainer ? 36 : 44)
+        addSubview(control)
+        controlHeight = control.heightAnchor.constraint(equalToConstant: 44)
         NSLayoutConstraint.activate([
-            control.centerYAnchor.constraint(equalTo: container.centerYAnchor),
-            control.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: contentInset),
-            control.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -contentInset), controlHeight
+            control.centerYAnchor.constraint(equalTo: centerYAnchor),
+            control.leadingAnchor.constraint(equalTo: leadingAnchor),
+            control.trailingAnchor.constraint(equalTo: trailingAnchor), controlHeight
         ])
         let font = UIFont.preferredFont(forTextStyle: .footnote)
         control.setTitleTextAttributes([.font: font], for: .normal)
@@ -180,8 +170,7 @@ class GlassSectionPicker: UIView {
 
     func matchSearchHeight(_ height: CGFloat) {
         guard height.isFinite, height >= 28, height <= 60 else { return }
-        let innerHeight = height - contentInset * 2
-        if abs(controlHeight.constant - innerHeight) > 0.25 { controlHeight.constant = innerHeight }
+        if abs(controlHeight.constant - height) > 0.25 { controlHeight.constant = height }
     }
 
     func selectIndex(_ index: Int) {
