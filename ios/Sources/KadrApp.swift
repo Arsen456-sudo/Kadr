@@ -156,11 +156,28 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
         super.viewDidLayoutSubviews()
         view.bringSubviewToFront(header)
         if header.topItem === feedHeader {
-            let frame = feedHeader.rightBarButtonItem?.accessibilityFrame ?? .zero
-            let diameter = min(frame.width, frame.height)
-            let measured = diameter > 0 && diameter.isFinite ? min(44, diameter) : 44
-            if measured > 0 { segments.buttonHeight = measured }
+            // Measure the rendered circular glass, rather than its larger accessibility target.
+            if let frame = feedHeader.rightBarButtonItem?.accessibilityFrame, frame.width > 0 {
+                let diameter = searchGlassDiameter(in: header, searchFrame: frame)
+                segments.matchSearchHeight(diameter ?? 40)
+            }
         }
+    }
+
+    private func searchGlassDiameter(in container: UIView, searchFrame: CGRect) -> CGFloat? {
+        if let effect = container as? UIVisualEffectView, effect.effect is UIGlassEffect,
+           let window = container.window {
+            let rect = container.convert(container.bounds, to: window)
+            let target = window.convert(searchFrame, from: window.screen.coordinateSpace)
+            if abs(rect.midX - target.midX) < 4, abs(rect.midY - target.midY) < 8,
+               abs(rect.width - rect.height) < 2, rect.height >= 28, rect.height <= 60 {
+                return rect.height
+            }
+        }
+        for child in container.subviews {
+            if let height = searchGlassDiameter(in: child, searchFrame: searchFrame) { return height }
+        }
+        return nil
     }
 
     func tabBarController(_ tabBarController: UITabBarController, shouldSelect controller: UIViewController) -> Bool {

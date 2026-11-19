@@ -129,14 +129,25 @@ final class FeedSectionPicker: UIView {
     private let control = UISegmentedControl(items: ["Для тебе", "Підписки"])
     var onSelection: ((FeedSection) -> Void)?
 
-    var buttonHeight: CGFloat = 44 {
-        didSet { if oldValue != buttonHeight { invalidateIntrinsicContentSize() } }
+    private var controlHeight: NSLayoutConstraint!
+    override var intrinsicContentSize: CGSize { CGSize(width: 184, height: 44) }
+
+    func matchSearchHeight(_ height: CGFloat) {
+        guard height.isFinite, height >= 28, height <= 60 else { return }
+        if abs(controlHeight.constant - height) > 0.25 { controlHeight.constant = height }
     }
-    override var intrinsicContentSize: CGSize { CGSize(width: 184, height: buttonHeight) }
 
     init() {
         super.init(frame: .zero)
-        control.pin(to: self, insets: .init(top: 0, leading: 0, bottom: 4, trailing: 0))
+        control.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(control)
+        controlHeight = control.heightAnchor.constraint(equalToConstant: 40)
+        NSLayoutConstraint.activate([
+            control.topAnchor.constraint(equalTo: topAnchor),
+            control.leadingAnchor.constraint(equalTo: leadingAnchor),
+            control.trailingAnchor.constraint(equalTo: trailingAnchor),
+            controlHeight
+        ])
         let attributes: [NSAttributedString.Key: Any] = [.font: UIFont.preferredFont(forTextStyle: .footnote)]
         control.setTitleTextAttributes(attributes, for: .normal)
         control.setTitleTextAttributes(attributes, for: .selected)

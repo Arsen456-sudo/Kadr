@@ -8,6 +8,8 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
     private let store: LocalStore
     private let profileID: UUID?
     private let layout = UICollectionViewFlowLayout()
+    private let backdrop = ProfileBackdrop()
+    private var backdropHeight: NSLayoutConstraint!
     private lazy var grid = UICollectionView(frame: .zero, collectionViewLayout: layout)
     private var visibleProfile: Profile?
     private var clips: [Clip] = []
@@ -35,7 +37,16 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
         view.backgroundColor = .systemBackground
         layout.minimumInteritemSpacing = 2
         layout.minimumLineSpacing = 2
-        grid.backgroundColor = .systemBackground
+        backdrop.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(backdrop)
+        backdropHeight = backdrop.heightAnchor.constraint(equalToConstant: 260)
+        NSLayoutConstraint.activate([
+            backdrop.topAnchor.constraint(equalTo: view.topAnchor),
+            backdrop.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            backdrop.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            backdropHeight
+        ])
+        grid.backgroundColor = .clear
         grid.alwaysBounceVertical = true
         grid.contentInsetAdjustmentBehavior = .never
         grid.topEdgeEffect.style = .soft
@@ -68,7 +79,10 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
         if lastSize != view.bounds.size || lastSafeTop != view.safeAreaInsets.top {
             lastSafeTop = view.safeAreaInsets.top
             lastSize = view.bounds.size
-            if let visibleProfile { hero?.setCover(for: visibleProfile, width: lastSize.width, top: lastSafeTop) }
+            if let visibleProfile {
+                hero?.setCover(for: visibleProfile, width: lastSize.width, top: lastSafeTop)
+                backdropHeight.constant = ProfileHero.coverSize(for: visibleProfile, width: lastSize.width, top: lastSafeTop) + 100
+            }
             layout.invalidateLayout()
         }
         grid.contentInset.bottom = view.safeAreaInsets.bottom
@@ -78,13 +92,13 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         visible = true
-        hero?.setPlaying(true)
+        backdrop.setPlaying(true)
     }
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         visible = false
-        hero?.setPlaying(false)
+        backdrop.setPlaying(false)
     }
 
     func refresh() {
@@ -93,6 +107,14 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
         let resetScroll = visibleProfile?.id != profile?.id
         let changedBanner = visibleProfile?.bannerFile != profile?.bannerFile
         visibleProfile = profile
+        if resetScroll || changedBanner {
+            backdrop.show(profile)
+            backdrop.setPlaying(visible)
+        }
+        if let profile {
+            backdropHeight?.constant = ProfileHero.coverSize(for: profile, width: view.bounds.width, top: view.safeAreaInsets.top) + 100
+        }
+        backdrop.isHidden = profile == nil
         if let profile {
             guestView?.removeFromSuperview()
             guestView = nil
@@ -107,7 +129,7 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
                 if resetScroll { grid.setContentOffset(.zero, animated: false) }
             }
         } else {
-            hero?.setPlaying(false)
+            backdrop.setPlaying(false)
             grid.isHidden = true
             clips = []
             followState = nil
@@ -168,16 +190,6 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
             self.onChange?()
         }
         return view
-    }
-
-    func collectionView(_ collectionView: UICollectionView, willDisplaySupplementaryView view: UICollectionReusableView,
-                        forElementKind elementKind: String, at indexPath: IndexPath) {
-        (view as? ProfileHero)?.setPlaying(visible)
-    }
-
-    func collectionView(_ collectionView: UICollectionView, didEndDisplayingSupplementaryView view: UICollectionReusableView,
-                        forElementOfKind elementKind: String, at indexPath: IndexPath) {
-        (view as? ProfileHero)?.setPlaying(false)
     }
 
     func editBanner(from button: UIBarButtonItem?) {
@@ -295,7 +307,8 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
 
 private final class ProfileHero: UICollectionReusableView {
     private var coverHeight: NSLayoutConstraint!
-    private static let avatarSide: CGFloat = 64
+    private static let avatarSide: CGFloat = 96
+    private static let identityHeight: CGFloat = 64
     private static let margin: CGFloat = 20
     private static let gap: CGFloat = 14
     private static let verticalPadding: CGFloat = 12
@@ -303,35 +316,15 @@ private final class ProfileHero: UICollectionReusableView {
     private static let footerHeight: CGFloat = 46
 
     private let banner = UIView()
-    private let artwork = UIImageView()
-    private let video = VideoSurface(frame: .zero)
-    private let shade = GradientView()
     private let footer = makeLabel(.headline)
     private let identity = UIStackView()
     private let followActions = UIStackView()
-    private var isVideo = false
 
     override init(frame: CGRect) {
         super.init(frame: frame)
-        backgroundColor = .systemBackground
-        banner.clipsToBounds = true
-        banner.backgroundColor = UIColor(red: 0.20, green: 0.14, blue: 0.31, alpha: 1)
-        artwork.contentMode = .scaleAspectFill
-        artwork.clipsToBounds = true
-        artwork.pin(to: banner)
-        video.pin(to: banner)
-        shade.gradient.startPoint = CGPoint(x: 0.5, y: 0)
-        shade.gradient.endPoint = CGPoint(x: 0.5, y: 1)
-        let background = UIColor.systemBackground.resolvedColor(with: UITraitCollection(userInterfaceStyle: .dark))
-        shade.gradient.colors = [UIColor.black.withAlphaComponent(0.12).cgColor,
-                                 background.withAlphaComponent(0).cgColor,
-                                 background.withAlphaComponent(0.22).cgColor,
-                                 background.withAlphaComponent(0.75).cgColor, background.cgColor]
-        shade.gradient.locations = [0, 0.44, 0.69, 0.87, 1]
-        shade.isUserInteractionEnabled = false
-        shade.pin(to: banner)
-
-        identity.alignment = .center
+        backgroundColor = .clear
+        banner.backgroundColor = .clear
+        identity.alignment = .top
         identity.spacing = Self.gap
         followActions.axis = .vertical
         let details = UIStackView(arrangedSubviews: [identity, followActions])
@@ -339,7 +332,7 @@ private final class ProfileHero: UICollectionReusableView {
         details.spacing = Self.verticalPadding
         let insetDetails = UIView()
         details.pin(to: insetDetails, insets: .init(top: Self.verticalPadding, leading: Self.margin,
-                                                   bottom: Self.verticalPadding, trailing: Self.margin))
+                                                   bottom: Self.verticalPadding + 16, trailing: Self.margin))
 
         footer.textAlignment = .natural
         footer.accessibilityTraits.insert(.header)
@@ -358,7 +351,7 @@ private final class ProfileHero: UICollectionReusableView {
 
     required init?(coder: NSCoder) { fatalError("Use init(frame:)") }
 
-    private static func coverSize(for profile: Profile, width: CGFloat, top: CGFloat) -> CGFloat {
+    static func coverSize(for profile: Profile, width: CGFloat, top: CGFloat) -> CGFloat {
         let navigationBottom = top + 50
         guard profile.bannerURL != nil else { return navigationBottom }
         return max(navigationBottom + 28, min(180, width * 0.40))
@@ -366,7 +359,7 @@ private final class ProfileHero: UICollectionReusableView {
 
     func setCover(for profile: Profile, width: CGFloat, top: CGFloat) {
         coverHeight.constant = Self.coverSize(for: profile, width: width, top: top)
-        banner.backgroundColor = profile.bannerURL == nil ? .systemBackground : .black
+
     }
 
     static func height(for profile: Profile, width: CGFloat, top: CGFloat, showsFollow: Bool) -> CGFloat {
@@ -375,12 +368,7 @@ private final class ProfileHero: UICollectionReusableView {
         let measured = labels.systemLayoutSizeFitting(CGSize(width: textWidth, height: 0),
             withHorizontalFittingPriority: .required, verticalFittingPriority: .fittingSizeLevel).height
         let actionHeight = showsFollow ? followHeight + verticalPadding : 0
-        return ceil(coverSize(for: profile, width: width, top: top) + max(avatarSide, measured) + 2 * verticalPadding + actionHeight + footerHeight)
-    }
-
-    override func prepareForReuse() {
-        super.prepareForReuse()
-        video.load(nil)
+        return ceil(coverSize(for: profile, width: width, top: top) + max(identityHeight, measured) + 2 * verticalPadding + 16 + actionHeight + footerHeight)
     }
 
     func show(_ profile: Profile, hasPosts: Bool, following: Bool?, onFollow: @escaping () -> Void) {
@@ -392,7 +380,17 @@ private final class ProfileHero: UICollectionReusableView {
         avatar.backgroundColor = .systemBackground
         avatar.widthAnchor.constraint(equalToConstant: Self.avatarSide).isActive = true
         avatar.heightAnchor.constraint(equalToConstant: Self.avatarSide).isActive = true
-        identity.addArrangedSubview(avatar)
+        let avatarContainer = UIView()
+        avatarContainer.translatesAutoresizingMaskIntoConstraints = false
+        avatarContainer.addSubview(avatar)
+        avatar.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            avatarContainer.widthAnchor.constraint(equalToConstant: Self.avatarSide),
+            avatarContainer.heightAnchor.constraint(equalToConstant: Self.identityHeight),
+            avatar.centerXAnchor.constraint(equalTo: avatarContainer.centerXAnchor),
+            avatar.centerYAnchor.constraint(equalTo: avatarContainer.centerYAnchor)
+        ])
+        identity.addArrangedSubview(avatarContainer)
         identity.addArrangedSubview(Self.makeDetails(profile))
 
         if let following {
@@ -404,30 +402,60 @@ private final class ProfileHero: UICollectionReusableView {
 
         footer.text = hasPosts ? "Публікації" : "Поки немає відео"
         footer.textColor = hasPosts ? .label : .secondaryLabel
-        let url = profile.bannerURL
+
+    }
+
+    private static func makeDetails(_ profile: Profile) -> UIStackView {
+        let name = makeLabel(.title2, text: profile.name)
+        name.font = name.font.withTraits(.traitBold)
+        let handle = makeLabel(.body, text: "@\(profile.handle)", color: .secondaryLabel)
+        let details = UIStackView(arrangedSubviews: [name, handle])
+        details.axis = .vertical
+        details.spacing = 3
+        name.textAlignment = .right
+        handle.textAlignment = .right
+        if !profile.bio.isEmpty {
+            details.setCustomSpacing(7, after: handle)
+            let bio = makeLabel(.subheadline, text: profile.bio, color: .secondaryLabel)
+            bio.textAlignment = .right
+            details.addArrangedSubview(bio)
+        }
+        return details
+    }
+
+}
+
+private final class ProfileBackdrop: UIView {
+    private let artwork = UIImageView()
+    private let video = VideoSurface(frame: .zero)
+    private let shade = GradientView()
+    private var isVideo = false
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isUserInteractionEnabled = false
+        clipsToBounds = true
+        artwork.contentMode = .scaleAspectFill
+        artwork.clipsToBounds = true
+        artwork.pin(to: self)
+        video.pin(to: self)
+        let background = UIColor.systemBackground.resolvedColor(with: UITraitCollection(userInterfaceStyle: .dark))
+        let alphas: [CGFloat] = [0, 0, 0.03, 0.10, 0.22, 0.38, 0.56, 0.73, 0.87, 0.96, 1]
+        shade.gradient.colors = alphas.map { background.withAlphaComponent($0).cgColor }
+        shade.gradient.locations = [0, 0.30, 0.40, 0.48, 0.56, 0.64, 0.72, 0.80, 0.88, 0.95, 1]
+        shade.pin(to: self)
+    }
+    required init?(coder: NSCoder) { fatalError("Use init(frame:)") }
+
+    func show(_ profile: Profile?) {
+        let url = profile?.bannerURL
         isVideo = url.flatMap { UTType(filenameExtension: $0.pathExtension) }?.conforms(to: .movie) == true
         artwork.image = isVideo ? nil : url.flatMap { UIImage(contentsOfFile: $0.path) }
         video.isHidden = !isVideo
         video.load(isVideo ? url : nil)
     }
 
-    private static func makeDetails(_ profile: Profile) -> UIStackView {
-        let name = makeLabel(.title2, text: profile.name)
-        name.font = name.font.withTraits(.traitBold)
-        let handle = makeLabel(.subheadline, text: "@\(profile.handle)", color: .secondaryLabel)
-        let details = UIStackView(arrangedSubviews: [name, handle])
-        details.axis = .vertical
-        details.spacing = 3
-        if !profile.bio.isEmpty {
-            details.setCustomSpacing(7, after: handle)
-            details.addArrangedSubview(makeLabel(.subheadline, text: profile.bio, color: .secondaryLabel))
-        }
-        return details
-    }
-
-    func setPlaying(_ playing: Bool) {
-        video.setPlaying(playing && isVideo, muted: true)
-    }
+    func setPlaying(_ playing: Bool) { video.setPlaying(playing && isVideo, muted: true) }
 }
 
 private final class ClipThumbnailCell: UICollectionViewCell {
