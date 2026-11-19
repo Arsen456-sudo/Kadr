@@ -14,6 +14,7 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
     private var guestView: EmptyStateView?
     private var followState: Bool?
     private var lastSize: CGSize = .zero
+    private var lastSafeTop: CGFloat = -1
     private var visible = false
     private var pickerOwner: UUID?
     var edgeScrollView: UIScrollView { grid }
@@ -35,6 +36,7 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
         layout.minimumInteritemSpacing = 2
         layout.minimumLineSpacing = 2
         grid.backgroundColor = .systemBackground
+        grid.alwaysBounceVertical = true
         grid.contentInsetAdjustmentBehavior = .never
         grid.topEdgeEffect.style = .soft
         grid.topEdgeEffect.isHidden = true
@@ -63,8 +65,10 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        if lastSize != view.bounds.size {
+        if lastSize != view.bounds.size || lastSafeTop != view.safeAreaInsets.top {
+            lastSafeTop = view.safeAreaInsets.top
             lastSize = view.bounds.size
+            if let visibleProfile { hero?.setCover(for: visibleProfile, width: lastSize.width, top: lastSafeTop) }
             layout.invalidateLayout()
         }
         grid.contentInset.bottom = view.safeAreaInsets.bottom
@@ -146,7 +150,7 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
                         referenceSizeForHeaderInSection section: Int) -> CGSize {
         guard let profile = visibleProfile, collectionView.bounds.width > 0 else { return .zero }
         let width = collectionView.bounds.width
-        return CGSize(width: width, height: ProfileHero.height(for: profile, width: width, showsFollow: followState != nil))
+        return CGSize(width: width, height: ProfileHero.height(for: profile, width: width, top: view.safeAreaInsets.top, showsFollow: followState != nil))
     }
 
     func collectionView(_ collectionView: UICollectionView, viewForSupplementaryElementOfKind kind: String,
@@ -155,6 +159,7 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
                                                                    for: indexPath) as! ProfileHero
         guard let profile = visibleProfile else { return view }
         let follow = followState
+        view.setCover(for: profile, width: collectionView.bounds.width, top: self.view.safeAreaInsets.top)
         view.show(profile, hasPosts: !clips.isEmpty, following: follow) { [weak self] in
             guard let self else { return }
             self.store.toggleFollow(profile)
@@ -289,8 +294,7 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
 }
 
 private final class ProfileHero: UICollectionReusableView {
-    private static let identityOffset: CGFloat = 0.42
-    private static let bannerRatio: CGFloat = 0.49
+    private var coverHeight: NSLayoutConstraint!
     private static let avatarSide: CGFloat = 64
     private static let margin: CGFloat = 20
     private static let gap: CGFloat = 14
@@ -327,7 +331,7 @@ private final class ProfileHero: UICollectionReusableView {
         shade.isUserInteractionEnabled = false
         shade.pin(to: banner)
 
-        identity.alignment = .top
+        identity.alignment = .center
         identity.spacing = Self.gap
         followActions.axis = .vertical
         let details = UIStackView(arrangedSubviews: [identity, followActions])
@@ -345,30 +349,33 @@ private final class ProfileHero: UICollectionReusableView {
 
         banner.isUserInteractionEnabled = false
         banner.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(banner)
-        let spacer = UIView()
-        spacer.isUserInteractionEnabled = false
-        let sections = UIStackView(arrangedSubviews: [spacer, insetDetails, footerContainer])
+        let sections = UIStackView(arrangedSubviews: [banner, insetDetails, footerContainer])
         sections.axis = .vertical
         sections.pin(to: self)
-        NSLayoutConstraint.activate([
-            spacer.heightAnchor.constraint(equalTo: widthAnchor, multiplier: Self.identityOffset),
-            banner.topAnchor.constraint(equalTo: topAnchor),
-            banner.leadingAnchor.constraint(equalTo: leadingAnchor),
-            banner.trailingAnchor.constraint(equalTo: trailingAnchor),
-            banner.heightAnchor.constraint(equalTo: widthAnchor, multiplier: Self.bannerRatio)
-        ])
+        coverHeight = banner.heightAnchor.constraint(equalToConstant: 0)
+        coverHeight.isActive = true
     }
 
     required init?(coder: NSCoder) { fatalError("Use init(frame:)") }
 
-    static func height(for profile: Profile, width: CGFloat, showsFollow: Bool) -> CGFloat {
+    private static func coverSize(for profile: Profile, width: CGFloat, top: CGFloat) -> CGFloat {
+        let navigationBottom = top + 50
+        guard profile.bannerURL != nil else { return navigationBottom }
+        return max(navigationBottom + 28, min(180, width * 0.40))
+    }
+
+    func setCover(for profile: Profile, width: CGFloat, top: CGFloat) {
+        coverHeight.constant = Self.coverSize(for: profile, width: width, top: top)
+        banner.backgroundColor = profile.bannerURL == nil ? .systemBackground : .black
+    }
+
+    static func height(for profile: Profile, width: CGFloat, top: CGFloat, showsFollow: Bool) -> CGFloat {
         let textWidth = max(1, width - 2 * margin - avatarSide - gap)
         let labels = makeDetails(profile)
         let measured = labels.systemLayoutSizeFitting(CGSize(width: textWidth, height: 0),
             withHorizontalFittingPriority: .required, verticalFittingPriority: .fittingSizeLevel).height
         let actionHeight = showsFollow ? followHeight + verticalPadding : 0
-        return ceil(width * identityOffset + max(avatarSide, measured) + 2 * verticalPadding + actionHeight + footerHeight)
+        return ceil(coverSize(for: profile, width: width, top: top) + max(avatarSide, measured) + 2 * verticalPadding + actionHeight + footerHeight)
     }
 
     override func prepareForReuse() {

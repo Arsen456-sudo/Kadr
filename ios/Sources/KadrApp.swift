@@ -155,6 +155,11 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         view.bringSubviewToFront(header)
+        if header.topItem === feedHeader {
+            let height = feedHeader.rightBarButtonItem?.accessibilityFrame.height ?? 0
+            let measured = height > 0 && height.isFinite ? height : header.bounds.height
+            if measured > 0 { segments.buttonHeight = measured }
+        }
     }
 
     func tabBarController(_ tabBarController: UITabBarController, shouldSelect controller: UIViewController) -> Bool {
