@@ -37,7 +37,7 @@ extension UIColor {
     static let kadrPeach = UIColor(red: 1, green: 0.69, blue: 0.51, alpha: 1)
 }
 
-final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UIAdaptivePresentationControllerDelegate {
+final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPresentationControllerDelegate {
     private let store = LocalStore()
     private lazy var feed = FeedController(store: store)
     private lazy var saved = SavedController(store: store)
