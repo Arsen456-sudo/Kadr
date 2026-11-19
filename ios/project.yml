@@ -1,0 +1,32 @@
+name: Kadr
+options:
+  deploymentTarget:
+    iOS: "26.0"
+  developmentLanguage: uk
+settings:
+  base:
+    SWIFT_VERSION: "5.0"
+targets:
+  Kadr:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+      - path: Media
+        buildPhase: resources
+    info:
+      path: Info.plist
+      properties:
+        CFBundleDisplayName: Кадр
+        UILaunchScreen: {}
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.kadr.prototype
+        TARGETED_DEVICE_FAMILY: "1"
+        MARKETING_VERSION: "0.1.0"
+        CURRENT_PROJECT_VERSION: "1"
+    scheme: {}

@@ -1,0 +1,39 @@
+name: iOS signed IPA
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    if: github.ref == 'refs/heads/main'
+    runs-on: macos-26
+    timeout-minutes: 30
+    environment: ios-signing
+    steps:
+      - name: Check out the source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Generate Xcode project
+        run: |
+          xcodebuild -version
+          brew install xcodegen
+          xcodegen generate --spec ios/project.yml
+      - name: Archive and export an Ad Hoc IPA
+        env:
+          IOS_DISTRIBUTION_P12_BASE64: ${{ secrets.IOS_DISTRIBUTION_P12_BASE64 }}
+          IOS_DISTRIBUTION_P12_PASSWORD: ${{ secrets.IOS_DISTRIBUTION_P12_PASSWORD }}
+          IOS_AD_HOC_PROFILE_BASE64: ${{ secrets.IOS_AD_HOC_PROFILE_BASE64 }}
+          IOS_IPA_PASSPHRASE: ${{ secrets.IOS_IPA_PASSPHRASE }}
+        run: bash ios/ci/export-ipa.sh
+      - name: Upload the encrypted IPA
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: Kadr-iOS-Ad-Hoc
+          path: ios/build/ipa/Kadr.ipa.gpg
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0

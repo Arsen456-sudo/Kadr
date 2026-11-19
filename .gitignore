@@ -1,0 +1,14 @@
+/ios/Kadr.xcodeproj/
+/ios/Info.plist
+/ios/build/
+*.xcuserstate
+.DS_Store
+/Kadr-iOS-Simulator.zip
+.env
+.env.*
+*.p12
+*.p8
+*.mobileprovision
+*.ipa
+*.ipa.gpg
+*.xcarchive/
