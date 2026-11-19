@@ -228,8 +228,7 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
         let canSignOut = screen == .profile && store.active != nil
         guard toolbarState.screen != screen || toolbarState.canSignOut != canSignOut else { return }
         withAnimation(animated && !UIAccessibility.isReduceMotionEnabled ? .default : nil) {
-            toolbarState.screen = screen
-            toolbarState.canSignOut = canSignOut
+            toolbarState.context = .init(screen: screen, canSignOut: canSignOut)
         }
         view.setNeedsLayout()
     }

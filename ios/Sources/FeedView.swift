@@ -154,13 +154,7 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
         let changed = self.section != section
         self.section = section
         guard isViewLoaded else { return }
-        let updates = { self.refresh(preferredID: preferredID, reset: changed) }
-        if changed && view.window != nil && !UIAccessibility.isReduceMotionEnabled {
-            UIView.transition(with: view, duration: 0.22, options: [.transitionCrossDissolve, .beginFromCurrentState],
-                              animations: updates)
-        } else {
-            updates()
-        }
+        refresh(preferredID: preferredID, reset: changed)
     }
 
     func refresh(preferredID: String? = nil, reset: Bool = false) {
@@ -354,22 +348,14 @@ private final class VideoPage: UIViewController {
 
     private func updatePauseIndicator() {
         video.setPlaying(enabled && !paused)
-        let update = {
-            self.resumeButton.alpha = self.paused ? 1 : 0
-            self.resumeButton.transform = self.paused ? .identity : CGAffineTransform(scaleX: 0.78, y: 0.78)
-        }
-        if UIAccessibility.isReduceMotionEnabled { update() }
-        else {
-            UIView.animate(withDuration: 0.26, delay: 0, usingSpringWithDamping: 0.72,
-                           initialSpringVelocity: 0, options: [.beginFromCurrentState, .allowUserInteraction],
-                           animations: update)
-        }
+        resumeButton.alpha = paused ? 1 : 0
     }
 }
 
 func makePlaybackButton(symbol: String, label: String) -> UIButton {
     var style = UIButton.Configuration.glass()
     style.cornerStyle = .capsule
+    style.symbolContentTransition = UIAccessibility.isReduceMotionEnabled ? nil : UISymbolContentTransition(.replace)
     style.image = UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 30, weight: .semibold))
     style.baseForegroundColor = .white
     let button = UIButton(configuration: style)

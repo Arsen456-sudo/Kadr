@@ -3,7 +3,7 @@ import UIKit
 
 @MainActor
 final class KadrToolbarState: ObservableObject {
-    enum Screen {
+    enum Screen: Equatable {
         case feed, saved, inbox, profile
 
         var title: String {
@@ -16,8 +16,14 @@ final class KadrToolbarState: ObservableObject {
         }
     }
 
-    @Published var screen = Screen.feed
-    @Published var canSignOut = false
+    struct Context: Equatable {
+        var screen: Screen
+        var canSignOut: Bool
+    }
+
+    @Published var context = Context(screen: .feed, canSignOut: false)
+    var screen: Screen { context.screen }
+    var canSignOut: Bool { context.canSignOut }
     @Published var immersive = false
     @Published var feedSection = FeedSection.recommended
     var onSection: ((FeedSection) -> Void)?
@@ -38,19 +44,26 @@ struct KadrNavigationShell: View {
                 .navigationTitle(state.screen.title)
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    ToolbarItem(id: "header.action", placement: .topBarTrailing) {
-                        Button {
-                            if state.canSignOut { state.onSignOut?() }
-                            else { state.onSearch?() }
-                        } label: {
-                            if state.canSignOut {
+                    if state.canSignOut {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button {
+                                state.onSignOut?()
+                            } label: {
                                 Text("Вийти")
-                            } else {
+                            }
+                            .accessibilityLabel("Вийти")
+                            .accessibilityIdentifier("header.action")
+                        }
+                    } else {
+                        ToolbarItem(placement: .topBarTrailing) {
+                            Button {
+                                state.onSearch?()
+                            } label: {
                                 Image(systemName: "magnifyingglass")
                             }
+                            .accessibilityLabel("Пошук")
+                            .accessibilityIdentifier("header.action")
                         }
-                        .accessibilityLabel(state.canSignOut ? "Вийти" : "Пошук")
-                        .accessibilityIdentifier("header.action")
                     }
                     if state.screen == .feed {
                         ToolbarItem(placement: .principal) {
@@ -84,6 +97,7 @@ struct KadrNavigationShell: View {
             }
         }
         .statusBarHidden(state.immersive)
+        .buttonStyle(.automatic)
         .tint(Color(uiColor: .label))
     }
 

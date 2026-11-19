@@ -55,38 +55,27 @@ extension UIFont {
 }
 
 final class GlyphButton: UIButton {
-    private let glyph = UIImageView()
-    private let counter = makeLabel(.caption2)
-    private var symbolName = ""
-
     init(symbol: String, label: String, compact: Bool = false) {
         super.init(frame: .zero)
         var style = compact ? UIButton.Configuration.plain() : .glass()
         style.cornerStyle = .capsule
+        style.imagePlacement = .top
+        style.imagePadding = 2
+        style.contentInsets = .init(top: 4, leading: 2, bottom: 4, trailing: 2)
+        style.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: compact ? 22 : 20, weight: .semibold)
+        style.titleLineBreakMode = .byTruncatingTail
+        style.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
+            var result = attributes
+            result.font = .preferredFont(forTextStyle: .caption2)
+            result.foregroundColor = UIColor.label
+            return result
+        }
         configuration = style
         translatesAutoresizingMaskIntoConstraints = false
         isAccessibilityElement = true
-        glyph.contentMode = .scaleAspectFit
-        glyph.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: compact ? 22 : 20, weight: .semibold)
-        glyph.isAccessibilityElement = false
-        counter.textAlignment = .center
-        counter.numberOfLines = 1
-        let content = UIStackView(arrangedSubviews: [glyph, counter])
-        content.axis = .vertical
-        content.spacing = 2
-        content.alignment = .center
-        content.isUserInteractionEnabled = false
-        content.accessibilityElementsHidden = true
-        content.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(content)
         NSLayoutConstraint.activate([
             widthAnchor.constraint(equalToConstant: compact ? 42 : 48),
-            heightAnchor.constraint(greaterThanOrEqualToConstant: 48),
-            content.centerXAnchor.constraint(equalTo: centerXAnchor),
-            content.centerYAnchor.constraint(equalTo: centerYAnchor),
-            content.topAnchor.constraint(greaterThanOrEqualTo: topAnchor, constant: 4),
-            content.bottomAnchor.constraint(lessThanOrEqualTo: bottomAnchor, constant: -4),
-            content.widthAnchor.constraint(lessThanOrEqualTo: widthAnchor, constant: -4)
+            heightAnchor.constraint(greaterThanOrEqualToConstant: 48)
         ])
         let normalHeight = heightAnchor.constraint(equalToConstant: compact ? 52 : 48)
         normalHeight.priority = compact ? .defaultHigh : .required
@@ -100,21 +89,16 @@ final class GlyphButton: UIButton {
                 count: Int? = nil, animated: Bool = true) {
         accessibilityLabel = label
         accessibilityValue = count?.formatted()
-        counter.text = count?.formatted()
-        counter.isHidden = count == nil
-        glyph.tintColor = color
-        if symbol != symbolName, let image = UIImage(systemName: symbol) {
-            symbolName = symbol
-            if animated && window != nil && !UIAccessibility.isReduceMotionEnabled {
-                glyph.setSymbolImage(image, contentTransition: .replace)
-            } else {
-                glyph.image = image
-            }
-        }
+        var style = configuration
+        style?.image = UIImage(systemName: symbol)
+        style?.title = count?.formatted()
+        style?.baseForegroundColor = color
+        style?.symbolContentTransition = animated && !UIAccessibility.isReduceMotionEnabled ? UISymbolContentTransition(.replace) : nil
+        configuration = style
     }
 
     func bounce() {
-        if !UIAccessibility.isReduceMotionEnabled { glyph.addSymbolEffect(.bounce) }
+        if !UIAccessibility.isReduceMotionEnabled { imageView?.addSymbolEffect(.bounce) }
     }
 }
 

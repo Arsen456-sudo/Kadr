@@ -1,6 +1,7 @@
 import AVFoundation
 import PhotosUI
 import UIKit
+import Symbols
 import UniformTypeIdentifiers
 
 final class CommentsController: UIViewController, UITableViewDataSource, UITextFieldDelegate {
@@ -168,11 +169,8 @@ final class ClipPreviewController: UIViewController {
                 configuration?.image = UIImage(systemName: self.paused ? "play.fill" : "pause.fill",
                     withConfiguration: UIImage.SymbolConfiguration(pointSize: 30, weight: .semibold))
                 control.accessibilityLabel = self.paused ? "Відтворити" : "Призупинити"
-                if UIAccessibility.isReduceMotionEnabled { control.configuration = configuration }
-                else {
-                    UIView.transition(with: control, duration: 0.18, options: [.transitionCrossDissolve, .allowUserInteraction],
-                                      animations: { control.configuration = configuration })
-                }
+                configuration?.symbolContentTransition = UIAccessibility.isReduceMotionEnabled ? nil : UISymbolContentTransition(.replace)
+                control.configuration = configuration
             }
         }, for: .primaryActionTriggered)
     }
