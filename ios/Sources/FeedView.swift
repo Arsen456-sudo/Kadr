@@ -17,7 +17,13 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
     private let empty = EmptyStateView(title: "У підписках поки немає відео",
                                        message: "Підпишись на авторів, щоб бачити їхні публікації.",
                                        symbol: "person.2")
-    private let reactionIsland = glassIsland()
+    private let reactionIsland = glassIsland(interactive: true)
+    private let actionGlass: UIVisualEffectView = {
+        let effect = UIGlassContainerEffect()
+        effect.spacing = 6
+        return UIVisualEffectView(effect: effect)
+    }()
+    private let actionEdge = UIScrollEdgeElementContainerInteraction()
     private let sound = UIButton()
     private let authorAvatar = UIButton()
     private let actionStack = UIStackView()
@@ -96,6 +102,8 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
         sound.configuration = soundStyle
         sound.tintColor = .label
         updateSound()
+        sound.isPointerInteractionEnabled = true
+        authorAvatar.isPointerInteractionEnabled = true
         sound.translatesAutoresizingMaskIntoConstraints = false
         authorAvatar.translatesAutoresizingMaskIntoConstraints = false
         authorAvatar.accessibilityIdentifier = "feed.author"
@@ -107,8 +115,12 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
         actionStack.alignment = .center
         actionStack.spacing = 8
         for item in [authorAvatar, reactionIsland, sound] { actionStack.addArrangedSubview(item) }
-        actionStack.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(actionStack)
+        actionGlass.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(actionGlass)
+        actionStack.pin(to: actionGlass.contentView)
+        actionEdge.edge = .bottom
+        actionEdge.scrollView = edgeScrollView
+        actionGlass.addInteraction(actionEdge)
         NotificationCenter.default.addObserver(self, selector: #selector(profileDidChange(_:)),
                                                name: .kadrProfileDidChange, object: store)
         sound.accessibilityIdentifier = "feed.sound"
@@ -131,8 +143,9 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
             sound.heightAnchor.constraint(equalTo: sound.widthAnchor),
             authorAvatar.widthAnchor.constraint(equalTo: sound.widthAnchor),
             authorAvatar.heightAnchor.constraint(equalTo: sound.heightAnchor),
-            actionStack.trailingAnchor.constraint(equalTo: safe.trailingAnchor, constant: -16),
-            actionStack.bottomAnchor.constraint(equalTo: safe.bottomAnchor, constant: -6),
+            actionGlass.widthAnchor.constraint(equalTo: sound.widthAnchor),
+            actionGlass.trailingAnchor.constraint(equalTo: safe.trailingAnchor, constant: -16),
+            actionGlass.bottomAnchor.constraint(equalTo: safe.bottomAnchor, constant: -6),
             captionStack.leadingAnchor.constraint(equalTo: safe.leadingAnchor, constant: 18),
             captionStack.trailingAnchor.constraint(equalTo: safe.trailingAnchor, constant: -130),
             captionStack.bottomAnchor.constraint(equalTo: safe.bottomAnchor, constant: -14)
@@ -174,10 +187,14 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
 
     private func updateCurrent() {
         let active = clips.isEmpty ? nil : page?.clip
-        actionStack.isHidden = active == nil || immersive
+        actionGlass.isHidden = active == nil || immersive
         captionStack.isHidden = active == nil || immersive
         empty.isHidden = active != nil || immersive
         page?.setImmersive(immersive)
+        edgeScrollView?.topEdgeEffect.style = .soft
+        edgeScrollView?.topEdgeEffect.isHidden = immersive
+        edgeScrollView?.bottomEdgeEffect.style = .soft
+        edgeScrollView?.bottomEdgeEffect.isHidden = immersive
         reactionIsland.isHidden = active == nil
         sound.isHidden = active == nil || active?.isPhoto == true
         if let active {
@@ -231,10 +248,10 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
         let liked = store.liked(clip)
         let saved = store.bookmarked(clip)
         like.update(symbol: liked ? "heart.fill" : "heart", label: liked ? "Прибрати лайк" : "Подобається",
-                    color: liked ? .kadrPeach : .label, count: store.likes(clip), animated: bounce == .like)
+                    color: liked ? .kadrPeach : .label, count: store.likes(clip), animated: bounce == .like, selected: liked)
         comments.update(symbol: "bubble", label: "Коментарі", count: store.comments(clip).count, animated: false)
         bookmark.update(symbol: saved ? "bookmark.fill" : "bookmark", label: saved ? "Прибрати зі збереженого" : "Зберегти",
-                        color: saved ? .kadrPeach : .label, animated: bounce == .bookmark)
+                        color: saved ? .kadrPeach : .label, animated: bounce == .bookmark, selected: saved)
         if bounce == .like && liked { like.bounce() }
         if bounce == .bookmark && saved { bookmark.bounce() }
     }
@@ -303,7 +320,7 @@ private final class VideoPage: UIViewController {
         video.pin(to: view)
         video.load(clip.url, adaptsLandscape: true)
         shade.isHidden = immersive
-        shade.gradient.colors = [UIColor.black.withAlphaComponent(0.44).cgColor,
+        shade.gradient.colors = [UIColor.clear.cgColor,
                                   UIColor.clear.cgColor, UIColor.clear.cgColor,
                                   UIColor.black.withAlphaComponent(0.74).cgColor]
         shade.isUserInteractionEnabled = false

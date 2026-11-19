@@ -59,6 +59,7 @@ final class GlyphButton: UIButton {
         super.init(frame: .zero)
         var style = compact ? UIButton.Configuration.plain() : .glass()
         style.cornerStyle = .capsule
+        style.automaticallyUpdateForSelection = false
         style.imagePlacement = .top
         style.imagePadding = 2
         style.contentInsets = .init(top: 4, leading: 2, bottom: 4, trailing: 2)
@@ -73,6 +74,7 @@ final class GlyphButton: UIButton {
         configuration = style
         translatesAutoresizingMaskIntoConstraints = false
         isAccessibilityElement = true
+        isPointerInteractionEnabled = true
         NSLayoutConstraint.activate([
             widthAnchor.constraint(equalToConstant: compact ? 42 : 48),
             heightAnchor.constraint(greaterThanOrEqualToConstant: 48)
@@ -86,7 +88,8 @@ final class GlyphButton: UIButton {
     required init?(coder: NSCoder) { fatalError("Use init(symbol:label:)") }
 
     func update(symbol: String, label: String, color: UIColor = .label,
-                count: Int? = nil, animated: Bool = true) {
+                count: Int? = nil, animated: Bool = true, selected: Bool = false) {
+        isSelected = selected
         accessibilityLabel = label
         accessibilityValue = count?.formatted()
         var style = configuration
@@ -102,8 +105,10 @@ final class GlyphButton: UIButton {
     }
 }
 
-func glassIsland(style: UIGlassEffect.Style = .regular) -> UIVisualEffectView {
-    let view = UIVisualEffectView(effect: UIGlassEffect(style: style))
+func glassIsland(style: UIGlassEffect.Style = .regular, interactive: Bool = false) -> UIVisualEffectView {
+    let effect = UIGlassEffect(style: style)
+    effect.isInteractive = interactive
+    let view = UIVisualEffectView(effect: effect)
     view.cornerConfiguration = .capsule()
     view.translatesAutoresizingMaskIntoConstraints = false
     return view

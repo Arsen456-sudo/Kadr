@@ -215,7 +215,7 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
         scroll?.bottomEdgeEffect.style = .soft
         scroll?.topEdgeEffect.style = .soft
         bottomEdge.scrollView = scroll
-        topEdge.scrollView = isFeed ? nil : scroll
+        topEdge.scrollView = scroll
         showHeader(for: controller, animated: animated)
     }
 
