@@ -40,11 +40,16 @@ struct KadrNavigationShell: View {
     let tabs: KadrTabs
     @ObservedObject var state: KadrToolbarState
 
+    private var edgeStyle: ScrollEdgeEffectStyle {
+        if #available(iOS 27.0, *), state.screen == .feed { return .automatic }
+        return .soft
+    }
+
     var body: some View {
         NavigationStack {
             KadrTabContent(tabs: tabs)
                 .ignoresSafeArea(.container)
-                .scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
+                .scrollEdgeEffectStyle(edgeStyle, for: [.top, .bottom])
                 .navigationTitle(state.screen.title)
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {

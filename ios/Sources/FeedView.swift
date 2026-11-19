@@ -202,9 +202,9 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
         captionStack.isHidden = active == nil || immersive
         empty.isHidden = active != nil || immersive
         page?.setImmersive(immersive)
-        edgeScrollView?.topEdgeEffect.style = .soft
+        edgeScrollView?.topEdgeEffect.style = feedScrollEdgeStyle
         edgeScrollView?.topEdgeEffect.isHidden = immersive
-        edgeScrollView?.bottomEdgeEffect.style = .soft
+        edgeScrollView?.bottomEdgeEffect.style = feedScrollEdgeStyle
         edgeScrollView?.bottomEdgeEffect.isHidden = immersive
         reactionIsland.isHidden = active == nil
         sound.isHidden = active == nil || active?.isPhoto == true

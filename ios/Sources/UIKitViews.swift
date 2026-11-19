@@ -1,6 +1,13 @@
 import UIKit
 import Symbols
 
+// iOS 27 can suppress .soft for apps linked with SDK 26. Apple recommends
+// .automatic for the system edge treatment on that OS (Developer Forums 834059).
+var feedScrollEdgeStyle: UIScrollEdgeEffect.Style {
+    if #available(iOS 27.0, *) { return .automatic }
+    return .soft
+}
+
 func makeLabel(_ style: UIFont.TextStyle, text: String? = nil, color: UIColor = .label) -> UILabel {
     let label = UILabel()
     label.font = .preferredFont(forTextStyle: style)

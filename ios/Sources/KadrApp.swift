@@ -220,8 +220,8 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
         let isFeed = controller === feed
         let scroll: UIScrollView? = isFeed ? feed.edgeScrollView
             : controller === profile ? profile.edgeScrollView : controller === inbox ? inbox.scrollView : saved.tableView
-        scroll?.topEdgeEffect.style = .soft
-        scroll?.bottomEdgeEffect.style = .soft
+        scroll?.topEdgeEffect.style = isFeed ? feedScrollEdgeStyle : .soft
+        scroll?.bottomEdgeEffect.style = isFeed ? feedScrollEdgeStyle : .soft
         scroll?.topEdgeEffect.isHidden = isFeed && immersive
         scroll?.bottomEdgeEffect.isHidden = isFeed && immersive
         if bottomEdge.scrollView !== scroll { bottomEdge.scrollView = scroll }

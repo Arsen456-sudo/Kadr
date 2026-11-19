@@ -26,6 +26,11 @@ final class ProfileSectionPicker: GlassSectionPicker {
 
     init() {
         super.init(titles: ProfileSection.allCases.map(\.title), symbols: ProfileSection.allCases.map(\.symbol))
+        // Clear Liquid Glass adds no tinted backing and leaves the native selection capsule intact.
+        let glass = glassIsland(style: .clear)
+        glass.isUserInteractionEnabled = false
+        glass.pin(to: self)
+        sendSubviewToBack(glass)
         matchSearchHeight(44)
         onIndexSelection = { [weak self] index in
             guard let section = ProfileSection(rawValue: index) else { return }
