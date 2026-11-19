@@ -11,12 +11,41 @@ struct Profile: Codable, Identifiable {
     var bannerURL: URL? { bannerFile.map { LocalStore.directory.appending(path: $0) } }
 }
 
+enum MediaKind: String, Codable { case video, photo }
+
+struct PostMedia: Codable, Identifiable {
+    let id: UUID
+    let kind: MediaKind
+    let file: String
+    var remoteURL: URL?
+    var url: URL { remoteURL ?? LocalStore.directory.appending(path: file) }
+}
+
+struct PostOptions: Codable {
+    var tags: String = ""
+    var location: String = ""
+    var allowsComments: Bool = true
+    var onlyMe: Bool = false
+    var coverIndex: Int = 0
+}
+
 struct Clip: Codable, Identifiable {
     let id: String
     let authorID: UUID?
     let caption: String
     let file: String
     let credit: String
+    var media: [PostMedia]? = nil
+    var options: PostOptions? = nil
+    var createdAt: Date? = nil
+    var isDraft: Bool? = nil
+
+    var isPhoto: Bool { media?.first?.kind == .photo }
+    var settings: PostOptions { options ?? PostOptions() }
+    var coverURL: URL? {
+        guard let media, !media.isEmpty else { return url }
+        return media[min(max(0, settings.coverIndex), media.count - 1)].url
+    }
 
     static let samples = [
         Clip(id: "bunny", authorID: nil, caption: "Big Buck Bunny",
@@ -70,7 +99,11 @@ final class LocalStore {
     private var canSave = true
     var profiles: [Profile] { state.profiles }
     var active: Profile? { profile(state.activeID) }
-    var allClips: [Clip] { state.clips + Clip.samples }
+    var allClips: [Clip] {
+        state.clips.filter { $0.isDraft != true && (!$0.settings.onlyMe || $0.authorID == state.activeID) } + Clip.samples
+    }
+    var draft: Clip? { state.clips.first { $0.authorID == state.activeID && $0.isDraft == true } }
+
 
     func profile(_ id: UUID?) -> Profile? { state.profiles.first { $0.id == id } }
 
@@ -82,12 +115,12 @@ final class LocalStore {
         case .following:
             guard let id = state.activeID else { return [] }
             let followed = state.following[id, default: []]
-            return state.clips.filter { $0.authorID.map(followed.contains) ?? false }
+            return allClips.filter { $0.authorID.map(followed.contains) ?? false }
         case .recommended:
             guard let id = state.activeID else { return allClips }
             let followed = state.following[id, default: []]
-            let preferred = state.clips.filter { $0.authorID.map(followed.contains) ?? false }
-            let others = state.clips.filter { !($0.authorID.map(followed.contains) ?? false) }
+            let preferred = allClips.filter { $0.authorID.map(followed.contains) ?? false }
+            let others = allClips.filter { $0.authorID != nil && !($0.authorID.map(followed.contains) ?? false) }
             let samples = id.uuid.0.isMultiple(of: 2) ? Clip.samples : Array(Clip.samples.reversed())
             return preferred + others + samples
         }
@@ -191,29 +224,54 @@ final class LocalStore {
     @discardableResult
     func addComment(_ text: String, to clip: Clip) -> Bool {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let id = state.activeID, !text.isEmpty, text.count <= 500 else { return false }
+        guard clip.settings.allowsComments, let id = state.activeID, !text.isEmpty, text.count <= 500 else { return false }
         var next = state
         next.comments[clip.id, default: []].append(Comment(id: UUID(), authorID: id, text: text))
         return save(next)
     }
 
     func publish(_ movie: URL, caption: String) -> Clip? {
-        guard let authorID = state.activeID else { return nil }
-        let id = UUID().uuidString
-        let file = id + "." + movie.pathExtension
-        let destination = Self.directory.appending(path: file)
-        var next = state
-        let clip = Clip(id: id, authorID: authorID, caption: caption, file: file, credit: "")
-        next.clips.insert(clip, at: 0)
+        savePost(sources: [(movie, .video)], caption: caption, options: PostOptions(), asDraft: false)
+    }
+
+    func savePost(sources: [(URL, MediaKind)], caption: String, options: PostOptions, asDraft: Bool) -> Clip? {
+        guard let authorID = state.activeID, !sources.isEmpty else { return nil }
+        guard sources.allSatisfy({ $0.1 == sources[0].1 }),
+              sources[0].1 != .video || sources.count == 1 else {
+            errorMessage = "Вибери одне відео або альбом фотографій."
+            return nil
+        }
+        var copied: [URL] = []
         do {
             try FileManager.default.createDirectory(at: Self.directory, withIntermediateDirectories: true)
-            try FileManager.default.copyItem(at: movie, to: destination)
-            if save(next) { return clip }
-            try? FileManager.default.removeItem(at: destination)
+            let media = try sources.map { source, kind -> PostMedia in
+                let id = UUID()
+                let file = id.uuidString + "." + source.pathExtension
+                let destination = Self.directory.appending(path: file)
+                try FileManager.default.copyItem(at: source, to: destination)
+                copied.append(destination)
+                return PostMedia(id: id, kind: kind, file: file)
+            }
+            let previousDraft = draft
+            let post = Clip(id: UUID().uuidString, authorID: authorID, caption: caption,
+                            file: media[0].file, credit: "", media: media, options: options,
+                            createdAt: Date(), isDraft: asDraft)
+            var next = state
+            if let previousDraft { next.clips.removeAll { $0.id == previousDraft.id } }
+            next.clips.insert(post, at: 0)
+            guard save(next) else {
+                for url in copied { try? FileManager.default.removeItem(at: url) }
+                return nil
+            }
+            for item in previousDraft?.media ?? [] {
+                try? FileManager.default.removeItem(at: Self.directory.appending(path: item.file))
+            }
+            return post
         } catch {
-            errorMessage = "Не вдалося зберегти відео."
+            for url in copied { try? FileManager.default.removeItem(at: url) }
+            errorMessage = "Не вдалося зберегти публікацію. Перевір вільне місце."
+            return nil
         }
-        return nil
     }
 
     private func save(_ next: State) -> Bool {

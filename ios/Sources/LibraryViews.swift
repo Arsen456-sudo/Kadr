@@ -144,7 +144,7 @@ private func clipCell(in table: UITableView, clip: Clip, store: LocalStore) -> U
     let cell = table.dequeueReusableCell(withIdentifier: "clip") ??
         UITableViewCell(style: .default, reuseIdentifier: "clip")
     var configuration = cell.defaultContentConfiguration()
-    configuration.image = UIImage(systemName: "play.rectangle.fill")
+    configuration.image = UIImage(systemName: clip.isPhoto ? "photo.on.rectangle" : "play.rectangle.fill")
     configuration.imageProperties.tintColor = .kadrPeach
     configuration.text = clip.caption
     configuration.secondaryText = store.profile(clip.authorID).map { "@\($0.handle)" } ?? clip.credit

@@ -473,7 +473,16 @@ private final class ClipThumbnailCell: UICollectionViewCell {
         representedID = clip.id
         accessibilityLabel = clip.caption
         image.image = nil
-        guard let url = clip.url else { return }
+        play.image = UIImage(systemName: clip.isPhoto ? "square.on.square" : "play.fill")
+        guard let url = clip.coverURL else { return }
+        if clip.isPhoto {
+            task = Task { [weak self] in
+                let poster = await PhotoLoader.image(url, maxPixel: 480)
+                guard !Task.isCancelled, self?.representedID == clip.id else { return }
+                self?.image.image = poster
+            }
+            return
+        }
         task = Task { [weak self] in
             guard let poster = await VideoPoster.image(for: url), !Task.isCancelled,
                   let self, self.representedID == clip.id else { return }

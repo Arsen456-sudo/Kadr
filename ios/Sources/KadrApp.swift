@@ -262,6 +262,7 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
     }
 
     private func openComments(_ clip: Clip) {
+        guard clip.settings.allowsComments else { return }
         let comments = CommentsController(store: store, clip: clip)
         comments.onAccount = { [weak self] in
             self?.closeSheet {
@@ -275,6 +276,7 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
     private func openPublisher() {
         guard store.active != nil else { openAccount(); return }
         let publisher = PublishController(store: store)
+        publisher.onClose = { [weak self] in self?.closeSheet() }
         publisher.onPublish = { [weak self] clip in
             self?.closeSheet {
                 guard let self else { return }

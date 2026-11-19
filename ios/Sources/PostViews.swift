@@ -131,138 +131,6 @@ final class CommentsController: UIViewController, UITableViewDataSource, UITextF
     }
 }
 
-final class PublishController: FormController, PHPickerViewControllerDelegate {
-    private let store: LocalStore
-    private let preview = VideoSurface(frame: .zero)
-    private let caption = UITextField()
-    private let busy = UIActivityIndicatorView(style: .medium)
-    private lazy var submit = textButton("Опублікувати на пристрої", prominent: true) { [weak self] in self?.publish() }
-    private var movie: URL?
-    private var generation = 0
-    var onPublish: ((Clip) -> Void)?
-
-    init(store: LocalStore) {
-        self.store = store
-        super.init(nibName: nil, bundle: nil)
-    }
-
-    required init?(coder: NSCoder) { fatalError("Use init(store:)") }
-
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        title = "Нове відео"
-        content.addArrangedSubview(textButton("Вибрати відео", symbol: "film") { [weak self] in self?.pickVideo() })
-        content.addArrangedSubview(busy)
-        let previewHeight = preview.heightAnchor.constraint(equalToConstant: 205)
-        previewHeight.priority = .defaultHigh
-        previewHeight.isActive = true
-        preview.layer.cornerRadius = 18
-        preview.clipsToBounds = true
-        preview.isHidden = true
-        content.addArrangedSubview(preview)
-        caption.placeholder = "Опис відео"
-        caption.borderStyle = .roundedRect
-        caption.font = .preferredFont(forTextStyle: .body)
-        caption.adjustsFontForContentSizeCategory = true
-        content.addArrangedSubview(caption)
-        submit.isEnabled = false
-        content.addArrangedSubview(submit)
-    }
-
-    override func viewWillDisappear(_ animated: Bool) {
-        super.viewWillDisappear(animated)
-        preview.setPlaying(false)
-    }
-
-    override func viewDidAppear(_ animated: Bool) {
-        super.viewDidAppear(animated)
-        preview.setPlaying(movie != nil)
-    }
-
-    private func pickVideo() {
-        var configuration = PHPickerConfiguration()
-        configuration.filter = .videos
-        configuration.preferredAssetRepresentationMode = .current
-        let picker = PHPickerViewController(configuration: configuration)
-        picker.delegate = self
-        present(picker, animated: true)
-    }
-
-    func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
-        picker.dismiss(animated: true)
-        guard let provider = results.first?.itemProvider else { return }
-        // Request a concrete representation supplied by Photos when one is available.
-        let formats = provider.registeredTypeIdentifiers.compactMap(UTType.init).filter { $0.conforms(to: .movie) }
-        guard let format = formats.first(where: { $0.preferredFilenameExtension != nil }) ?? formats.first else {
-            reportImportError()
-            return
-        }
-        generation += 1
-        let request = generation
-        busy.startAnimating()
-        submit.isEnabled = false
-        provider.loadFileRepresentation(forTypeIdentifier: format.identifier) { [weak self] url, _ in
-            guard let url else {
-                DispatchQueue.main.async {
-                    if self?.generation == request { self?.reportImportError() }
-                }
-                return
-            }
-            let suffix = url.pathExtension.isEmpty ? (format.preferredFilenameExtension ?? "mov") : url.pathExtension
-            let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
-                .appendingPathExtension(suffix)
-            do {
-                try FileManager.default.copyItem(at: url, to: temporary)
-            } catch {
-                DispatchQueue.main.async {
-                    if self?.generation == request { self?.reportImportError() }
-                }
-                return
-            }
-            Task { @MainActor [weak self] in
-                let asset = AVURLAsset(url: temporary)
-                let playable = (try? await asset.load(.isPlayable)) == true
-                let tracks = playable ? (try? await asset.loadTracks(withMediaType: .video)) : nil
-                let hasVideo = tracks?.isEmpty == false
-                guard let self, self.generation == request, hasVideo else {
-                    try? FileManager.default.removeItem(at: temporary)
-                    if self?.generation == request { self?.reportImportError() }
-                    return
-                }
-                self.preview.load(temporary, adaptsLandscape: true)
-                if let old = self.movie { try? FileManager.default.removeItem(at: old) }
-                self.movie = temporary
-                self.preview.isHidden = false
-                self.preview.setPlaying(true)
-                self.busy.stopAnimating()
-                self.submit.isEnabled = true
-            }
-        }
-    }
-
-    private func reportImportError() {
-        busy.stopAnimating()
-        submit.isEnabled = movie != nil
-        showMessage("Не вдалося імпортувати відео.")
-    }
-
-    private func publish() {
-        guard let movie else { return }
-        let text = (caption.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard let clip = store.publish(movie, caption: text.isEmpty ? "Нове відео" : String(text.prefix(200))) else {
-            showMessage(store.errorMessage ?? "Не вдалося опублікувати відео.")
-            store.errorMessage = nil
-            return
-        }
-        UINotificationFeedbackGenerator().notificationOccurred(.success)
-        onPublish?(clip)
-    }
-
-    deinit {
-        if let movie { try? FileManager.default.removeItem(at: movie) }
-    }
-}
-
 final class ClipPreviewController: UIViewController {
     private let clip: Clip
     private let video = VideoSurface(frame: .zero)
@@ -279,6 +147,10 @@ final class ClipPreviewController: UIViewController {
         super.viewDidLoad()
         title = clip.caption
         view.backgroundColor = .black
+        if clip.isPhoto {
+            embed(PhotoAlbumController(media: clip.media ?? []), in: view)
+            return
+        }
         video.pin(to: view)
         video.load(clip.url, adaptsLandscape: true)
         let control = makePlaybackButton(symbol: "pause.fill", label: "Призупинити")

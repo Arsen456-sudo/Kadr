@@ -146,10 +146,10 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
         let active = clips.isEmpty ? nil : page?.clip
         captionStack.isHidden = active == nil
         reactionIsland.isHidden = active == nil
-        sound.isHidden = active == nil
+        sound.isHidden = active == nil || active?.isPhoto == true
         if let active {
             author.text = store.profile(active.authorID).map { "@\($0.handle)" } ?? active.credit
-            caption.text = active.caption
+            caption.text = [active.caption, active.settings.tags, active.settings.location].filter { !$0.isEmpty }.joined(separator: "\n")
             updateReactions()
         }
         syncPlayback()
@@ -157,6 +157,7 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
 
     func updateReactions(bounce: Reaction? = nil) {
         guard let clip = page?.clip else { return }
+        comments.isHidden = !clip.settings.allowsComments
         let liked = store.liked(clip)
         let saved = store.bookmarked(clip)
         like.update(symbol: liked ? "heart.fill" : "heart", label: liked ? "Прибрати лайк" : "Подобається",
@@ -219,6 +220,10 @@ private final class VideoPage: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .black
+        if clip.isPhoto {
+            embed(PhotoAlbumController(media: clip.media ?? []), in: view)
+            return
+        }
         video.pin(to: view)
         video.load(clip.url, adaptsLandscape: true)
         let shade = GradientView()
