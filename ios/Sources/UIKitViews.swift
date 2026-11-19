@@ -209,10 +209,19 @@ final class FeedSectionPicker: UIView {
     private func configure(_ button: UIButton, title: String, selected: Bool) {
         var style = selected ? UIButton.Configuration.glass() : .plain()
         style.cornerStyle = .capsule
-        style.buttonSize = .medium
+        style.buttonSize = .small
         style.baseForegroundColor = .label
         style.title = title
+        style.titleLineBreakMode = .byTruncatingTail
+        style.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
+            var result = attributes
+            result.font = .preferredFont(forTextStyle: .footnote)
+            return result
+        }
         button.configuration = style
+        button.titleLabel?.numberOfLines = 1
+        button.titleLabel?.adjustsFontSizeToFitWidth = true
+        button.titleLabel?.minimumScaleFactor = 0.8
         if selected { button.accessibilityTraits.insert(.selected) }
         else { button.accessibilityTraits.remove(.selected) }
     }
