@@ -299,9 +299,11 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
         guard presentedViewController == nil else { return }
         keepsFeedPlaying = continuePlayback
         if !continuePlayback { feed.playbackEnabled = false }
-        controller.navigationItem.leftBarButtonItem = UIBarButtonItem(systemItem: .close, primaryAction: UIAction { [weak self] _ in
+        let close = UIBarButtonItem(systemItem: .close, primaryAction: UIAction { [weak self] _ in
             self?.closeSheet()
         })
+        close.accessibilityIdentifier = "sheet.close"
+        controller.navigationItem.leftBarButtonItem = close
         let navigation = UINavigationController(rootViewController: controller)
         navigation.modalPresentationStyle = .pageSheet
         if let sheet = navigation.sheetPresentationController {

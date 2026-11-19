@@ -15,8 +15,9 @@ final class NavigationTests: XCTestCase {
         let inbox = tabs.buttons["Вхідні"]
         let header = app.buttons["header.action"]
         XCTAssertTrue(feed.waitForExistence(timeout: 8))
-        XCTAssertTrue(app.buttons["feed.recommended"].exists)
+        XCTAssertTrue(app.buttons["Для тебе"].exists)
         XCTAssertEqual(header.label, "Пошук")
+        let searchWidth = header.frame.width
         XCTAssertTrue(app.staticTexts["Big Buck Bunny"].waitForExistence(timeout: 5))
         capture(app, named: "Kadr-Portrait")
         app.swipeUp()
@@ -55,23 +56,23 @@ final class NavigationTests: XCTestCase {
         app.buttons["Завершити"].tap()
         XCTAssertTrue(app.staticTexts["Kadr Test"].waitForExistence(timeout: 5))
         XCTAssertEqual(header.label, "Вийти")
-        XCTAssertGreaterThan(header.frame.width, 70)
+        XCTAssertGreaterThan(header.frame.width, searchWidth)
         XCTAssertTrue(app.buttons["Змінити банер"].exists)
         capture(app, named: "Kadr-Profile")
 
         feed.tap()
-        let following = app.buttons["feed.following"]
+        let following = app.buttons["Підписки"]
         XCTAssertTrue(following.waitForExistence(timeout: 5))
         XCTAssertEqual(header.label, "Пошук")
-        XCTAssertEqual(header.frame.width, 46, accuracy: 1)
+        XCTAssertEqual(header.frame.width, searchWidth, accuracy: 1)
         following.tap()
         XCTAssertTrue(app.staticTexts["У підписках поки немає відео"].waitForExistence(timeout: 5))
-        app.buttons["feed.recommended"].tap()
+        app.buttons["Для тебе"].tap()
         XCTAssertTrue(app.buttons["feed.sound"].exists)
         XCTAssertTrue(tabs.buttons["Додати"].exists)
         app.buttons["feed.comments"].tap()
         XCTAssertTrue(app.textFields["Написати коментар"].waitForExistence(timeout: 5))
-        app.navigationBars.firstMatch.buttons.firstMatch.tap()
+        app.buttons["sheet.close"].tap()
         let bookmark = app.buttons["feed.bookmark"]
         XCTAssertTrue(bookmark.waitForExistence(timeout: 5))
         bookmark.tap()
