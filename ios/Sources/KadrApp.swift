@@ -1,5 +1,4 @@
 import UIKit
-import Symbols
 
 @main
 final class AppDelegate: UIResponder, UIApplicationDelegate {
@@ -42,17 +41,14 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
     private lazy var feed = FeedController(store: store)
     private lazy var saved = SavedController(store: store)
     private lazy var profile = ProfileController(store: store, profileID: nil)
-    private let segments = UISegmentedControl(items: ["Для тебе", "Підписки"])
+    private let segments = FeedSectionPicker()
     private let sectionTitle = UILabel()
     private let headerAction = HeaderActionButton()
-    private let segmentIsland = glassIsland()
     private let topEdge = UIScrollEdgeElementContainerInteraction()
     private let bottomEdge = UIScrollEdgeElementContainerInteraction()
     private let addTab = UIViewController()
     private let inbox = InboxController()
     private var keepsFeedPlaying = false
-    private var currentSlide: TabTransition?
-    private weak var queuedTab: UIViewController?
     private var showingProfileAction = false
     private weak var selectedScreen: UIViewController?
     private var welcomePresented = false
@@ -103,18 +99,16 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
         profile.onClip = { [weak self] clip in self?.openClip(clip) }
         profile.onAccount = { [weak self] in self?.openAccount() }
 
-        segments.selectedSegmentIndex = 0
-        segments.accessibilityIdentifier = "feed.sections"
         headerAction.accessibilityIdentifier = "header.action"
-        segments.addAction(UIAction { [weak self] _ in
+        segments.onSelection = { [weak self] section in
             guard let self else { return }
-            if self.segments.selectedSegmentIndex == 1 && self.store.active == nil {
-                self.segments.selectedSegmentIndex = 0
+            if section == .following && self.store.active == nil {
                 self.openAccount()
                 return
             }
-            self.feed.selectSection(self.segments.selectedSegmentIndex == 0 ? .recommended : .following)
-        }, for: .valueChanged)
+            self.feed.selectSection(section)
+            self.segments.updateSelection(section)
+        }
 
         headerAction.addAction(UIAction { [weak self] _ in self?.performHeaderAction() }, for: .primaryActionTriggered)
     }
@@ -125,18 +119,17 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
         sectionTitle.adjustsFontForContentSizeCategory = true
         sectionTitle.accessibilityTraits.insert(.header)
         sectionTitle.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        for item in [sectionTitle, segmentIsland, headerAction] {
+        for item in [sectionTitle, segments, headerAction] {
             item.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview(item)
         }
-        segments.pin(to: segmentIsland.contentView, insets: .init(top: 5, leading: 6, bottom: 5, trailing: 6))
         NSLayoutConstraint.activate([
             headerAction.topAnchor.constraint(equalTo: safe.topAnchor, constant: 5),
             headerAction.trailingAnchor.constraint(equalTo: safe.trailingAnchor, constant: -16),
-            segmentIsland.centerXAnchor.constraint(equalTo: safe.centerXAnchor),
-            segmentIsland.centerYAnchor.constraint(equalTo: headerAction.centerYAnchor),
-            segmentIsland.heightAnchor.constraint(equalToConstant: HeaderActionButton.side),
-            segmentIsland.widthAnchor.constraint(equalToConstant: 184),
+            segments.centerXAnchor.constraint(equalTo: safe.centerXAnchor),
+            segments.centerYAnchor.constraint(equalTo: headerAction.centerYAnchor),
+            segments.heightAnchor.constraint(equalToConstant: HeaderActionButton.side),
+            segments.widthAnchor.constraint(equalToConstant: 184),
             sectionTitle.leadingAnchor.constraint(equalTo: safe.leadingAnchor, constant: 16),
             sectionTitle.centerYAnchor.constraint(equalTo: headerAction.centerYAnchor),
             sectionTitle.trailingAnchor.constraint(lessThanOrEqualTo: headerAction.leadingAnchor, constant: -10)
@@ -150,18 +143,13 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         view.bringSubviewToFront(sectionTitle)
-        view.bringSubviewToFront(segmentIsland)
+        view.bringSubviewToFront(segments)
         view.bringSubviewToFront(headerAction)
     }
 
     func tabBarController(_ tabBarController: UITabBarController, shouldSelect controller: UIViewController) -> Bool {
         if controller === addTab {
             openPublisher()
-            return false
-        }
-        if let currentSlide {
-            queuedTab = controller
-            currentSlide.finishEarly()
             return false
         }
         return true
@@ -172,33 +160,6 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
         selectedScreen = viewController
         refresh(animated: changed)
         if changed { UIAccessibility.post(notification: .screenChanged, argument: nil) }
-    }
-
-    func tabBarController(_ tabBarController: UITabBarController,
-                          animationControllerForTransitionFrom fromVC: UIViewController,
-                          to toVC: UIViewController) -> (any UIViewControllerAnimatedTransitioning)? {
-        guard !UIAccessibility.isReduceMotionEnabled, view.window != nil,
-              let controllers = viewControllers,
-              let from = controllers.firstIndex(where: { $0 === fromVC }),
-              let to = controllers.firstIndex(where: { $0 === toVC }) else { return nil }
-        if fromVC === feed { feed.playbackEnabled = false }
-        let slide = TabTransition(direction: to > from ? 1 : -1) { [weak self, weak toVC] in
-            self?.updateChrome(for: toVC, animated: true)
-        } completion: { [weak self] in
-            guard let self else { return }
-            self.currentSlide = nil
-            self.updatePlayback()
-            if let next = self.queuedTab {
-                self.queuedTab = nil
-                DispatchQueue.main.async { [weak self, weak next] in
-                    guard let self, let next, next !== self.selectedViewController else { return }
-                    self.selectedViewController = next
-                    self.tabBarController(self, didSelect: next)
-                }
-            }
-        }
-        currentSlide = slide
-        return slide
     }
 
     private func refresh(animated: Bool = true) {
@@ -212,7 +173,7 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
     private func updateChrome(for controller: UIViewController?, animated: Bool) {
         let isFeed = controller === feed
         let isProfile = controller === profile
-        segments.selectedSegmentIndex = feed.section == .following ? 1 : 0
+        segments.updateSelection(feed.section)
         sectionTitle.text = isProfile ? "Профіль" : controller === inbox ? "Вхідні" : "Збережене"
         let scroll: UIScrollView? = isFeed ? feed.edgeScrollView
             : isProfile ? profile.edgeScrollView : controller === inbox ? inbox.scrollView : saved.tableView
@@ -225,19 +186,8 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
             showingProfileAction = canSignOut
             headerAction.setLogout(canSignOut, animated: animated)
         }
-        segmentIsland.isUserInteractionEnabled = isFeed
-        segmentIsland.accessibilityElementsHidden = !isFeed
-        sectionTitle.accessibilityElementsHidden = isFeed
-        let changes = {
-            self.segmentIsland.alpha = isFeed ? 1 : 0
-            self.sectionTitle.alpha = isFeed ? 0 : 1
-        }
-        if animated && !UIAccessibility.isReduceMotionEnabled {
-            UIViewPropertyAnimator.runningPropertyAnimator(withDuration: 0.28, delay: 0,
-                options: [.beginFromCurrentState, .allowUserInteraction], animations: changes)
-        } else {
-            changes()
-        }
+        segments.isHidden = !isFeed
+        sectionTitle.isHidden = isFeed
     }
 
     private func updatePlayback() {
@@ -362,56 +312,6 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
         store.errorMessage = nil
         showMessage(error)
         return true
-    }
-}
-
-private final class TabTransition: NSObject, UIViewControllerAnimatedTransitioning {
-    private let direction: CGFloat
-    private let updateChrome: () -> Void
-    private let completion: () -> Void
-    private var animator: UIViewPropertyAnimator?
-
-    init(direction: CGFloat, updateChrome: @escaping () -> Void, completion: @escaping () -> Void) {
-        self.direction = direction
-        self.updateChrome = updateChrome
-        self.completion = completion
-    }
-
-    func finishEarly() {
-        guard let animator, animator.state == .active else { return }
-        animator.stopAnimation(false)
-        animator.finishAnimation(at: .end)
-    }
-
-    func transitionDuration(using context: (any UIViewControllerContextTransitioning)?) -> TimeInterval { 0.20 }
-
-    func animateTransition(using context: any UIViewControllerContextTransitioning) {
-        guard let destination = context.viewController(forKey: .to),
-              let incoming = context.view(forKey: .to),
-              let outgoing = context.view(forKey: .from) else {
-            context.completeTransition(false)
-            completion()
-            return
-        }
-        let finalFrame = context.finalFrame(for: destination)
-        incoming.frame = finalFrame.isEmpty ? outgoing.frame : finalFrame
-        let distance = context.containerView.bounds.width
-        incoming.transform = CGAffineTransform(translationX: direction * distance, y: 0)
-        context.containerView.addSubview(incoming)
-        updateChrome()
-        let animator = UIViewPropertyAnimator(duration: transitionDuration(using: context), curve: .easeOut) {
-            incoming.transform = .identity
-            outgoing.transform = CGAffineTransform(translationX: -self.direction * distance, y: 0)
-        }
-        self.animator = animator
-        animator.addCompletion { [weak self] _ in
-            if context.transitionWasCancelled { incoming.removeFromSuperview() }
-            context.completeTransition(!context.transitionWasCancelled)
-            outgoing.transform = .identity
-            self?.animator = nil
-            self?.completion()
-        }
-        animator.startAnimation()
     }
 }
 

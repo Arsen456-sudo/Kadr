@@ -53,6 +53,18 @@ jobs:
             -configuration Debug -destination "platform=iOS Simulator,id=$simulator" \
             -derivedDataPath ios/build CODE_SIGNING_ALLOWED=NO \
             -parallel-testing-enabled NO -resultBundlePath ios/build/KadrUITests.xcresult test
+      - name: Export UI screenshots from the simulator test
+        run: |
+          mkdir -p ios/build/screenshots
+          xcrun xcresulttool export attachments --path ios/build/KadrUITests.xcresult \
+            --output-path ios/build/screenshots
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Kadr-simulator-screenshots
+          path: |
+            ios/build/screenshots/*.png
+            ios/build/screenshots/manifest.json
+          if-no-files-found: error
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

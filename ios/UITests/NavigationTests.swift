@@ -15,8 +15,19 @@ final class NavigationTests: XCTestCase {
         let inbox = tabs.buttons["Вхідні"]
         let header = app.buttons["header.action"]
         XCTAssertTrue(feed.waitForExistence(timeout: 8))
-        XCTAssertTrue(app.segmentedControls.buttons["Для тебе"].exists)
+        XCTAssertTrue(app.buttons["feed.recommended"].exists)
         XCTAssertEqual(header.label, "Пошук")
+        XCTAssertTrue(app.staticTexts["Big Buck Bunny"].waitForExistence(timeout: 5))
+        app.swipeUp()
+        XCTAssertTrue(app.staticTexts["Sintel"].waitForExistence(timeout: 7))
+        let sound = app.buttons["feed.sound"]
+        let like = app.buttons["feed.like"]
+        XCTAssertEqual(sound.frame.midX, like.frame.midX, accuracy: 1)
+        XCTAssertEqual(sound.frame.width, like.frame.width + 6, accuracy: 1)
+        capture(app, named: "Kadr-Landscape")
+        app.swipeDown()
+        XCTAssertTrue(app.staticTexts["Big Buck Bunny"].waitForExistence(timeout: 7))
+        capture(app, named: "Kadr-Portrait")
 
         inbox.tap()
         XCTAssertTrue(app.staticTexts["Вхідні порожні"].waitForExistence(timeout: 5))
@@ -48,24 +59,25 @@ final class NavigationTests: XCTestCase {
         XCTAssertEqual(header.label, "Вийти")
         XCTAssertGreaterThan(header.frame.width, 70)
         XCTAssertTrue(app.buttons["Змінити банер"].exists)
+        capture(app, named: "Kadr-Profile")
 
         feed.tap()
-        let following = app.segmentedControls.buttons["Підписки"]
+        let following = app.buttons["feed.following"]
         XCTAssertTrue(following.waitForExistence(timeout: 5))
         XCTAssertEqual(header.label, "Пошук")
         XCTAssertLessThan(header.frame.width, 50)
         following.tap()
         XCTAssertTrue(app.staticTexts["У підписках поки немає відео"].waitForExistence(timeout: 5))
-        app.segmentedControls.buttons["Для тебе"].tap()
-        XCTAssertTrue(app.buttons["Увімкнути звук"].exists)
+        app.buttons["feed.recommended"].tap()
+        XCTAssertTrue(app.buttons["feed.sound"].exists)
         XCTAssertTrue(tabs.buttons["Додати"].exists)
-        app.buttons["Коментарі"].tap()
+        app.buttons["feed.comments"].tap()
         XCTAssertTrue(app.textFields["Написати коментар"].waitForExistence(timeout: 5))
         app.navigationBars.firstMatch.buttons.firstMatch.tap()
-        let bookmark = app.buttons["Зберегти"]
+        let bookmark = app.buttons["feed.bookmark"]
         XCTAssertTrue(bookmark.waitForExistence(timeout: 5))
         bookmark.tap()
-        XCTAssertTrue(app.buttons["Прибрати зі збереженого"].exists)
+        XCTAssertEqual(bookmark.label, "Прибрати зі збереженого")
 
         saved.tap()
         let clip = app.cells.firstMatch
@@ -73,5 +85,13 @@ final class NavigationTests: XCTestCase {
         XCTAssertTrue(profile.isHittable)
         clip.tap()
         XCTAssertTrue(app.buttons["Призупинити"].waitForExistence(timeout: 5))
+    }
+
+    @MainActor
+    private func capture(_ app: XCUIApplication, named name: String) {
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
     }
 }

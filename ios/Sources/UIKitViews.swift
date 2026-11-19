@@ -80,7 +80,7 @@ final class GlyphButton: UIButton {
         content.translatesAutoresizingMaskIntoConstraints = false
         addSubview(content)
         NSLayoutConstraint.activate([
-            widthAnchor.constraint(equalToConstant: compact ? 52 : 48),
+            widthAnchor.constraint(equalToConstant: compact ? 42 : 48),
             heightAnchor.constraint(greaterThanOrEqualToConstant: 48),
             content.centerXAnchor.constraint(equalTo: centerXAnchor),
             content.centerYAnchor.constraint(equalTo: centerYAnchor),
@@ -129,75 +129,93 @@ func glassIsland(interactive: Bool = false) -> UIVisualEffectView {
 
 final class HeaderActionButton: UIButton {
     static let side: CGFloat = 46
-    private let indicator = UIImageView()
-    private let title = makeLabel(.subheadline, text: "Вийти")
-    private let blur = UIVisualEffectView()
-    private var extent: NSLayoutConstraint!
-    private var revision = 0
 
     init() {
         super.init(frame: .zero)
-        var style = UIButton.Configuration.glass()
-        style.cornerStyle = .capsule
-        configuration = style
         translatesAutoresizingMaskIntoConstraints = false
-        extent = widthAnchor.constraint(equalToConstant: Self.side)
-        extent.isActive = true
+        widthAnchor.constraint(greaterThanOrEqualToConstant: Self.side).isActive = true
         heightAnchor.constraint(equalToConstant: Self.side).isActive = true
-        indicator.tintColor = .label
-        indicator.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold)
-        indicator.setContentCompressionResistancePriority(.required, for: .horizontal)
-        title.font = title.font.withTraits(.traitBold)
-        title.numberOfLines = 1
-        let content = UIStackView(arrangedSubviews: [indicator, title])
-        content.spacing = 6
-        content.alignment = .center
-        content.isUserInteractionEnabled = false
-        content.accessibilityElementsHidden = true
-        content.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(content)
-        blur.isUserInteractionEnabled = false
-        blur.isAccessibilityElement = false
-        blur.cornerConfiguration = .capsule()
-        blur.pin(to: self, insets: .init(top: 4, leading: 4, bottom: 4, trailing: 4))
-        NSLayoutConstraint.activate([
-            content.centerXAnchor.constraint(equalTo: centerXAnchor),
-            content.centerYAnchor.constraint(equalTo: centerYAnchor)
-        ])
+        setContentHuggingPriority(.required, for: .horizontal)
+        setContentCompressionResistancePriority(.required, for: .horizontal)
         setLogout(false, animated: false)
     }
 
     required init?(coder: NSCoder) { fatalError("Use init()") }
 
     func setLogout(_ logout: Bool, animated: Bool) {
-        revision += 1
-        let request = revision
-        accessibilityLabel = logout ? "Вийти" : "Пошук"
-        let changes = {
-            self.title.isHidden = !logout
-            self.indicator.image = UIImage(systemName: logout ? "rectangle.portrait.and.arrow.right" : "magnifyingglass")
+        let update = {
+            var style = UIButton.Configuration.glass()
+            style.cornerStyle = .capsule
+            style.buttonSize = .medium
+            style.baseForegroundColor = .label
+            style.image = UIImage(systemName: logout ? "rectangle.portrait.and.arrow.right" : "magnifyingglass")
+            style.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
+                pointSize: logout ? 20 : 18, weight: .semibold)
+            style.title = logout ? "Вийти" : nil
+            style.imagePadding = 6
+            self.configuration = style
+            self.accessibilityLabel = logout ? "Вийти" : "Пошук"
+            self.superview?.layoutIfNeeded()
         }
-        guard animated, window != nil, !UIAccessibility.isReduceMotionEnabled,
-              let parent = superview else {
-            extent.constant = logout ? 105 : Self.side
-            changes()
-            blur.effect = nil
-            return
+        if animated && window != nil && !UIAccessibility.isReduceMotionEnabled {
+            superview?.layoutIfNeeded()
+            UIView.animate(withDuration: 0.21, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction],
+                           animations: update)
+        } else {
+            update()
         }
-        parent.layoutIfNeeded()
-        extent.constant = logout ? 105 : Self.side
-        UIView.animate(withDuration: 0.23, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseInOut]) {
-            parent.layoutIfNeeded()
-        }
-        UIView.animate(withDuration: 0.085, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction]) {
-            self.blur.effect = UIBlurEffect(style: .systemUltraThinMaterialDark)
-        } completion: { _ in
-            guard self.revision == request else { return }
-            changes()
-            UIView.animate(withDuration: 0.14, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction]) {
-                self.blur.effect = nil
-            }
-        }
+    }
+}
+
+final class FeedSectionPicker: UIView {
+    private let island = glassIsland()
+    private let recommended = UIButton()
+    private let following = UIButton()
+    private var selected: FeedSection?
+    var onSelection: ((FeedSection) -> Void)?
+
+    init() {
+        super.init(frame: .zero)
+        island.pin(to: self)
+        let choices = UIStackView(arrangedSubviews: [recommended, following])
+        choices.spacing = UIStackView.spacingUseSystem
+        choices.distribution = .fillEqually
+        choices.translatesAutoresizingMaskIntoConstraints = false
+        island.contentView.addSubview(choices)
+
+        // The system spacing keeps the inner glass capsules inset from the shared island.
+        let inset = island.contentView
+        NSLayoutConstraint.activate([
+            choices.leadingAnchor.constraint(equalToSystemSpacingAfter: inset.leadingAnchor, multiplier: 0.5),
+            inset.trailingAnchor.constraint(equalToSystemSpacingAfter: choices.trailingAnchor, multiplier: 0.5),
+            choices.topAnchor.constraint(equalToSystemSpacingBelow: inset.topAnchor, multiplier: 0.5),
+            inset.bottomAnchor.constraint(equalToSystemSpacingBelow: choices.bottomAnchor, multiplier: 0.5)
+        ])
+        recommended.accessibilityIdentifier = "feed.recommended"
+        following.accessibilityIdentifier = "feed.following"
+        recommended.addAction(UIAction { [weak self] _ in self?.onSelection?(.recommended) }, for: .primaryActionTriggered)
+        following.addAction(UIAction { [weak self] _ in self?.onSelection?(.following) }, for: .primaryActionTriggered)
+        updateSelection(.recommended)
+    }
+
+    required init?(coder: NSCoder) { fatalError("Use init()") }
+
+    func updateSelection(_ section: FeedSection) {
+        guard section != selected else { return }
+        selected = section
+        configure(recommended, title: "Для тебе", selected: section == .recommended)
+        configure(following, title: "Підписки", selected: section == .following)
+    }
+
+    private func configure(_ button: UIButton, title: String, selected: Bool) {
+        var style = selected ? UIButton.Configuration.glass() : .plain()
+        style.cornerStyle = .capsule
+        style.buttonSize = .medium
+        style.baseForegroundColor = .label
+        style.title = title
+        button.configuration = style
+        if selected { button.accessibilityTraits.insert(.selected) }
+        else { button.accessibilityTraits.remove(.selected) }
     }
 }
 

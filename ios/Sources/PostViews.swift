@@ -227,7 +227,7 @@ final class PublishController: FormController, PHPickerViewControllerDelegate {
                     if self?.generation == request { self?.reportImportError() }
                     return
                 }
-                self.preview.load(temporary)
+                self.preview.load(temporary, adaptsLandscape: true)
                 if let old = self.movie { try? FileManager.default.removeItem(at: old) }
                 self.movie = temporary
                 self.preview.isHidden = false

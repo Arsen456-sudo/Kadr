@@ -12,4 +12,4 @@ https://durian.blender.org/sharing/
 https://media.w3.org/2010/05/sintel/trailer.mp4
 Creative Commons Attribution 3.0 Unported
 https://creativecommons.org/licenses/by/3.0/
-Trailer excerpt, 00:26–00:38, cropped to portrait and re-encoded.
+Trailer excerpt, 00:26–00:38, cropped to 16:9 and re-encoded.

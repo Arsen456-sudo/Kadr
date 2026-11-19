@@ -75,6 +75,10 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
         reactionIsland.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(reactionIsland)
         view.addSubview(sound)
+        sound.accessibilityIdentifier = "feed.sound"
+        like.accessibilityIdentifier = "feed.like"
+        comments.accessibilityIdentifier = "feed.comments"
+        bookmark.accessibilityIdentifier = "feed.bookmark"
         sound.addAction(UIAction { [weak self] _ in
             guard let self else { return }
             self.muted.toggle()
@@ -87,7 +91,7 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
         NSLayoutConstraint.activate([
             controls.centerXAnchor.constraint(equalTo: reactionIsland.contentView.centerXAnchor),
             controls.centerYAnchor.constraint(equalTo: reactionIsland.contentView.centerYAnchor),
-            reactionIsland.widthAnchor.constraint(equalTo: controls.widthAnchor, constant: 6),
+            reactionIsland.widthAnchor.constraint(equalTo: sound.widthAnchor),
             reactionIsland.heightAnchor.constraint(equalTo: controls.heightAnchor, constant: 8),
             reactionIsland.trailingAnchor.constraint(equalTo: safe.trailingAnchor, constant: -16),
             reactionIsland.bottomAnchor.constraint(equalTo: safe.bottomAnchor, constant: -62),
@@ -293,9 +297,12 @@ final class VideoSurface: UIView {
     private var frameOutput: AVPlayerItemVideoOutput?
     private weak var observedItem: AVPlayerItem?
     private var metadata: Task<Void, Never>?
+    private var itemObservation: NSKeyValueObservation?
+    private var sizeObservation: NSKeyValueObservation?
     private var revision = 0
     private var landscape = false
     private var aspectRatio: CGFloat = 1
+    private var frameTransform: CGAffineTransform = .identity
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -330,6 +337,8 @@ final class VideoSurface: UIView {
         revision += 1
         let loadRevision = revision
         metadata?.cancel()
+        itemObservation = nil
+        sizeObservation = nil
         stopBackdrop()
         player?.pause()
         looper?.disableLooping()
@@ -340,6 +349,8 @@ final class VideoSurface: UIView {
         backdrop.isHidden = true
         backdrop.image = nil
         landscape = false
+        aspectRatio = 0
+        frameTransform = .identity
         setNeedsLayout()
         guard let url else { return }
         let asset = AVURLAsset(url: url)
@@ -350,25 +361,54 @@ final class VideoSurface: UIView {
         foreground.player = queue
 
         guard adaptsLandscape else { return }
-        metadata = Task { [weak self] in
-            guard let track = try? await asset.loadTracks(withMediaType: .video).first,
-                  let size = try? await track.load(.naturalSize),
-                  let transform = try? await track.load(.preferredTransform),
-                  !Task.isCancelled, let self, self.revision == loadRevision else { return }
-            let oriented = CGRect(origin: .zero, size: size).applying(transform).standardized
-            self.landscape = oriented.width > oriented.height
-            self.aspectRatio = oriented.height > 0 ? oriented.width / oriented.height : 1
-            self.foreground.videoGravity = self.landscape ? .resizeAspect : .resizeAspectFill
-            self.backdrop.isHidden = !self.landscape
-            self.setNeedsLayout()
-            if self.landscape {
-                self.startBackdrop()
-                if let poster = await VideoPoster.image(for: url), self.revision == loadRevision,
-                   self.backdrop.image == nil {
-                    self.backdrop.image = self.blurred(CIImage(cgImage: poster))
-                }
+        itemObservation = queue.observe(\.currentItem, options: [.initial, .new]) { [weak self] player, _ in
+            Task { @MainActor [weak self] in
+                guard let self, self.revision == loadRevision else { return }
+                self.observePresentationSize(player.currentItem, revision: loadRevision)
             }
         }
+        metadata = Task { [weak self] in
+            if let track = try? await asset.loadTracks(withMediaType: .video).first,
+               let size = try? await track.load(.naturalSize),
+               let transform = try? await track.load(.preferredTransform),
+               !Task.isCancelled, let self, self.revision == loadRevision {
+                self.frameTransform = transform
+                let presented = queue.currentItem?.presentationSize ?? .zero
+                if presented.width > 0, presented.height > 0 {
+                    self.applyPresentationSize(presented)
+                } else {
+                    self.applyPresentationSize(CGRect(origin: .zero, size: size).applying(transform).standardized.size)
+                }
+            }
+            guard let self, self.revision == loadRevision, self.landscape,
+                  let poster = await VideoPoster.image(for: url), !Task.isCancelled,
+                  self.revision == loadRevision, self.backdrop.image == nil else { return }
+            self.backdrop.image = self.blurred(CIImage(cgImage: poster))
+        }
+    }
+
+    private func observePresentationSize(_ item: AVPlayerItem?, revision: Int) {
+        sizeObservation = item?.observe(\.presentationSize, options: [.initial, .new]) { [weak self] item, _ in
+            let size = item.presentationSize
+            Task { @MainActor [weak self] in
+                guard let self, self.revision == revision, self.player?.currentItem === item else { return }
+                self.applyPresentationSize(size)
+            }
+        }
+    }
+
+    private func applyPresentationSize(_ size: CGSize) {
+        guard size.width > 0, size.height > 0 else { return }
+        let wide = size.width > size.height
+        let ratio = size.width / size.height
+        guard wide != landscape || ratio != aspectRatio else { return }
+        landscape = wide
+        aspectRatio = ratio
+        foreground.videoGravity = wide ? .resizeAspect : .resizeAspectFill
+        backdrop.isHidden = !wide
+        setNeedsLayout()
+        if wide { startBackdrop() }
+        else { stopBackdrop() }
     }
 
     func setPlaying(_ playing: Bool, muted: Bool? = nil) {
@@ -398,7 +438,9 @@ final class VideoSurface: UIView {
         }
         guard let frameOutput, frameOutput.hasNewPixelBuffer(forItemTime: time),
               let frame = frameOutput.copyPixelBuffer(forItemTime: time, itemTimeForDisplay: nil) else { return }
-        if let image = blurred(CIImage(cvPixelBuffer: frame)) { backdrop.image = image }
+        if let image = blurred(CIImage(cvPixelBuffer: frame).transformed(by: frameTransform)) {
+            backdrop.image = image
+        }
     }
 
     private func blurred(_ image: CIImage) -> UIImage? {
