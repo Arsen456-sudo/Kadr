@@ -31,6 +31,7 @@ final class ProfileSectionPicker: GlassSectionPicker {
         glass.isUserInteractionEnabled = false
         glass.pin(to: self)
         sendSubviewToBack(glass)
+        setSelectionTintColor(UIColor(white: 0.12, alpha: 0.8))
         matchSearchHeight(44)
         onIndexSelection = { [weak self] index in
             guard let section = ProfileSection(rawValue: index) else { return }

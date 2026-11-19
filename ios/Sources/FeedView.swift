@@ -160,7 +160,20 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        let scroll = edgeScrollView
+        connectContentScrollView()
+    }
+
+    private func connectContentScrollView() {
+        guard let scroll = edgeScrollView else { return }
+        // Register the vertical pager explicitly. Automatic discovery can select
+        // a photo album's nested horizontal scroller, or no scroller on video pages.
+        setContentScrollView(scroll, for: .all)
+        pager.setContentScrollView(scroll, for: .all)
+        page?.setContentScrollView(scroll, for: .all)
+        scroll.topEdgeEffect.style = .soft
+        scroll.bottomEdgeEffect.style = .soft
+        scroll.topEdgeEffect.isHidden = immersive
+        scroll.bottomEdgeEffect.isHidden = immersive
         if actionEdge.scrollView !== scroll { actionEdge.scrollView = scroll }
     }
 
@@ -202,10 +215,7 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
         captionStack.isHidden = active == nil || immersive
         empty.isHidden = active != nil || immersive
         page?.setImmersive(immersive)
-        edgeScrollView?.topEdgeEffect.style = feedScrollEdgeStyle
-        edgeScrollView?.topEdgeEffect.isHidden = immersive
-        edgeScrollView?.bottomEdgeEffect.style = feedScrollEdgeStyle
-        edgeScrollView?.bottomEdgeEffect.isHidden = immersive
+        connectContentScrollView()
         reactionIsland.isHidden = active == nil
         sound.isHidden = active == nil || active?.isPhoto == true
         if let active {

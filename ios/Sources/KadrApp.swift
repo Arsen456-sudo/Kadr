@@ -220,8 +220,16 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
         let isFeed = controller === feed
         let scroll: UIScrollView? = isFeed ? feed.edgeScrollView
             : controller === profile ? profile.edgeScrollView : controller === inbox ? inbox.scrollView : saved.tableView
-        scroll?.topEdgeEffect.style = isFeed ? feedScrollEdgeStyle : .soft
-        scroll?.bottomEdgeEffect.style = isFeed ? feedScrollEdgeStyle : .soft
+        // Keep the native bars attached to the selected screen's actual scroller,
+        // including through the SwiftUI hosting controller's containment hierarchy.
+        setContentScrollView(scroll, for: .all)
+        var ancestor = parent
+        while let controller = ancestor {
+            controller.setContentScrollView(scroll, for: .all)
+            ancestor = controller.parent
+        }
+        scroll?.topEdgeEffect.style = .soft
+        scroll?.bottomEdgeEffect.style = .soft
         scroll?.topEdgeEffect.isHidden = isFeed && immersive
         scroll?.bottomEdgeEffect.isHidden = isFeed && immersive
         if bottomEdge.scrollView !== scroll { bottomEdge.scrollView = scroll }
