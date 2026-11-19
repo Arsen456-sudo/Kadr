@@ -100,7 +100,6 @@ struct KadrNavigationShell: View {
                     }
                 }
                 .toolbar(state.immersive ? .hidden : .visible, for: .navigationBar)
-                .toolbarBackground(state.screen == .feed ? .hidden : .automatic, for: .navigationBar)
         }
         .overlay(alignment: .topLeading) {
             if state.immersive {

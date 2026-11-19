@@ -19,6 +19,13 @@ final class NavigationTests: XCTestCase {
         XCTAssertEqual(header.label, "Пошук")
         let searchWidth = header.frame.width
         XCTAssertTrue(app.staticTexts["Big Buck Bunny"].waitForExistence(timeout: 5))
+        let pause = app.buttons["Призупинити"]
+        XCTAssertTrue(pause.waitForExistence(timeout: 5))
+        pause.tap()
+        let play = app.buttons["Відтворити"]
+        XCTAssertTrue(play.waitForExistence(timeout: 3))
+        play.tap()
+        XCTAssertTrue(pause.waitForExistence(timeout: 3))
         capture(app, named: "Kadr-Portrait")
         app.swipeUp()
         XCTAssertTrue(app.staticTexts["Sintel"].waitForExistence(timeout: 7))
@@ -58,6 +65,14 @@ final class NavigationTests: XCTestCase {
         XCTAssertEqual(header.label, "Вийти")
         XCTAssertGreaterThan(header.frame.width, searchWidth)
         XCTAssertTrue(app.buttons["Змінити банер"].exists)
+        let sections = app.segmentedControls["profile.sections"]
+        XCTAssertTrue(sections.waitForExistence(timeout: 5))
+        let likesSection = sections.buttons["Уподобання"]
+        XCTAssertTrue(likesSection.exists)
+        likesSection.tap()
+        XCTAssertTrue(likesSection.isSelected)
+        capture(app, named: "Kadr-Profile-Likes")
+        sections.buttons["Публікації"].tap()
         capture(app, named: "Kadr-Profile")
 
         feed.tap()

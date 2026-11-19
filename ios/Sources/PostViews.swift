@@ -163,17 +163,9 @@ final class ClipPreviewController: UIViewController {
             control.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -14)
         ])
         control.addAction(UIAction { [weak self, weak control] _ in
-            guard let self else { return }
-            self.paused.toggle()
+            guard let self, let control else { return }
+            self.paused = control.isSelected
             self.video.setPlaying(!self.paused)
-            if let control {
-                var configuration = control.configuration
-                configuration?.image = UIImage(systemName: self.paused ? "play.fill" : "pause.fill",
-                    withConfiguration: UIImage.SymbolConfiguration(pointSize: 30, weight: .semibold))
-                control.accessibilityLabel = self.paused ? "Відтворити" : "Призупинити"
-                configuration?.symbolContentTransition = UIAccessibility.isReduceMotionEnabled ? nil : UISymbolContentTransition(.replace)
-                control.configuration = configuration
-            }
         }, for: .primaryActionTriggered)
     }
 

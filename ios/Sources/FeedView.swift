@@ -19,7 +19,6 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
                                        symbol: "person.2")
     private let reactionIsland = glassIsland(interactive: true)
     private let actionGlass = glassGroup()
-    private let topShadow = FeedTopShadow()
     private let actionEdge = UIScrollEdgeElementContainerInteraction()
     private let sound = UIButton()
     private let authorAvatar = UIButton()
@@ -64,15 +63,6 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
         pager.delegate = self
         embed(pager, in: view)
         empty.pin(to: view)
-        topShadow.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(topShadow)
-        NSLayoutConstraint.activate([
-            topShadow.topAnchor.constraint(equalTo: view.topAnchor),
-            topShadow.leadingAnchor.constraint(equalTo: view.leadingAnchor),
-            topShadow.trailingAnchor.constraint(equalTo: view.trailingAnchor),
-            topShadow.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 100)
-        ])
-
         author.numberOfLines = 1
         caption.numberOfLines = 2
         captionStack.axis = .vertical
@@ -201,8 +191,7 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
         empty.isHidden = active != nil || immersive
         page?.setImmersive(immersive)
         edgeScrollView?.topEdgeEffect.style = .soft
-        edgeScrollView?.topEdgeEffect.isHidden = true
-        topShadow.isHidden = immersive
+        edgeScrollView?.topEdgeEffect.isHidden = immersive
         edgeScrollView?.bottomEdgeEffect.style = .soft
         edgeScrollView?.bottomEdgeEffect.isHidden = immersive
         reactionIsland.isHidden = active == nil
@@ -300,37 +289,11 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
     }
 }
 
-private final class FeedTopShadow: UIView {
-    private let blur = UIVisualEffectView(effect: UIBlurEffect(style: .systemThinMaterialDark))
-    private let fadeMask = GradientView()
-
-    override init(frame: CGRect) {
-        super.init(frame: frame)
-        isOpaque = false
-        isUserInteractionEnabled = false
-        accessibilityElementsHidden = true
-        blur.pin(to: self)
-        fadeMask.gradient.colors = [UIColor.black.cgColor, UIColor.black.withAlphaComponent(0.85).cgColor, UIColor.clear.cgColor]
-        fadeMask.gradient.locations = [0, 0.3, 1]
-        fadeMask.gradient.startPoint = CGPoint(x: 0.5, y: 0)
-        fadeMask.gradient.endPoint = CGPoint(x: 0.5, y: 1)
-        blur.mask = fadeMask
-    }
-
-    required init?(coder: NSCoder) { fatalError("Use init(frame:)") }
-
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        guard fadeMask.frame != blur.bounds else { return }
-        fadeMask.frame = blur.bounds
-        blur.mask = fadeMask
-    }
-}
-
 private final class VideoPage: UIViewController {
     let clip: Clip
     private let video = VideoSurface(frame: .zero)
-    private let resumeButton = makePlaybackButton(symbol: "play.fill", label: "Відтворити")
+    private let playbackButton = makePlaybackButton(symbol: "pause.fill", label: "Призупинити")
+    private let tapArea = UIButton(type: .custom)
     private var enabled = false
     private var paused = false
     private var immersive = false
@@ -362,35 +325,30 @@ private final class VideoPage: UIViewController {
                                   UIColor.black.withAlphaComponent(0.74).cgColor]
         shade.isUserInteractionEnabled = false
         shade.pin(to: view)
-        let tapArea = UIButton(type: .custom)
         tapArea.isAccessibilityElement = true
         tapArea.accessibilityTraits = .button
         tapArea.accessibilityLabel = "Призупинити відео"
         tapArea.pin(to: view)
-        tapArea.addAction(UIAction { [weak self, weak tapArea] _ in
+        tapArea.addAction(UIAction { [weak self] _ in
             guard let self else { return }
-            self.paused.toggle()
-            tapArea?.accessibilityLabel = self.paused ? "Відтворити відео" : "Призупинити відео"
-            self.updatePauseIndicator()
+            self.setPaused(!self.paused)
         }, for: .primaryActionTriggered)
-        resumeButton.isHidden = immersive
-        resumeButton.alpha = 0
-        resumeButton.addAction(UIAction { [weak self, weak tapArea] _ in
-            self?.paused = false
-            tapArea?.accessibilityLabel = "Призупинити відео"
-            self?.updatePauseIndicator()
+        playbackButton.isHidden = immersive
+        playbackButton.addAction(UIAction { [weak self] _ in
+            guard let self else { return }
+            self.setPaused(self.playbackButton.isSelected)
         }, for: .primaryActionTriggered)
-        view.addSubview(resumeButton)
+        view.addSubview(playbackButton)
         NSLayoutConstraint.activate([
-            resumeButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            resumeButton.centerYAnchor.constraint(equalTo: view.centerYAnchor)
+            playbackButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            playbackButton.centerYAnchor.constraint(equalTo: view.centerYAnchor)
         ])
     }
 
     func setImmersive(_ enabled: Bool) {
         immersive = enabled
         shade.isHidden = enabled
-        resumeButton.isHidden = enabled
+        playbackButton.isHidden = enabled
         album?.setImmersive(enabled)
     }
 
@@ -400,9 +358,11 @@ private final class VideoPage: UIViewController {
         video.setPlaying(enabled && !paused, muted: muted)
     }
 
-    private func updatePauseIndicator() {
-        video.setPlaying(enabled && !paused)
-        resumeButton.alpha = paused ? 1 : 0
+    private func setPaused(_ value: Bool) {
+        paused = value
+        playbackButton.isSelected = value
+        tapArea.accessibilityLabel = value ? "Відтворити відео" : "Призупинити відео"
+        video.setPlaying(enabled && !value)
     }
 }
 
@@ -412,7 +372,19 @@ func makePlaybackButton(symbol: String, label: String) -> UIButton {
     style.symbolContentTransition = UIAccessibility.isReduceMotionEnabled ? nil : UISymbolContentTransition(.replace)
     style.image = UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 30, weight: .semibold))
     style.baseForegroundColor = .white
+    style.automaticallyUpdateForSelection = false
     let button = UIButton(configuration: style)
+    button.changesSelectionAsPrimaryAction = true
+    button.isSelected = symbol == "play.fill"
+    button.isPointerInteractionEnabled = true
+    button.configurationUpdateHandler = { button in
+        var configuration = button.configuration
+        configuration?.image = UIImage(systemName: button.isSelected ? "play.fill" : "pause.fill",
+            withConfiguration: UIImage.SymbolConfiguration(pointSize: 30, weight: .semibold))
+        configuration?.symbolContentTransition = UIAccessibility.isReduceMotionEnabled ? nil : UISymbolContentTransition(.replace)
+        button.configuration = configuration
+        button.accessibilityLabel = button.isSelected ? "Відтворити" : "Призупинити"
+    }
     button.accessibilityLabel = label
     button.translatesAutoresizingMaskIntoConstraints = false
     NSLayoutConstraint.activate([

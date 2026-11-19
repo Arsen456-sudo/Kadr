@@ -157,9 +157,6 @@ class GlassSectionPicker: UIView {
             island.pin(to: self)
             container = island.contentView
             control.backgroundColor = .clear
-            let clear = UIGraphicsImageRenderer(size: CGSize(width: 1, height: 1)).image { _ in }
-            control.setBackgroundImage(clear, for: .normal, barMetrics: .default)
-            control.setDividerImage(clear, forLeftSegmentState: .normal, rightSegmentState: .normal, barMetrics: .default)
             control.tintColor = .label
         } else { container = self }
         control.translatesAutoresizingMaskIntoConstraints = false
@@ -173,6 +170,7 @@ class GlassSectionPicker: UIView {
         let font = UIFont.preferredFont(forTextStyle: .footnote)
         control.setTitleTextAttributes([.font: font], for: .normal)
         control.setTitleTextAttributes([.font: font], for: .selected)
+        control.accessibilityIdentifier = symbols.isEmpty ? "feed.sections" : "profile.sections"
         control.apportionsSegmentWidthsByContent = false
         control.selectedSegmentIndex = 0
         control.accessibilityValue = titles.first
