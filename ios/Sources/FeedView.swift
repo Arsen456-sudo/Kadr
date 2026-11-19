@@ -12,7 +12,9 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
     private let like = GlyphButton(symbol: "heart", label: "Подобається", compact: true)
     private let comments = GlyphButton(symbol: "bubble", label: "Коментарі", compact: true)
     private let bookmark = GlyphButton(symbol: "bookmark", label: "Зберегти", compact: true)
-    private let empty = UIViewController()
+    private let empty = EmptyStateView(title: "У підписках поки немає відео",
+                                       message: "Підпишись на авторів, щоб бачити їхні публікації.",
+                                       symbol: "person.2")
     private let reactionIsland = UIVisualEffectView(effect: UIGlassEffect(style: .regular))
     private lazy var captionStack = UIStackView(arrangedSubviews: [author, caption])
     private var clips: [Clip] = []
@@ -38,8 +40,7 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
         pager.dataSource = self
         pager.delegate = self
         embed(pager, in: view)
-        empty.view.isUserInteractionEnabled = false
-        embed(empty, in: view)
+        empty.pin(to: view)
 
         author.numberOfLines = 1
         caption.numberOfLines = 2
@@ -65,6 +66,7 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
         let controls = UIStackView(arrangedSubviews: [like, comments, bookmark])
         controls.axis = .vertical
         controls.spacing = 4
+        reactionIsland.cornerConfiguration = .capsule()
         reactionIsland.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(reactionIsland)
         controls.translatesAutoresizingMaskIntoConstraints = false
@@ -81,11 +83,6 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
             captionStack.trailingAnchor.constraint(equalTo: safe.trailingAnchor, constant: -130),
             captionStack.bottomAnchor.constraint(equalTo: safe.bottomAnchor, constant: -14)
         ])
-        var configuration = UIContentUnavailableConfiguration.empty()
-        configuration.image = UIImage(systemName: "person.2")
-        configuration.text = "У підписках поки немає відео"
-        configuration.secondaryText = "Підпишись на авторів, щоб бачити їхні публікації."
-        empty.contentUnavailableConfiguration = configuration
         refresh()
     }
 
@@ -118,7 +115,7 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
         clips = store.feed(section)
         let target = preferredID ?? (reset ? nil : current)
         let next = clips.first { $0.id == target } ?? clips.first
-        empty.view.isHidden = next != nil
+        empty.isHidden = next != nil
         pager.view.isHidden = next == nil
         if let next, next.id != current || playingPage == nil {
             playingPage?.setPlaying(false, muted: muted)

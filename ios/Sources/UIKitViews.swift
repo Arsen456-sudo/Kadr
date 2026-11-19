@@ -123,6 +123,41 @@ final class GradientView: UIView {
     var gradient: CAGradientLayer { layer as! CAGradientLayer }
 }
 
+final class EmptyStateView: UIView {
+    init(title: String, message: String, symbol: String, action: UIButton? = nil) {
+        super.init(frame: .zero)
+        let image = UIImageView(image: UIImage(systemName: symbol))
+        image.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 42, weight: .regular)
+        image.tintColor = .secondaryLabel
+        image.isAccessibilityElement = false
+        let heading = makeLabel(.headline, text: title)
+        heading.accessibilityTraits.insert(.header)
+        let description = makeLabel(.subheadline, text: message, color: .secondaryLabel)
+        heading.textAlignment = .center
+        description.textAlignment = .center
+        let stack = UIStackView(arrangedSubviews: [image, heading, description])
+        stack.axis = .vertical
+        stack.alignment = .center
+        stack.spacing = 10
+        if let action {
+            stack.setCustomSpacing(20, after: description)
+            stack.addArrangedSubview(action)
+        }
+        let safe = safeAreaLayoutGuide
+        stack.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(stack)
+        NSLayoutConstraint.activate([
+            stack.centerXAnchor.constraint(equalTo: safe.centerXAnchor),
+            stack.centerYAnchor.constraint(equalTo: safe.centerYAnchor),
+            stack.leadingAnchor.constraint(greaterThanOrEqualTo: safe.leadingAnchor, constant: 24),
+            stack.trailingAnchor.constraint(lessThanOrEqualTo: safe.trailingAnchor, constant: -24),
+            stack.widthAnchor.constraint(lessThanOrEqualToConstant: 420)
+        ])
+    }
+
+    required init?(coder: NSCoder) { fatalError("Use init(title:message:symbol:action:)") }
+}
+
 class FormController: UIViewController {
     let content = UIStackView()
 

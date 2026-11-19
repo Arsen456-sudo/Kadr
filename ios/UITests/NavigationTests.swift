@@ -18,10 +18,12 @@ final class NavigationTests: XCTestCase {
         XCTAssertEqual(header.label, "Пошук")
 
         saved.tap()
-        XCTAssertTrue(app.staticTexts["Збережені відео"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Збережені відео"].waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(saved.isSelected)
         XCTAssertTrue(profile.isHittable)
         profile.tap()
-        XCTAssertTrue(app.staticTexts["Твій профіль"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Твій профіль"].waitForExistence(timeout: 5), app.debugDescription)
+        XCTAssertTrue(profile.isSelected)
         XCTAssertTrue(feed.isHittable)
 
         app.buttons["Увійти або створити акаунт"].tap()
@@ -57,7 +59,7 @@ final class NavigationTests: XCTestCase {
         saved.tap()
         let clip = app.cells.firstMatch
         XCTAssertTrue(clip.waitForExistence(timeout: 5))
-        XCTAssertTrue(tabs.isHittable)
+        XCTAssertTrue(profile.isHittable)
         clip.tap()
         XCTAssertTrue(app.buttons["Призупинити"].waitForExistence(timeout: 5))
     }

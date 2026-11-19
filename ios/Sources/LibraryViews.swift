@@ -1,6 +1,31 @@
 import UIKit
 
-final class SavedController: UITableViewController {
+class LibraryController: UIViewController, UITableViewDataSource, UITableViewDelegate {
+    let tableView = UITableView(frame: .zero, style: .insetGrouped)
+    private var emptyView: EmptyStateView?
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .systemBackground
+        tableView.dataSource = self
+        tableView.delegate = self
+        tableView.pin(to: view)
+    }
+
+    func showEmpty(_ empty: EmptyStateView?) {
+        emptyView?.removeFromSuperview()
+        emptyView = empty
+        empty?.pin(to: view)
+        tableView.isHidden = empty != nil
+    }
+
+    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { 0 }
+    func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell { UITableViewCell() }
+    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {}
+    func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? { nil }
+}
+
+final class SavedController: LibraryController {
     private let store: LocalStore
     private var clips: [Clip] = []
     var onClip: ((Clip) -> Void)?
@@ -8,14 +33,14 @@ final class SavedController: UITableViewController {
 
     init(store: LocalStore) {
         self.store = store
-        super.init(style: .insetGrouped)
+        super.init(nibName: nil, bundle: nil)
     }
 
     required init?(coder: NSCoder) { fatalError("Use init(store:)") }
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.accessibilityIdentifier = "saved.screen"
+        tableView.accessibilityIdentifier = "saved.screen"
         refresh()
     }
 
@@ -24,18 +49,13 @@ final class SavedController: UITableViewController {
         clips = store.feed(.saved)
         if clips.isEmpty {
             let guest = store.active == nil
-            var empty = UIContentUnavailableConfiguration.empty()
-            empty.image = UIImage(systemName: "bookmark")
-            empty.text = guest ? "Збережені відео" : "Немає збережених відео"
-            empty.secondaryText = guest ? "Увійди, щоб зберігати відео на цьому пристрої."
-                                        : "Натисни закладку під відео, щоб додати його сюди."
-            if guest {
-                empty.button.title = "Увійти або створити акаунт"
-                empty.buttonProperties.primaryAction = UIAction { [weak self] _ in self?.onAccount?() }
-            }
-            contentUnavailableConfiguration = empty
+            let action = guest ? textButton("Увійти або створити акаунт") { [weak self] in self?.onAccount?() } : nil
+            showEmpty(EmptyStateView(title: guest ? "Збережені відео" : "Немає збережених відео",
+                message: guest ? "Увійди, щоб зберігати відео на цьому пристрої."
+                               : "Натисни закладку під відео, щоб додати його сюди.",
+                symbol: "bookmark", action: action))
         } else {
-            contentUnavailableConfiguration = nil
+            showEmpty(nil)
         }
         tableView.reloadData()
     }
@@ -52,7 +72,7 @@ final class SavedController: UITableViewController {
     }
 }
 
-final class ProfileController: UITableViewController {
+final class ProfileController: LibraryController {
     private let store: LocalStore
     private let profileID: UUID?
     private var clips: [Clip] = []
@@ -66,14 +86,14 @@ final class ProfileController: UITableViewController {
     init(store: LocalStore, profileID: UUID?) {
         self.store = store
         self.profileID = profileID
-        super.init(style: .insetGrouped)
+        super.init(nibName: nil, bundle: nil)
     }
 
     required init?(coder: NSCoder) { fatalError("Use init(store:profileID:)") }
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        view.accessibilityIdentifier = "profile.screen"
+        tableView.accessibilityIdentifier = "profile.screen"
         refresh()
     }
 
@@ -91,18 +111,15 @@ final class ProfileController: UITableViewController {
             clips = []
             header = nil
             tableView.tableHeaderView = nil
-            var empty = UIContentUnavailableConfiguration.empty()
-            empty.image = UIImage(systemName: "person.crop.circle")
-            empty.text = "Твій профіль"
-            empty.secondaryText = "Створи акаунт, щоб додати фото, нікнейм і власні відео."
-            empty.button.title = "Увійти або створити акаунт"
-            empty.buttonProperties.primaryAction = UIAction { [weak self] _ in self?.onAccount?() }
-            contentUnavailableConfiguration = empty
+            let action = textButton("Увійти або створити акаунт") { [weak self] in self?.onAccount?() }
+            showEmpty(EmptyStateView(title: "Твій профіль",
+                message: "Створи акаунт, щоб додати фото, нікнейм і власні відео.",
+                symbol: "person.crop.circle", action: action))
             tableView.reloadData()
             return
         }
         title = profileID == nil ? "Профіль" : "@\(profile.handle)"
-        contentUnavailableConfiguration = nil
+        showEmpty(nil)
         clips = store.allClips.filter { $0.authorID == profile.id }
         let canFollow = store.active != nil && store.active?.id != profile.id
         let following = canFollow ? store.follows(profile) : nil
