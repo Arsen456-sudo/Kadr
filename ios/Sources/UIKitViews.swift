@@ -129,6 +129,11 @@ final class FeedSectionPicker: UIView {
     private let control = UISegmentedControl(items: ["Для тебе", "Підписки"])
     var onSelection: ((FeedSection) -> Void)?
 
+    var buttonHeight: CGFloat = 44 {
+        didSet { if oldValue != buttonHeight { invalidateIntrinsicContentSize() } }
+    }
+    override var intrinsicContentSize: CGSize { CGSize(width: 184, height: buttonHeight) }
+
     init() {
         super.init(frame: .zero)
         control.pin(to: self)

@@ -124,14 +124,7 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
         ])
         header.isTranslucent = true
         header.tintColor = .label
-        segments.translatesAutoresizingMaskIntoConstraints = false
-        view.addSubview(segments)
-        NSLayoutConstraint.activate([
-            segments.centerXAnchor.constraint(equalTo: view.safeAreaLayoutGuide.centerXAnchor),
-            segments.centerYAnchor.constraint(equalTo: header.centerYAnchor),
-            segments.widthAnchor.constraint(equalToConstant: 184),
-            segments.heightAnchor.constraint(equalToConstant: 44)
-        ])
+        feedHeader.titleView = segments
         for item in [feedHeader, savedHeader, inboxHeader, guestProfileHeader] {
             let search = UIBarButtonItem(systemItem: .search, primaryAction: UIAction { [weak self] _ in
                 self?.openSearch()
@@ -162,7 +155,11 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         view.bringSubviewToFront(header)
-        view.bringSubviewToFront(segments)
+        if header.topItem === feedHeader {
+            let height = feedHeader.rightBarButtonItem?.accessibilityFrame.height ?? 0
+            let measured = height > 0 && height.isFinite ? height : header.bounds.height
+            if measured > 0 { segments.buttonHeight = measured }
+        }
     }
 
     func tabBarController(_ tabBarController: UITabBarController, shouldSelect controller: UIViewController) -> Bool {
@@ -213,7 +210,6 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
         } else {
             item = feedHeader
         }
-        segments.isHidden = item !== feedHeader
         guard header.topItem !== item else { return }
         header.setItems([item], animated: animated)
     }
