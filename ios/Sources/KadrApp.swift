@@ -44,10 +44,15 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
     private lazy var profile = ProfileController(store: store, profileID: nil)
     private let segments = UISegmentedControl(items: ["Для тебе", "Підписки"])
     private let sectionTitle = UILabel()
-    private let headerAction = GlyphButton(symbol: "magnifyingglass", label: "Пошук")
-    private let publishButton = GlyphButton(symbol: "plus", label: "Додати відео")
-    private let soundButton = GlyphButton(symbol: "speaker.slash", label: "Увімкнути звук")
-    private lazy var feedTools = UIStackView(arrangedSubviews: [soundButton, publishButton])
+    private let headerAction = HeaderActionButton()
+    private let segmentIsland = glassIsland()
+    private let topEdge = UIScrollEdgeElementContainerInteraction()
+    private let bottomEdge = UIScrollEdgeElementContainerInteraction()
+    private let addTab = UIViewController()
+    private let inbox = InboxController()
+    private var keepsFeedPlaying = false
+    private var currentSlide: TabTransition?
+    private weak var queuedTab: UIViewController?
     private var showingProfileAction = false
     private weak var selectedScreen: UIViewController?
     private var welcomePresented = false
@@ -65,8 +70,11 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
         profile.tabBarItem = UITabBarItem(title: "Профіль", image: UIImage(systemName: "person.crop.circle"),
                                           selectedImage: UIImage(systemName: "person.crop.circle.fill"))
         saved.additionalSafeAreaInsets.top = 60
-        profile.additionalSafeAreaInsets.top = 60
-        setViewControllers([feed, saved, profile], animated: false)
+        addTab.tabBarItem = UITabBarItem(title: "Додати", image: UIImage(systemName: "plus.circle.fill"), selectedImage: nil)
+        inbox.tabBarItem = UITabBarItem(title: "Вхідні", image: UIImage(systemName: "tray"),
+                                         selectedImage: UIImage(systemName: "tray.fill"))
+        inbox.additionalSafeAreaInsets.top = 58
+        setViewControllers([feed, saved, addTab, inbox, profile], animated: false)
         selectedScreen = feed
         configureActions()
         configureChrome()
@@ -108,56 +116,54 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
         }, for: .valueChanged)
 
         headerAction.addAction(UIAction { [weak self] _ in self?.performHeaderAction() }, for: .primaryActionTriggered)
-        publishButton.addAction(UIAction { [weak self] _ in self?.openPublisher() }, for: .primaryActionTriggered)
-        soundButton.addAction(UIAction { [weak self] _ in
-            guard let self else { return }
-            self.feed.muted.toggle()
-            self.soundButton.update(symbol: self.feed.muted ? "speaker.slash" : "speaker.wave.2",
-                                    label: self.feed.muted ? "Увімкнути звук" : "Вимкнути звук")
-        }, for: .primaryActionTriggered)
     }
 
     private func configureChrome() {
-        let header = UIView()
         let safe = view.safeAreaLayoutGuide
         sectionTitle.font = .preferredFont(forTextStyle: .title2).withTraits(.traitBold)
         sectionTitle.adjustsFontForContentSizeCategory = true
         sectionTitle.accessibilityTraits.insert(.header)
         sectionTitle.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        feedTools.spacing = 8
-        feedTools.alignment = .center
-        for item in [header, headerAction, feedTools] {
+        for item in [sectionTitle, segmentIsland, headerAction] {
             item.translatesAutoresizingMaskIntoConstraints = false
             view.addSubview(item)
         }
-        for item in [segments, sectionTitle] {
-            item.translatesAutoresizingMaskIntoConstraints = false
-            header.addSubview(item)
-            NSLayoutConstraint.activate([
-                item.leadingAnchor.constraint(equalTo: header.leadingAnchor),
-                item.centerYAnchor.constraint(equalTo: header.centerYAnchor),
-                item.trailingAnchor.constraint(lessThanOrEqualTo: header.trailingAnchor)
-            ])
-        }
+        segments.pin(to: segmentIsland.contentView, insets: .init(top: 5, leading: 6, bottom: 5, trailing: 6))
         NSLayoutConstraint.activate([
-            header.leadingAnchor.constraint(equalTo: safe.leadingAnchor, constant: 16),
-            header.trailingAnchor.constraint(equalTo: headerAction.leadingAnchor, constant: -10),
-            header.topAnchor.constraint(equalTo: headerAction.topAnchor),
-            header.bottomAnchor.constraint(equalTo: headerAction.bottomAnchor),
             headerAction.topAnchor.constraint(equalTo: safe.topAnchor, constant: 5),
             headerAction.trailingAnchor.constraint(equalTo: safe.trailingAnchor, constant: -16),
-            feedTools.trailingAnchor.constraint(equalTo: safe.trailingAnchor, constant: -16),
-            feedTools.bottomAnchor.constraint(equalTo: tabBar.topAnchor, constant: -8)
+            segmentIsland.centerXAnchor.constraint(equalTo: safe.centerXAnchor),
+            segmentIsland.centerYAnchor.constraint(equalTo: headerAction.centerYAnchor),
+            segmentIsland.heightAnchor.constraint(equalToConstant: HeaderActionButton.side),
+            segmentIsland.widthAnchor.constraint(equalToConstant: 184),
+            sectionTitle.leadingAnchor.constraint(equalTo: safe.leadingAnchor, constant: 16),
+            sectionTitle.centerYAnchor.constraint(equalTo: headerAction.centerYAnchor),
+            sectionTitle.trailingAnchor.constraint(lessThanOrEqualTo: headerAction.leadingAnchor, constant: -10)
         ])
+        topEdge.edge = .top
+        headerAction.addInteraction(topEdge)
+        bottomEdge.edge = .bottom
+        tabBar.addInteraction(bottomEdge)
     }
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        if let header = headerAction.superview {
-            header.bringSubviewToFront(headerAction)
-            header.bringSubviewToFront(feedTools)
-            if let headerContent = segments.superview { header.bringSubviewToFront(headerContent) }
+        view.bringSubviewToFront(sectionTitle)
+        view.bringSubviewToFront(segmentIsland)
+        view.bringSubviewToFront(headerAction)
+    }
+
+    func tabBarController(_ tabBarController: UITabBarController, shouldSelect controller: UIViewController) -> Bool {
+        if controller === addTab {
+            openPublisher()
+            return false
         }
+        if let currentSlide {
+            queuedTab = controller
+            currentSlide.finishEarly()
+            return false
+        }
+        return true
     }
 
     func tabBarController(_ tabBarController: UITabBarController, didSelect viewController: UIViewController) {
@@ -170,9 +176,28 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
     func tabBarController(_ tabBarController: UITabBarController,
                           animationControllerForTransitionFrom fromVC: UIViewController,
                           to toVC: UIViewController) -> (any UIViewControllerAnimatedTransitioning)? {
-        guard !UIAccessibility.isReduceMotionEnabled else { return nil }
+        guard !UIAccessibility.isReduceMotionEnabled, view.window != nil,
+              let controllers = viewControllers,
+              let from = controllers.firstIndex(where: { $0 === fromVC }),
+              let to = controllers.firstIndex(where: { $0 === toVC }) else { return nil }
         if fromVC === feed { feed.playbackEnabled = false }
-        return TabTransition { [weak self, weak toVC] in self?.updateChrome(for: toVC, animated: true) }
+        let slide = TabTransition(direction: to > from ? 1 : -1) { [weak self, weak toVC] in
+            self?.updateChrome(for: toVC, animated: true)
+        } completion: { [weak self] in
+            guard let self else { return }
+            self.currentSlide = nil
+            self.updatePlayback()
+            if let next = self.queuedTab {
+                self.queuedTab = nil
+                DispatchQueue.main.async { [weak self, weak next] in
+                    guard let self, let next, next !== self.selectedViewController else { return }
+                    self.selectedViewController = next
+                    self.tabBarController(self, didSelect: next)
+                }
+            }
+        }
+        currentSlide = slide
+        return slide
     }
 
     private func refresh(animated: Bool = true) {
@@ -187,22 +212,24 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
         let isFeed = controller === feed
         let isProfile = controller === profile
         segments.selectedSegmentIndex = feed.section == .following ? 1 : 0
-        sectionTitle.text = isProfile ? "Профіль" : "Збережене"
+        sectionTitle.text = isProfile ? "Профіль" : controller === inbox ? "Вхідні" : "Збережене"
+        let scroll: UIScrollView? = isFeed ? feed.edgeScrollView
+            : isProfile ? profile.edgeScrollView : controller === inbox ? inbox.scrollView : saved.tableView
+        scroll?.bottomEdgeEffect.style = .soft
+        scroll?.topEdgeEffect.style = .soft
+        bottomEdge.scrollView = scroll
+        topEdge.scrollView = isFeed ? nil : scroll
         let canSignOut = isProfile && store.active != nil
         if canSignOut != showingProfileAction {
             showingProfileAction = canSignOut
-            headerAction.update(symbol: canSignOut ? "rectangle.portrait.and.arrow.right" : "magnifyingglass",
-                                label: canSignOut ? "Вийти" : "Пошук", animated: animated)
+            headerAction.setLogout(canSignOut, animated: animated)
         }
-        segments.isUserInteractionEnabled = isFeed
-        segments.accessibilityElementsHidden = !isFeed
-        feedTools.isUserInteractionEnabled = isFeed
-        feedTools.accessibilityElementsHidden = !isFeed
+        segmentIsland.isUserInteractionEnabled = isFeed
+        segmentIsland.accessibilityElementsHidden = !isFeed
         sectionTitle.accessibilityElementsHidden = isFeed
         let changes = {
-            self.segments.alpha = isFeed ? 1 : 0
+            self.segmentIsland.alpha = isFeed ? 1 : 0
             self.sectionTitle.alpha = isFeed ? 0 : 1
-            self.feedTools.alpha = isFeed ? 1 : 0
         }
         if animated && !UIAccessibility.isReduceMotionEnabled {
             UIViewPropertyAnimator.runningPropertyAnimator(withDuration: 0.28, delay: 0,
@@ -214,7 +241,7 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
 
     private func updatePlayback() {
         guard isViewLoaded else { return }
-        feed.playbackEnabled = sceneActive && selectedViewController === feed && presentedViewController == nil
+        feed.playbackEnabled = sceneActive && selectedViewController === feed && (presentedViewController == nil || keepsFeedPlaying)
     }
 
     private func performHeaderAction() {
@@ -266,7 +293,7 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
             }
         }
         comments.onComment = { [weak self] in self?.feed.updateReactions() }
-        showSheet(comments, detents: [.medium(), .large()])
+        showSheet(comments, detents: [.medium(), .large()], continuePlayback: true)
     }
 
     private func openPublisher() {
@@ -296,9 +323,12 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
         }
     }
 
-    private func showSheet(_ controller: UIViewController, detents: [UISheetPresentationController.Detent] = [.large()]) {
+    private func showSheet(_ controller: UIViewController,
+                           detents: [UISheetPresentationController.Detent] = [.large()],
+                           continuePlayback: Bool = false) {
         guard presentedViewController == nil else { return }
-        feed.playbackEnabled = false
+        keepsFeedPlaying = continuePlayback
+        if !continuePlayback { feed.playbackEnabled = false }
         controller.navigationItem.leftBarButtonItem = UIBarButtonItem(systemItem: .close, primaryAction: UIAction { [weak self] _ in
             self?.closeSheet()
         })
@@ -314,12 +344,14 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
 
     private func closeSheet(completion: (() -> Void)? = nil) {
         dismiss(animated: true) { [weak self] in
+            self?.keepsFeedPlaying = false
             self?.refresh()
             completion?()
         }
     }
 
     func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
+        keepsFeedPlaying = false
         refresh()
     }
 
@@ -333,39 +365,73 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
 }
 
 private final class TabTransition: NSObject, UIViewControllerAnimatedTransitioning {
+    private let direction: CGFloat
     private let updateChrome: () -> Void
+    private let completion: () -> Void
+    private var animator: UIViewPropertyAnimator?
 
-    init(updateChrome: @escaping () -> Void) {
+    init(direction: CGFloat, updateChrome: @escaping () -> Void, completion: @escaping () -> Void) {
+        self.direction = direction
         self.updateChrome = updateChrome
+        self.completion = completion
     }
 
-    func transitionDuration(using transitionContext: (any UIViewControllerContextTransitioning)?) -> TimeInterval { 0.27 }
+    func finishEarly() {
+        guard let animator, animator.state == .active else { return }
+        animator.stopAnimation(false)
+        animator.finishAnimation(at: .end)
+    }
+
+    func transitionDuration(using context: (any UIViewControllerContextTransitioning)?) -> TimeInterval { 0.20 }
 
     func animateTransition(using context: any UIViewControllerContextTransitioning) {
         guard let destination = context.viewController(forKey: .to),
               let incoming = context.view(forKey: .to),
               let outgoing = context.view(forKey: .from) else {
             context.completeTransition(false)
+            completion()
             return
         }
         let finalFrame = context.finalFrame(for: destination)
         incoming.frame = finalFrame.isEmpty ? outgoing.frame : finalFrame
-        incoming.alpha = 0
-        incoming.transform = CGAffineTransform(translationX: 0, y: 8)
+        let distance = context.containerView.bounds.width
+        incoming.transform = CGAffineTransform(translationX: direction * distance, y: 0)
         context.containerView.addSubview(incoming)
         updateChrome()
-        let animator = UIViewPropertyAnimator(duration: transitionDuration(using: context), curve: .easeInOut) {
-            incoming.alpha = 1
+        let animator = UIViewPropertyAnimator(duration: transitionDuration(using: context), curve: .easeOut) {
             incoming.transform = .identity
+            outgoing.transform = CGAffineTransform(translationX: -self.direction * distance, y: 0)
         }
-        animator.addCompletion { _ in
-            if context.transitionWasCancelled {
-                incoming.alpha = 1
-                incoming.transform = .identity
-                incoming.removeFromSuperview()
-            }
+        self.animator = animator
+        animator.addCompletion { [weak self] _ in
+            if context.transitionWasCancelled { incoming.removeFromSuperview() }
             context.completeTransition(!context.transitionWasCancelled)
+            outgoing.transform = .identity
+            self?.animator = nil
+            self?.completion()
         }
         animator.startAnimation()
+    }
+}
+
+private final class InboxController: UIViewController {
+    let scrollView = UIScrollView()
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .systemBackground
+        scrollView.pin(to: view)
+        let empty = EmptyStateView(title: "Вхідні порожні", message: "Тут з’являтимуться сповіщення.",
+                                   symbol: "tray")
+        empty.translatesAutoresizingMaskIntoConstraints = false
+        scrollView.addSubview(empty)
+        NSLayoutConstraint.activate([
+            empty.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor),
+            empty.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor),
+            empty.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor),
+            empty.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor),
+            empty.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor),
+            empty.heightAnchor.constraint(equalTo: scrollView.frameLayoutGuide.heightAnchor)
+        ])
     }
 }

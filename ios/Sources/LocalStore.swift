@@ -6,6 +6,9 @@ struct Profile: Codable, Identifiable {
     let name: String
     let bio: String
     let avatar: Data?
+    var bannerFile: String? = nil
+
+    var bannerURL: URL? { bannerFile.map { LocalStore.directory.appending(path: $0) } }
 }
 
 struct Clip: Codable, Identifiable {
@@ -137,6 +140,32 @@ final class LocalStore {
         var next = state
         next.activeID = id
         _ = save(next)
+    }
+
+    @discardableResult
+    func setBanner(_ source: URL?, extension suffix: String, for id: UUID) -> Bool {
+        guard state.activeID == id, let index = state.profiles.firstIndex(where: { $0.id == id }) else { return false }
+        let old = state.profiles[index].bannerURL
+        var next = state
+        let name = source.map { _ in "banner-" + UUID().uuidString + "." + suffix }
+        let destination = name.map { Self.directory.appending(path: $0) }
+        next.profiles[index].bannerFile = name
+        do {
+            if let source, let destination {
+                try FileManager.default.createDirectory(at: Self.directory, withIntermediateDirectories: true)
+                try FileManager.default.copyItem(at: source, to: destination)
+            }
+            guard save(next) else {
+                if let destination { try? FileManager.default.removeItem(at: destination) }
+                return false
+            }
+            if let old { try? FileManager.default.removeItem(at: old) }
+            return true
+        } catch {
+            if let destination { try? FileManager.default.removeItem(at: destination) }
+            errorMessage = "Не вдалося зберегти банер."
+            return false
+        }
     }
 
     func liked(_ clip: Clip) -> Bool { containsCurrentUser(in: state.likes[clip.id]) }

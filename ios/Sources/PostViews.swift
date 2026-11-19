@@ -34,7 +34,7 @@ final class CommentsController: UIViewController, UITableViewDataSource, UITextF
         if store.active == nil {
             composer = textButton("Увійти, щоб коментувати", prominent: true) { [weak self] in self?.onAccount?() }
         } else {
-            field.borderStyle = .roundedRect
+            field.borderStyle = .none
             field.placeholder = "Написати коментар"
             field.returnKeyType = .send
             field.delegate = self
@@ -42,7 +42,10 @@ final class CommentsController: UIViewController, UITableViewDataSource, UITextF
             field.adjustsFontForContentSizeCategory = true
             field.addAction(UIAction { [weak self] _ in self?.updateSendButton() }, for: .editingChanged)
             send.addAction(UIAction { [weak self] _ in self?.sendComment() }, for: .primaryActionTriggered)
-            let row = UIStackView(arrangedSubviews: [field, send])
+            let fieldIsland = glassIsland()
+            field.pin(to: fieldIsland.contentView, insets: .init(top: 0, leading: 16, bottom: 0, trailing: 16))
+            fieldIsland.heightAnchor.constraint(equalToConstant: 48).isActive = true
+            let row = UIStackView(arrangedSubviews: [fieldIsland, send])
             row.alignment = .center
             row.spacing = 8
             composer = row
@@ -130,7 +133,7 @@ final class CommentsController: UIViewController, UITableViewDataSource, UITextF
 
 final class PublishController: FormController, PHPickerViewControllerDelegate {
     private let store: LocalStore
-    private let preview = VideoSurface()
+    private let preview = VideoSurface(frame: .zero)
     private let caption = UITextField()
     private let busy = UIActivityIndicatorView(style: .medium)
     private lazy var submit = textButton("Опублікувати на пристрої", prominent: true) { [weak self] in self?.publish() }
@@ -260,7 +263,7 @@ final class PublishController: FormController, PHPickerViewControllerDelegate {
 
 final class ClipPreviewController: UIViewController {
     private let clip: Clip
-    private let video = VideoSurface()
+    private let video = VideoSurface(frame: .zero)
     private var paused = false
 
     init(clip: Clip) {
@@ -275,8 +278,8 @@ final class ClipPreviewController: UIViewController {
         title = clip.caption
         view.backgroundColor = .black
         video.pin(to: view)
-        video.load(clip.url)
-        let control = GlyphButton(symbol: "pause.fill", label: "Призупинити")
+        video.load(clip.url, adaptsLandscape: true)
+        let control = makePlaybackButton(symbol: "pause.fill", label: "Призупинити")
         view.addSubview(control)
         NSLayoutConstraint.activate([
             control.centerXAnchor.constraint(equalTo: view.centerXAnchor),
@@ -286,8 +289,17 @@ final class ClipPreviewController: UIViewController {
             guard let self else { return }
             self.paused.toggle()
             self.video.setPlaying(!self.paused)
-            control?.update(symbol: self.paused ? "play.fill" : "pause.fill",
-                            label: self.paused ? "Відтворити" : "Призупинити")
+            if let control {
+                var configuration = control.configuration
+                configuration?.image = UIImage(systemName: self.paused ? "play.fill" : "pause.fill",
+                    withConfiguration: UIImage.SymbolConfiguration(pointSize: 30, weight: .semibold))
+                control.accessibilityLabel = self.paused ? "Відтворити" : "Призупинити"
+                if UIAccessibility.isReduceMotionEnabled { control.configuration = configuration }
+                else {
+                    UIView.transition(with: control, duration: 0.18, options: [.transitionCrossDissolve, .allowUserInteraction],
+                                      animations: { control.configuration = configuration })
+                }
+            }
         }, for: .primaryActionTriggered)
     }
 

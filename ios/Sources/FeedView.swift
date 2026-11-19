@@ -1,4 +1,6 @@
 import AVFoundation
+import CoreImage
+import CoreImage.CIFilterBuiltins
 import UIKit
 import Symbols
 
@@ -15,7 +17,11 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
     private let empty = EmptyStateView(title: "У підписках поки немає відео",
                                        message: "Підпишись на авторів, щоб бачити їхні публікації.",
                                        symbol: "person.2")
-    private let reactionIsland = UIVisualEffectView(effect: UIGlassEffect(style: .regular))
+    private let reactionIsland = glassIsland()
+    private let sound = GlyphButton(symbol: "speaker.slash", label: "Увімкнути звук")
+    var edgeScrollView: UIScrollView? {
+        pager.viewIfLoaded?.subviews.compactMap { $0 as? UIScrollView }.first
+    }
     private lazy var captionStack = UIStackView(arrangedSubviews: [author, caption])
     private var clips: [Clip] = []
     private weak var playingPage: VideoPage?
@@ -66,9 +72,15 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
         let controls = UIStackView(arrangedSubviews: [like, comments, bookmark])
         controls.axis = .vertical
         controls.spacing = 4
-        reactionIsland.cornerConfiguration = .capsule()
         reactionIsland.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(reactionIsland)
+        view.addSubview(sound)
+        sound.addAction(UIAction { [weak self] _ in
+            guard let self else { return }
+            self.muted.toggle()
+            self.sound.update(symbol: self.muted ? "speaker.slash" : "speaker.wave.2",
+                              label: self.muted ? "Увімкнути звук" : "Вимкнути звук")
+        }, for: .primaryActionTriggered)
         controls.translatesAutoresizingMaskIntoConstraints = false
         reactionIsland.contentView.addSubview(controls)
         let safe = view.safeAreaLayoutGuide
@@ -78,7 +90,9 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
             reactionIsland.widthAnchor.constraint(equalTo: controls.widthAnchor, constant: 6),
             reactionIsland.heightAnchor.constraint(equalTo: controls.heightAnchor, constant: 8),
             reactionIsland.trailingAnchor.constraint(equalTo: safe.trailingAnchor, constant: -16),
-            reactionIsland.bottomAnchor.constraint(equalTo: safe.bottomAnchor, constant: -70),
+            reactionIsland.bottomAnchor.constraint(equalTo: safe.bottomAnchor, constant: -62),
+            sound.bottomAnchor.constraint(equalTo: reactionIsland.topAnchor, constant: -8),
+            sound.centerXAnchor.constraint(equalTo: reactionIsland.centerXAnchor),
             captionStack.leadingAnchor.constraint(equalTo: safe.leadingAnchor, constant: 18),
             captionStack.trailingAnchor.constraint(equalTo: safe.trailingAnchor, constant: -130),
             captionStack.bottomAnchor.constraint(equalTo: safe.bottomAnchor, constant: -14)
@@ -88,7 +102,7 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
-        playingPage?.setPlaying(false, muted: muted)
+        if !playbackEnabled { playingPage?.setPlaying(false, muted: muted) }
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -128,6 +142,7 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
         let active = clips.isEmpty ? nil : page?.clip
         captionStack.isHidden = active == nil
         reactionIsland.isHidden = active == nil
+        sound.isHidden = active == nil
         if let active {
             author.text = store.profile(active.authorID).map { "@\($0.handle)" } ?? active.credit
             caption.text = active.caption
@@ -185,8 +200,8 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
 
 private final class VideoPage: UIViewController {
     let clip: Clip
-    private let video = VideoSurface()
-    private let resumeButton = GlyphButton(symbol: "play.fill", label: "Відтворити")
+    private let video = VideoSurface(frame: .zero)
+    private let resumeButton = makePlaybackButton(symbol: "play.fill", label: "Відтворити")
     private var enabled = false
     private var paused = false
 
@@ -201,7 +216,7 @@ private final class VideoPage: UIViewController {
         super.viewDidLoad()
         view.backgroundColor = .black
         video.pin(to: view)
-        video.load(clip.url)
+        video.load(clip.url, adaptsLandscape: true)
         let shade = GradientView()
         shade.gradient.colors = [UIColor.black.withAlphaComponent(0.44).cgColor,
                                   UIColor.clear.cgColor, UIColor.clear.cgColor,
@@ -219,9 +234,12 @@ private final class VideoPage: UIViewController {
             tapArea?.accessibilityLabel = self.paused ? "Відтворити відео" : "Призупинити відео"
             self.updatePauseIndicator()
         }, for: .primaryActionTriggered)
-        resumeButton.isUserInteractionEnabled = false
-        resumeButton.isAccessibilityElement = false
         resumeButton.alpha = 0
+        resumeButton.addAction(UIAction { [weak self, weak tapArea] _ in
+            self?.paused = false
+            tapArea?.accessibilityLabel = "Призупинити відео"
+            self?.updatePauseIndicator()
+        }, for: .primaryActionTriggered)
         view.addSubview(resumeButton)
         NSLayoutConstraint.activate([
             resumeButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
@@ -237,33 +255,194 @@ private final class VideoPage: UIViewController {
 
     private func updatePauseIndicator() {
         video.setPlaying(enabled && !paused)
-        let update = { self.resumeButton.alpha = self.paused ? 1 : 0 }
+        let update = {
+            self.resumeButton.alpha = self.paused ? 1 : 0
+            self.resumeButton.transform = self.paused ? .identity : CGAffineTransform(scaleX: 0.78, y: 0.78)
+        }
         if UIAccessibility.isReduceMotionEnabled { update() }
-        else { UIView.animate(withDuration: 0.18, animations: update) }
+        else {
+            UIView.animate(withDuration: 0.26, delay: 0, usingSpringWithDamping: 0.72,
+                           initialSpringVelocity: 0, options: [.beginFromCurrentState, .allowUserInteraction],
+                           animations: update)
+        }
     }
 }
 
-final class VideoSurface: UIView {
-    override class var layerClass: AnyClass { AVPlayerLayer.self }
-    private var playerLayer: AVPlayerLayer { layer as! AVPlayerLayer }
-    private var looper: AVPlayerLooper?
+func makePlaybackButton(symbol: String, label: String) -> UIButton {
+    var style = UIButton.Configuration.glass()
+    style.cornerStyle = .capsule
+    style.image = UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 30, weight: .semibold))
+    style.baseForegroundColor = .white
+    let button = UIButton(configuration: style)
+    button.accessibilityLabel = label
+    button.translatesAutoresizingMaskIntoConstraints = false
+    NSLayoutConstraint.activate([
+        button.widthAnchor.constraint(equalToConstant: 72),
+        button.heightAnchor.constraint(equalTo: button.widthAnchor)
+    ])
+    return button
+}
 
-    func load(_ url: URL?) {
-        playerLayer.player?.pause()
+final class VideoSurface: UIView {
+    private let foreground = AVPlayerLayer()
+    private let backdrop = UIImageView()
+    private static let context = CIContext()
+    private var player: AVQueuePlayer?
+    private var looper: AVPlayerLooper?
+    private var observer: Any?
+    private var frameOutput: AVPlayerItemVideoOutput?
+    private weak var observedItem: AVPlayerItem?
+    private var metadata: Task<Void, Never>?
+    private var revision = 0
+    private var landscape = false
+    private var aspectRatio: CGFloat = 1
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        backgroundColor = .black
+        clipsToBounds = true
+        backdrop.contentMode = .scaleAspectFill
+        backdrop.clipsToBounds = true
+        backdrop.isHidden = true
+        addSubview(backdrop)
+        layer.addSublayer(foreground)
+    }
+
+    required init?(coder: NSCoder) { fatalError("Use init(frame:)") }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        backdrop.frame = bounds
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        if landscape {
+            let width = min(bounds.width, bounds.height * aspectRatio)
+            let height = width / aspectRatio
+            foreground.frame = CGRect(x: bounds.midX - width / 2, y: bounds.midY - height / 2,
+                                      width: width, height: height)
+        } else {
+            foreground.frame = bounds
+        }
+        CATransaction.commit()
+    }
+
+    func load(_ url: URL?, adaptsLandscape: Bool = false) {
+        revision += 1
+        let loadRevision = revision
+        metadata?.cancel()
+        stopBackdrop()
+        player?.pause()
         looper?.disableLooping()
         looper = nil
-        playerLayer.player = nil
+        player = nil
+        foreground.player = nil
+        foreground.videoGravity = adaptsLandscape ? .resizeAspect : .resizeAspectFill
+        backdrop.isHidden = true
+        backdrop.image = nil
+        landscape = false
+        setNeedsLayout()
         guard let url else { return }
-        let player = AVQueuePlayer()
-        player.isMuted = true
-        looper = AVPlayerLooper(player: player, templateItem: AVPlayerItem(url: url))
-        playerLayer.videoGravity = .resizeAspectFill
-        playerLayer.player = player
+        let asset = AVURLAsset(url: url)
+        let queue = AVQueuePlayer()
+        queue.isMuted = true
+        looper = AVPlayerLooper(player: queue, templateItem: AVPlayerItem(asset: asset))
+        player = queue
+        foreground.player = queue
+
+        guard adaptsLandscape else { return }
+        metadata = Task { [weak self] in
+            guard let track = try? await asset.loadTracks(withMediaType: .video).first,
+                  let size = try? await track.load(.naturalSize),
+                  let transform = try? await track.load(.preferredTransform),
+                  !Task.isCancelled, let self, self.revision == loadRevision else { return }
+            let oriented = CGRect(origin: .zero, size: size).applying(transform).standardized
+            self.landscape = oriented.width > oriented.height
+            self.aspectRatio = oriented.height > 0 ? oriented.width / oriented.height : 1
+            self.foreground.videoGravity = self.landscape ? .resizeAspect : .resizeAspectFill
+            self.backdrop.isHidden = !self.landscape
+            self.setNeedsLayout()
+            if self.landscape {
+                self.startBackdrop()
+                if let poster = await VideoPoster.image(for: url), self.revision == loadRevision,
+                   self.backdrop.image == nil {
+                    self.backdrop.image = self.blurred(CIImage(cgImage: poster))
+                }
+            }
+        }
     }
 
     func setPlaying(_ playing: Bool, muted: Bool? = nil) {
-        if let muted { playerLayer.player?.isMuted = muted }
-        if playing { playerLayer.player?.play() }
-        else { playerLayer.player?.pause() }
+        if let muted { player?.isMuted = muted }
+        if playing { player?.play() }
+        else { player?.pause() }
+    }
+
+    private func startBackdrop() {
+        guard observer == nil, let player else { return }
+        observer = player.addPeriodicTimeObserver(forInterval: CMTime(value: 1, timescale: 8), queue: .main) { [weak self] time in
+            Task { @MainActor [weak self] in self?.updateBackdrop(at: time) }
+        }
+    }
+
+    private func updateBackdrop(at time: CMTime) {
+        guard landscape, let current = player?.currentItem else { return }
+        if current !== observedItem {
+            if let frameOutput { observedItem?.remove(frameOutput) }
+            let output = AVPlayerItemVideoOutput(pixelBufferAttributes: [
+                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
+            ])
+            current.add(output)
+            observedItem = current
+            frameOutput = output
+            return
+        }
+        guard let frameOutput, frameOutput.hasNewPixelBuffer(forItemTime: time),
+              let frame = frameOutput.copyPixelBuffer(forItemTime: time, itemTimeForDisplay: nil) else { return }
+        if let image = blurred(CIImage(cvPixelBuffer: frame)) { backdrop.image = image }
+    }
+
+    private func blurred(_ image: CIImage) -> UIImage? {
+        let factor = min(1, 192 / max(image.extent.width, image.extent.height))
+        let scaled = image.transformed(by: CGAffineTransform(scaleX: factor, y: factor))
+        let filter = CIFilter.gaussianBlur()
+        filter.inputImage = scaled.clampedToExtent()
+        filter.radius = 16
+        guard let filtered = filter.outputImage,
+              let cgImage = Self.context.createCGImage(filtered, from: scaled.extent) else { return nil }
+        return UIImage(cgImage: cgImage)
+    }
+
+    private func stopBackdrop() {
+        if let observer { player?.removeTimeObserver(observer) }
+        observer = nil
+        if let frameOutput { observedItem?.remove(frameOutput) }
+        observedItem = nil
+        frameOutput = nil
+    }
+
+    deinit {
+        metadata?.cancel()
+        if let observer { player?.removeTimeObserver(observer) }
+    }
+}
+
+@MainActor
+enum VideoPoster {
+    private static let cache: NSCache<NSURL, UIImage> = {
+        let cache = NSCache<NSURL, UIImage>()
+        cache.countLimit = 96
+        return cache
+    }()
+
+    static func image(for url: URL) async -> CGImage? {
+        if let cached = cache.object(forKey: url as NSURL) { return cached.cgImage }
+        let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
+        generator.appliesPreferredTrackTransform = true
+        generator.maximumSize = CGSize(width: 480, height: 640)
+        var poster = try? await generator.image(at: CMTime(seconds: 0.5, preferredTimescale: 600))
+        if poster == nil { poster = try? await generator.image(at: .zero) }
+        guard let result = poster else { return nil }
+        cache.setObject(UIImage(cgImage: result.image), forKey: url as NSURL)
+        return result.image
     }
 }

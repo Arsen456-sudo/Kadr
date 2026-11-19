@@ -12,11 +12,14 @@ final class NavigationTests: XCTestCase {
         let feed = tabs.buttons["Стрічка"]
         let saved = tabs.buttons["Збережене"]
         let profile = tabs.buttons["Профіль"]
+        let inbox = tabs.buttons["Вхідні"]
         let header = app.buttons["header.action"]
         XCTAssertTrue(feed.waitForExistence(timeout: 8))
         XCTAssertTrue(app.segmentedControls.buttons["Для тебе"].exists)
         XCTAssertEqual(header.label, "Пошук")
 
+        inbox.tap()
+        XCTAssertTrue(app.staticTexts["Вхідні порожні"].waitForExistence(timeout: 5))
         saved.tap()
         XCTAssertTrue(app.staticTexts["Збережені відео"].waitForExistence(timeout: 5), app.debugDescription)
         XCTAssertTrue(saved.isSelected)
@@ -43,11 +46,14 @@ final class NavigationTests: XCTestCase {
         app.buttons["Завершити"].tap()
         XCTAssertTrue(app.staticTexts["Kadr Test"].waitForExistence(timeout: 5))
         XCTAssertEqual(header.label, "Вийти")
+        XCTAssertGreaterThan(header.frame.width, 70)
+        XCTAssertTrue(app.buttons["Змінити банер"].exists)
 
         feed.tap()
         let following = app.segmentedControls.buttons["Підписки"]
         XCTAssertTrue(following.waitForExistence(timeout: 5))
         XCTAssertEqual(header.label, "Пошук")
+        XCTAssertLessThan(header.frame.width, 50)
         following.tap()
         XCTAssertTrue(app.staticTexts["У підписках поки немає відео"].waitForExistence(timeout: 5))
         app.segmentedControls.buttons["Для тебе"].tap()

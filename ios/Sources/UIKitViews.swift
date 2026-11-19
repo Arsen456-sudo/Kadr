@@ -118,6 +118,89 @@ final class GlyphButton: UIButton {
     }
 }
 
+func glassIsland(interactive: Bool = false) -> UIVisualEffectView {
+    let effect = UIGlassEffect(style: .regular)
+    effect.isInteractive = interactive
+    let view = UIVisualEffectView(effect: effect)
+    view.cornerConfiguration = .capsule()
+    view.translatesAutoresizingMaskIntoConstraints = false
+    return view
+}
+
+final class HeaderActionButton: UIButton {
+    static let side: CGFloat = 46
+    private let indicator = UIImageView()
+    private let title = makeLabel(.subheadline, text: "Вийти")
+    private let blur = UIVisualEffectView()
+    private var extent: NSLayoutConstraint!
+    private var revision = 0
+
+    init() {
+        super.init(frame: .zero)
+        var style = UIButton.Configuration.glass()
+        style.cornerStyle = .capsule
+        configuration = style
+        translatesAutoresizingMaskIntoConstraints = false
+        extent = widthAnchor.constraint(equalToConstant: Self.side)
+        extent.isActive = true
+        heightAnchor.constraint(equalToConstant: Self.side).isActive = true
+        indicator.tintColor = .label
+        indicator.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 18, weight: .semibold)
+        indicator.setContentCompressionResistancePriority(.required, for: .horizontal)
+        title.font = title.font.withTraits(.traitBold)
+        title.numberOfLines = 1
+        let content = UIStackView(arrangedSubviews: [indicator, title])
+        content.spacing = 6
+        content.alignment = .center
+        content.isUserInteractionEnabled = false
+        content.accessibilityElementsHidden = true
+        content.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(content)
+        blur.isUserInteractionEnabled = false
+        blur.isAccessibilityElement = false
+        blur.cornerConfiguration = .capsule()
+        blur.pin(to: self, insets: .init(top: 4, leading: 4, bottom: 4, trailing: 4))
+        NSLayoutConstraint.activate([
+            content.centerXAnchor.constraint(equalTo: centerXAnchor),
+            content.centerYAnchor.constraint(equalTo: centerYAnchor)
+        ])
+        setLogout(false, animated: false)
+    }
+
+    required init?(coder: NSCoder) { fatalError("Use init()") }
+
+    func setLogout(_ logout: Bool, animated: Bool) {
+        revision += 1
+        let request = revision
+        accessibilityLabel = logout ? "Вийти" : "Пошук"
+        let changes = {
+            self.title.isHidden = !logout
+            self.indicator.image = UIImage(systemName: logout ? "rectangle.portrait.and.arrow.right" : "magnifyingglass")
+        }
+        guard animated, window != nil, !UIAccessibility.isReduceMotionEnabled,
+              let parent = superview else {
+            extent.constant = logout ? 105 : Self.side
+            changes()
+            blur.effect = nil
+            return
+        }
+        parent.layoutIfNeeded()
+        extent.constant = logout ? 105 : Self.side
+        UIView.animate(withDuration: 0.23, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction, .curveEaseInOut]) {
+            parent.layoutIfNeeded()
+        }
+        UIView.animate(withDuration: 0.085, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction]) {
+            self.blur.effect = UIBlurEffect(style: .systemUltraThinMaterialDark)
+        } completion: { _ in
+            guard self.revision == request else { return }
+            changes()
+            UIView.animate(withDuration: 0.14, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction]) {
+                self.blur.effect = nil
+            }
+        }
+    }
+}
+
 final class GradientView: UIView {
     override class var layerClass: AnyClass { CAGradientLayer.self }
     var gradient: CAGradientLayer { layer as! CAGradientLayer }
