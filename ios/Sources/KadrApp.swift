@@ -45,9 +45,7 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
     private lazy var feed = FeedController(store: store)
     private lazy var saved = SavedController(store: store)
     private lazy var profile = ProfileController(store: store, profileID: nil)
-    private let segments = FeedSectionPicker()
     let toolbarState = KadrToolbarState()
-    var feedSectionPicker: FeedSectionPicker { segments }
     private var immersive = false
 
     override var prefersStatusBarHidden: Bool { immersive }
@@ -117,15 +115,14 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
             self.setImmersive(!self.immersive)
         }
 
-        segments.onSelection = { [weak self] section in
+        toolbarState.onSection = { [weak self] section in
             guard let self else { return }
             if section == .following && self.store.active == nil {
-                self.segments.updateSelection(self.feed.section)
                 self.openAccount()
                 return
             }
             self.feed.selectSection(section)
-            self.segments.updateSelection(section)
+            if self.toolbarState.feedSection != section { self.toolbarState.feedSection = section }
         }
     }
 
@@ -212,7 +209,7 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
         let isFeed = controller === feed
         if !isFeed && immersive { setImmersive(false) }
         let isProfile = controller === profile
-        segments.updateSelection(feed.section)
+        if toolbarState.feedSection != feed.section { toolbarState.feedSection = feed.section }
         let scroll: UIScrollView? = isFeed ? feed.edgeScrollView
             : isProfile ? profile.edgeScrollView : controller === inbox ? inbox.scrollView : saved.tableView
         scroll?.bottomEdgeEffect.style = .soft
