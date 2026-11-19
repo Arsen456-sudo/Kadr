@@ -121,7 +121,7 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
         let leading = max(view.safeAreaInsets.left, sectionInsets.leading)
         let trailing = max(view.safeAreaInsets.right, sectionInsets.trailing)
         sectionIsland.frame = CGRect(x: leading, y: max(pin, naturalY),
-                                     width: max(0, view.bounds.width - leading - trailing), height: 40)
+                                     width: max(0, view.bounds.width - leading - trailing), height: 44)
         view.bringSubviewToFront(sectionIsland)
     }
 

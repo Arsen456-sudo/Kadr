@@ -26,6 +26,7 @@ final class ProfileSectionPicker: GlassSectionPicker {
 
     init() {
         super.init(titles: ProfileSection.allCases.map(\.title), symbols: ProfileSection.allCases.map(\.symbol), glassContainer: true)
+        matchSearchHeight(44)
         onIndexSelection = { [weak self] index in
             guard let section = ProfileSection(rawValue: index) else { return }
             self?.onSelection?(section)
