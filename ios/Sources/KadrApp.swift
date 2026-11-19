@@ -83,6 +83,7 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        updateChrome(for: selectedViewController, animated: false)
         updatePlayback()
         guard !welcomePresented else { return }
         welcomePresented = true

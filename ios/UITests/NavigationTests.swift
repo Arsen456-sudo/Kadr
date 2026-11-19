@@ -57,6 +57,11 @@ final class NavigationTests: XCTestCase {
         following.tap()
         XCTAssertTrue(app.staticTexts["У підписках поки немає відео"].waitForExistence(timeout: 5))
         app.segmentedControls.buttons["Для тебе"].tap()
+        XCTAssertTrue(app.buttons["Увімкнути звук"].exists)
+        XCTAssertTrue(tabs.buttons["Додати"].exists)
+        app.buttons["Коментарі"].tap()
+        XCTAssertTrue(app.textFields["Написати коментар"].waitForExistence(timeout: 5))
+        app.navigationBars.firstMatch.buttons.firstMatch.tap()
         let bookmark = app.buttons["Зберегти"]
         XCTAssertTrue(bookmark.waitForExistence(timeout: 5))
         bookmark.tap()
