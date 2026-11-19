@@ -155,6 +155,11 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         view.bringSubviewToFront(header)
+        if profile.isViewLoaded {
+            let bottom = navigationGlassBottom(in: header, relativeTo: profile.view) ?? profile.view.convert(header.bounds, from: header).maxY
+            let top = bottom + 2
+            if profile.sectionPinTop != top { profile.sectionPinTop = top }
+        }
         if header.topItem === feedHeader {
             // Measure the rendered circular glass, rather than its larger accessibility target.
             if let frame = feedHeader.rightBarButtonItem?.accessibilityFrame, frame.width > 0 {
@@ -162,6 +167,20 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
                 segments.matchSearchHeight(diameter ?? 40)
             }
         }
+    }
+
+    private func navigationGlassBottom(in container: UIView, relativeTo target: UIView) -> CGFloat? {
+        var bottom: CGFloat?
+        if let effect = container as? UIVisualEffectView, effect.effect is UIGlassEffect,
+           container.bounds.height >= 28, container.bounds.height <= 60 {
+            bottom = container.convert(container.bounds, to: target).maxY
+        }
+        for child in container.subviews {
+            if let edge = navigationGlassBottom(in: child, relativeTo: target) {
+                bottom = max(bottom ?? edge, edge)
+            }
+        }
+        return bottom
     }
 
     private func searchGlassDiameter(in container: UIView, searchFrame: CGRect) -> CGFloat? {

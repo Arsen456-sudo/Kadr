@@ -5,7 +5,7 @@ struct Profile: Codable, Identifiable {
     let handle: String
     let name: String
     let bio: String
-    let avatar: Data?
+    var avatar: Data?
     var bannerFile: String? = nil
 
     var bannerURL: URL? { bannerFile.map { LocalStore.directory.appending(path: $0) } }
@@ -173,6 +173,14 @@ final class LocalStore {
         var next = state
         next.activeID = id
         _ = save(next)
+    }
+
+    @discardableResult
+    func setAvatar(_ data: Data, for id: UUID) -> Bool {
+        guard state.activeID == id, let index = state.profiles.firstIndex(where: { $0.id == id }) else { return false }
+        var next = state
+        next.profiles[index].avatar = data
+        return save(next)
     }
 
     @discardableResult

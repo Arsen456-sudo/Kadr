@@ -8,6 +8,10 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
     private let store: LocalStore
     private let profileID: UUID?
     private var selectedSection = ProfileSection.posts
+    private let sectionIsland = ProfileSectionPicker()
+    var sectionPinTop: CGFloat? { didSet { updateSectionPosition() } }
+    private enum PhotoDestination { case banner, avatar }
+    private var pickerDestination = PhotoDestination.banner
     private lazy var layout = UICollectionViewCompositionalLayout { [weak self] _, environment in
         let width = environment.container.effectiveContentSize.width
         let side = (width - 4) / 3
@@ -84,11 +88,15 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
             navigationItem.leftItemsSupplementBackButton = true
             navigationItem.leftBarButtonItem = button
         }
+        sectionIsland.translatesAutoresizingMaskIntoConstraints = true
+        sectionIsland.onSelection = { [weak self] section in self?.select(section) }
+        view.addSubview(sectionIsland)
         refresh()
     }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
         updateBackdropPosition()
+        updateSectionPosition()
     }
 
     private func updateBackdropPosition() {
@@ -97,6 +105,20 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
         let offset = grid.contentOffset.y
         backdropHeight.constant = max(0, height - offset)
         backdrop.setScroll(offset: offset, mediaHeight: height)
+    }
+
+    private func updateSectionPosition() {
+        guard isViewLoaded, let profile = visibleProfile else {
+            sectionIsland.isHidden = true
+            return
+        }
+        sectionIsland.isHidden = false
+        let headerHeight = ProfileHero.height(for: profile, width: view.bounds.width, top: view.safeAreaInsets.top,
+                                              showsFollow: followState != nil)
+        let naturalY = headerHeight - 50 - grid.contentOffset.y
+        let pin = sectionPinTop ?? (navigationController == nil ? view.safeAreaInsets.top + 46 : view.safeAreaInsets.top + 2)
+        sectionIsland.frame = CGRect(x: 0, y: max(pin, naturalY), width: view.bounds.width, height: 40)
+        view.bringSubviewToFront(sectionIsland)
     }
 
     override func viewDidLayoutSubviews() {
@@ -112,6 +134,7 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
         }
         grid.contentInset.bottom = view.safeAreaInsets.bottom
         grid.verticalScrollIndicatorInsets = view.safeAreaInsets
+        updateSectionPosition()
     }
 
     override func viewDidAppear(_ animated: Bool) {
@@ -131,6 +154,7 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
         let profile = profileID.flatMap { store.profile($0) } ?? (profileID == nil ? store.active : nil)
         let resetScroll = visibleProfile?.id != profile?.id
         let changedBanner = visibleProfile?.bannerFile != profile?.bannerFile
+        let changedAvatar = visibleProfile?.avatar != profile?.avatar
         visibleProfile = profile
         if resetScroll || changedBanner {
             backdrop.show(profile)
@@ -139,6 +163,8 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
         if resetScroll { selectedSection = .posts }
         updateBackdropPosition()
         backdrop.isHidden = profile == nil
+        sectionIsland.select(selectedSection)
+        updateSectionPosition()
         if let profile {
             guestView?.removeFromSuperview()
             guestView = nil
@@ -146,7 +172,7 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
             title = profileID == nil ? "Профіль" : "@\(profile.handle)"
             let newClips = posts(for: profile)
             let state: Bool? = store.active != nil && store.active?.id != profile.id ? store.follows(profile) : nil
-            if resetScroll || changedBanner || state != followState || clips.map(\.id) != newClips.map(\.id) {
+            if resetScroll || changedBanner || changedAvatar || state != followState || clips.map(\.id) != newClips.map(\.id) {
                 clips = newClips
                 followState = state
                 layout.invalidateLayout()
@@ -202,7 +228,9 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
         guard section != selectedSection, let profile = visibleProfile else { return }
         selectedSection = section
         clips = posts(for: profile)
+        sectionIsland.select(section)
         grid.reloadSections(IndexSet(integer: 0))
+        updateSectionPosition()
     }
 
     func collectionView(_ collectionView: UICollectionView, viewForSupplementaryElementOfKind kind: String,
@@ -212,9 +240,7 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
         guard let profile = visibleProfile else { return view }
         let follow = followState
         view.setCover(for: profile, width: collectionView.bounds.width, top: self.view.safeAreaInsets.top)
-        view.sections.select(selectedSection)
-        view.sections.onSelection = { [weak self] section in self?.select(section) }
-        view.show(profile, hasPosts: !clips.isEmpty, following: follow) { [weak self] in
+        view.show(profile, hasPosts: !clips.isEmpty, following: follow, onAvatar: { [weak self] in self?.openAvatar() }) { [weak self] in
             guard let self else { return }
             self.store.toggleFollow(profile)
             self.showStorageErrorIfNeeded()
@@ -251,6 +277,7 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
 
     private func openBannerPicker(for id: UUID) {
         pickerOwner = id
+        pickerDestination = .banner
         var configuration = PHPickerConfiguration()
         configuration.filter = .any(of: [.images, .videos])
         configuration.preferredAssetRepresentationMode = .current
@@ -259,14 +286,37 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
         present(picker, animated: true)
     }
 
-    func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
-        picker.dismiss(animated: true)
-        guard let id = pickerOwner, let provider = results.first?.itemProvider else {
-            pickerOwner = nil
-            return
+    private func openAvatar() {
+        guard let profile = visibleProfile else { return }
+        let menu = AvatarMenuController(data: profile.avatar, editable: store.active?.id == profile.id)
+        menu.onChoose = { [weak self] in
+            guard let self, self.store.active?.id == profile.id else { return }
+            self.pickerOwner = profile.id
+            self.pickerDestination = .avatar
+            var configuration = PHPickerConfiguration()
+            configuration.filter = .images
+            configuration.preferredAssetRepresentationMode = .current
+            let picker = PHPickerViewController(configuration: configuration)
+            picker.delegate = self
+            self.present(picker, animated: true)
         }
+        let navigation = UINavigationController(rootViewController: menu)
+        navigation.modalPresentationStyle = .fullScreen
+        present(navigation, animated: true)
+    }
+
+    func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+        let owner = pickerOwner
+        let destination = pickerDestination
         pickerOwner = nil
-        if let format = provider.registeredTypeIdentifiers.first(where: { UTType($0)?.conforms(to: .movie) == true }) {
+        picker.dismiss(animated: true) { [weak self] in
+            guard let owner, let provider = results.first?.itemProvider else { return }
+            self?.importMedia(provider, owner: owner, destination: destination)
+        }
+    }
+
+    private func importMedia(_ provider: NSItemProvider, owner id: UUID, destination: PhotoDestination) {
+        if destination == .banner, let format = provider.registeredTypeIdentifiers.first(where: { UTType($0)?.conforms(to: .movie) == true }) {
             provider.loadFileRepresentation(forTypeIdentifier: format) { [weak self] url, _ in
                 guard let url else {
                     DispatchQueue.main.async { self?.showMessage("Не вдалося відкрити відео для банера.") }
@@ -296,25 +346,33 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
             provider.loadObject(ofClass: UIImage.self) { [weak self] object, _ in
                 DispatchQueue.main.async {
                     guard let self, let image = object as? UIImage, image.size.width > 0, image.size.height > 0 else {
-                        self?.showMessage("Не вдалося відкрити фото для банера.")
+                        self?.showMessage("Не вдалося відкрити фотографію.")
                         return
                     }
-                    let scale = min(1, 1600 / max(image.size.width, image.size.height))
-                    let size = CGSize(width: image.size.width * scale, height: image.size.height * scale)
-                    let format = UIGraphicsImageRendererFormat()
-                    format.scale = 1
-                    let data = UIGraphicsImageRenderer(size: size, format: format).jpegData(withCompressionQuality: 0.88) { _ in
-                        image.draw(in: CGRect(origin: .zero, size: size))
+                    let height = ProfileHero.bannerSize(width: self.view.bounds.width, top: self.view.safeAreaInsets.top) + 100
+                    let shape: PhotoCropController.Shape = destination == .avatar ? .avatar : .banner(self.view.bounds.width / height)
+                    let crop = PhotoCropController(image: image, shape: shape)
+                    crop.onCrop = { [weak self] image in
+                        guard let self, self.store.active?.id == id,
+                              let data = image.jpegData(compressionQuality: 0.97) else { return }
+                        if destination == .avatar {
+                            if self.store.setAvatar(data, for: id) {
+                                self.refresh()
+                                self.onChange?()
+                            } else { self.showStorageErrorIfNeeded() }
+                        } else {
+                            let temporary = FileManager.default.temporaryDirectory
+                                .appendingPathComponent(UUID().uuidString).appendingPathExtension("jpg")
+                            defer { try? FileManager.default.removeItem(at: temporary) }
+                            do {
+                                try data.write(to: temporary, options: .atomic)
+                                self.saveBanner(temporary, suffix: "jpg", owner: id)
+                            } catch { self.showMessage("Не вдалося записати фото для банера.") }
+                        }
                     }
-                    let temporary = FileManager.default.temporaryDirectory
-                        .appendingPathComponent(UUID().uuidString).appendingPathExtension("jpg")
-                    defer { try? FileManager.default.removeItem(at: temporary) }
-                    do {
-                        try data.write(to: temporary, options: .atomic)
-                        self.saveBanner(temporary, suffix: "jpg", owner: id)
-                    } catch {
-                        self.showMessage("Не вдалося записати фото для банера.")
-                    }
+                    let navigation = UINavigationController(rootViewController: crop)
+                    navigation.modalPresentationStyle = .fullScreen
+                    self.present(navigation, animated: true)
                 }
             }
         }
@@ -348,7 +406,6 @@ private final class ProfileHero: UICollectionReusableView {
     private static let footerHeight: CGFloat = 60
 
     private let banner = UIView()
-    let sections = ProfileSectionPicker()
     private let identity = UIStackView()
     private let followActions = UIStackView()
 
@@ -367,14 +424,6 @@ private final class ProfileHero: UICollectionReusableView {
                                                    bottom: Self.verticalPadding + 16, trailing: Self.margin))
 
         let footerContainer = UIView()
-        sections.translatesAutoresizingMaskIntoConstraints = false
-        footerContainer.addSubview(sections)
-        NSLayoutConstraint.activate([
-            sections.leadingAnchor.constraint(equalTo: footerContainer.leadingAnchor, constant: Self.margin),
-            sections.trailingAnchor.constraint(equalTo: footerContainer.trailingAnchor, constant: -Self.margin),
-            sections.centerYAnchor.constraint(equalTo: footerContainer.centerYAnchor),
-            sections.heightAnchor.constraint(equalToConstant: 40)
-        ])
         footerContainer.heightAnchor.constraint(equalToConstant: Self.footerHeight).isActive = true
 
         banner.isUserInteractionEnabled = false
@@ -391,7 +440,11 @@ private final class ProfileHero: UICollectionReusableView {
     static func coverSize(for profile: Profile, width: CGFloat, top: CGFloat) -> CGFloat {
         let navigationBottom = top + 50
         guard profile.bannerURL != nil else { return navigationBottom }
-        return max(navigationBottom + 28, min(180, width * 0.40))
+        return bannerSize(width: width, top: top)
+    }
+
+    static func bannerSize(width: CGFloat, top: CGFloat) -> CGFloat {
+        max(top + 78, min(180, width * 0.40))
     }
 
     func setCover(for profile: Profile, width: CGFloat, top: CGFloat) {
@@ -408,7 +461,7 @@ private final class ProfileHero: UICollectionReusableView {
         return ceil(coverSize(for: profile, width: width, top: top) + max(identityHeight, measured) + 2 * verticalPadding + 16 + actionHeight + footerHeight)
     }
 
-    func show(_ profile: Profile, hasPosts: Bool, following: Bool?, onFollow: @escaping () -> Void) {
+    func show(_ profile: Profile, hasPosts: Bool, following: Bool?, onAvatar: @escaping () -> Void, onFollow: @escaping () -> Void) {
         identity.arrangedSubviews.forEach { $0.removeFromSuperview() }
         followActions.arrangedSubviews.forEach { $0.removeFromSuperview() }
 
@@ -417,7 +470,9 @@ private final class ProfileHero: UICollectionReusableView {
         avatar.backgroundColor = .systemBackground
         avatar.widthAnchor.constraint(equalToConstant: Self.avatarSide).isActive = true
         avatar.heightAnchor.constraint(equalToConstant: Self.avatarSide).isActive = true
-        let avatarContainer = UIView()
+        let avatarContainer = UIButton(type: .custom)
+        avatarContainer.accessibilityLabel = "Фото профілю"
+        avatarContainer.addAction(UIAction { _ in onAvatar() }, for: .primaryActionTriggered)
         avatarContainer.translatesAutoresizingMaskIntoConstraints = false
         avatarContainer.addSubview(avatar)
         avatar.translatesAutoresizingMaskIntoConstraints = false
@@ -493,9 +548,11 @@ private final class ProfileBackdrop: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
-        artwork.frame = CGRect(x: 0, y: 0, width: bounds.width, height: mediaHeight)
+        let stretch = max(0, -scrollOffset)
+        let height = mediaHeight + stretch
+        artwork.frame = CGRect(x: 0, y: 0, width: bounds.width, height: height)
         video.frame = artwork.frame
-        shade.frame = CGRect(x: 0, y: -scrollOffset, width: bounds.width, height: mediaHeight)
+        shade.frame = CGRect(x: 0, y: -max(0, scrollOffset), width: bounds.width, height: height)
     }
 
     func show(_ profile: Profile?) {

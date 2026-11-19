@@ -125,45 +125,97 @@ func glassIsland(style: UIGlassEffect.Style = .regular) -> UIVisualEffectView {
     return view
 }
 
-final class FeedSectionPicker: UIView {
-    private let control = UISegmentedControl(items: ["Для тебе", "Підписки"])
-    var onSelection: ((FeedSection) -> Void)?
-
+class GlassSectionPicker: UIView {
+    private let control = UISegmentedControl()
+    private let titles: [String]
+    private let symbols: [String]
     private var controlHeight: NSLayoutConstraint!
+    private var lastWidth: CGFloat = -1
+    var onIndexSelection: ((Int) -> Void)?
+
     override var intrinsicContentSize: CGSize { CGSize(width: 184, height: 44) }
 
-    func matchSearchHeight(_ height: CGFloat) {
-        guard height.isFinite, height >= 28, height <= 60 else { return }
-        if abs(controlHeight.constant - height) > 0.25 { controlHeight.constant = height }
-    }
-
-    init() {
+    init(titles: [String], symbols: [String] = []) {
+        self.titles = titles
+        self.symbols = symbols
         super.init(frame: .zero)
+        for (index, title) in titles.enumerated() { control.insertSegment(withTitle: title, at: index, animated: false) }
         control.translatesAutoresizingMaskIntoConstraints = false
         addSubview(control)
         controlHeight = control.heightAnchor.constraint(equalToConstant: 40)
         NSLayoutConstraint.activate([
             control.topAnchor.constraint(equalTo: topAnchor),
             control.leadingAnchor.constraint(equalTo: leadingAnchor),
-            control.trailingAnchor.constraint(equalTo: trailingAnchor),
-            controlHeight
+            control.trailingAnchor.constraint(equalTo: trailingAnchor), controlHeight
         ])
-        let attributes: [NSAttributedString.Key: Any] = [.font: UIFont.preferredFont(forTextStyle: .footnote)]
-        control.setTitleTextAttributes(attributes, for: .normal)
-        control.setTitleTextAttributes(attributes, for: .selected)
+        let font = UIFont.preferredFont(forTextStyle: .footnote)
+        control.setTitleTextAttributes([.font: font], for: .normal)
+        control.setTitleTextAttributes([.font: font], for: .selected)
         control.selectedSegmentIndex = 0
         control.addAction(UIAction { [weak self] _ in
             guard let self else { return }
-            self.onSelection?(self.control.selectedSegmentIndex == 1 ? .following : .recommended)
+            self.onIndexSelection?(self.control.selectedSegmentIndex)
         }, for: .valueChanged)
+        registerForTraitChanges([UITraitPreferredContentSizeCategory.self, UITraitUserInterfaceStyle.self]) {
+            (picker: GlassSectionPicker, _: UITraitCollection) in
+            picker.lastWidth = -1
+            picker.setNeedsLayout()
+        }
     }
 
+    required init?(coder: NSCoder) { fatalError("Use init(titles:)") }
+
+    func matchSearchHeight(_ height: CGFloat) {
+        guard height.isFinite, height >= 28, height <= 60 else { return }
+        if abs(controlHeight.constant - height) > 0.25 { controlHeight.constant = height }
+    }
+
+    func selectIndex(_ index: Int) {
+        control.selectedSegmentIndex = index
+        control.accessibilityValue = titles[index]
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard !symbols.isEmpty, bounds.width > 0, lastWidth != bounds.width else { return }
+        lastWidth = bounds.width
+        let base = UIFont.preferredFont(forTextStyle: .footnote)
+        let natural = titles.reduce(CGFloat(0)) { $0 + ($1 as NSString).size(withAttributes: [.font: base]).width + base.pointSize + 17 }
+        let font = base.withSize(base.pointSize * min(1, max(0.65, bounds.width / natural)))
+        let color = UIColor.label.resolvedColor(with: traitCollection)
+        control.apportionsSegmentWidthsByContent = true
+        for index in titles.indices {
+            let title = titles[index]
+            let text = (title as NSString).size(withAttributes: [.font: font])
+            let size = CGSize(width: ceil(font.pointSize + 5 + text.width), height: ceil(text.height))
+            let image = UIGraphicsImageRenderer(size: size).image { _ in
+                let icon = UIImage(systemName: symbols[index],
+                                   withConfiguration: UIImage.SymbolConfiguration(pointSize: font.pointSize, weight: .medium))
+                icon?.withTintColor(color, renderingMode: .alwaysOriginal).draw(in:
+                    CGRect(x: 0, y: (size.height - font.pointSize) / 2, width: font.pointSize, height: font.pointSize))
+                (title as NSString).draw(at: CGPoint(x: font.pointSize + 5, y: 0),
+                                         withAttributes: [.font: font, .foregroundColor: color])
+            }.withRenderingMode(.alwaysOriginal)
+            control.setImage(image, forSegmentAt: index)
+        }
+        control.accessibilityCustomActions = titles.indices.map { index in
+            UIAccessibilityCustomAction(name: titles[index]) { [weak self] _ in
+                self?.selectIndex(index)
+                self?.onIndexSelection?(index)
+                return true
+            }
+        }
+    }
+}
+
+final class FeedSectionPicker: GlassSectionPicker {
+    var onSelection: ((FeedSection) -> Void)?
+    init() {
+        super.init(titles: ["Для тебе", "Підписки"])
+        onIndexSelection = { [weak self] index in self?.onSelection?(index == 1 ? .following : .recommended) }
+    }
     required init?(coder: NSCoder) { fatalError("Use init()") }
-
-    func updateSelection(_ section: FeedSection) {
-        let index = section == .following ? 1 : 0
-        if control.selectedSegmentIndex != index { control.selectedSegmentIndex = index }
-    }
+    func updateSelection(_ section: FeedSection) { selectIndex(section == .following ? 1 : 0) }
 }
 
 final class GradientView: UIView {
