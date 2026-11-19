@@ -199,9 +199,7 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
             if profile.sectionPinTop != top { profile.sectionPinTop = top }
         }
         if header.topItem === feedHeader {
-            let frame = feedHeader.rightBarButtonItem?.accessibilityFrame ?? .zero
-            let diameter = min(frame.width, frame.height)
-            segments.matchSearchHeight(diameter > 0 && diameter.isFinite ? min(44, diameter) : 44)
+            segments.matchSearchHeight(44)
         }
     }
 
