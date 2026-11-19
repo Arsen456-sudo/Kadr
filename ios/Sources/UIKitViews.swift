@@ -118,10 +118,8 @@ final class GlyphButton: UIButton {
     }
 }
 
-func glassIsland(interactive: Bool = false) -> UIVisualEffectView {
-    let effect = UIGlassEffect(style: .regular)
-    effect.isInteractive = interactive
-    let view = UIVisualEffectView(effect: effect)
+func glassIsland(style: UIGlassEffect.Style = .regular) -> UIVisualEffectView {
+    let view = UIVisualEffectView(effect: UIGlassEffect(style: style))
     view.cornerConfiguration = .capsule()
     view.translatesAutoresizingMaskIntoConstraints = false
     return view
@@ -129,14 +127,14 @@ func glassIsland(interactive: Bool = false) -> UIVisualEffectView {
 
 final class HeaderActionButton: UIButton {
     static let side: CGFloat = 46
+    private lazy var iconWidth = widthAnchor.constraint(equalTo: heightAnchor)
 
     init() {
         super.init(frame: .zero)
         translatesAutoresizingMaskIntoConstraints = false
         widthAnchor.constraint(greaterThanOrEqualToConstant: Self.side).isActive = true
         heightAnchor.constraint(equalToConstant: Self.side).isActive = true
-        setContentHuggingPriority(.required, for: .horizontal)
-        setContentCompressionResistancePriority(.required, for: .horizontal)
+        setContentHuggingPriority(.defaultHigh, for: .horizontal)
         setLogout(false, animated: false)
     }
 
@@ -154,6 +152,7 @@ final class HeaderActionButton: UIButton {
             style.title = logout ? "Вийти" : nil
             style.imagePadding = 6
             self.configuration = style
+            self.iconWidth.isActive = !logout
             self.accessibilityLabel = logout ? "Вийти" : "Пошук"
             self.superview?.layoutIfNeeded()
         }
@@ -168,7 +167,7 @@ final class HeaderActionButton: UIButton {
 }
 
 final class FeedSectionPicker: UIView {
-    private let island = glassIsland()
+    private let island = glassIsland(style: .clear)
     private let recommended = UIButton()
     private let following = UIButton()
     private var selected: FeedSection?

@@ -65,7 +65,7 @@ final class NavigationTests: XCTestCase {
         let following = app.buttons["feed.following"]
         XCTAssertTrue(following.waitForExistence(timeout: 5))
         XCTAssertEqual(header.label, "Пошук")
-        XCTAssertLessThan(header.frame.width, 50)
+        XCTAssertEqual(header.frame.width, 46, accuracy: 1)
         following.tap()
         XCTAssertTrue(app.staticTexts["У підписках поки немає відео"].waitForExistence(timeout: 5))
         app.buttons["feed.recommended"].tap()
