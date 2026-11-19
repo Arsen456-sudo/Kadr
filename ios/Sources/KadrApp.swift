@@ -42,7 +42,7 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
     private lazy var saved = SavedController(store: store)
     private lazy var profile = ProfileController(store: store, profileID: nil)
     private let segments = FeedSectionPicker()
-    private let header = UINavigationBar()
+    private let header = FeedNavigationBar()
     private let feedHeader = UINavigationItem()
     private let savedHeader = UINavigationItem(title: "Збережене")
     private let inboxHeader = UINavigationItem(title: "Вхідні")
@@ -125,7 +125,25 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
         header.isTranslucent = true
         header.tintColor = .label
         feedHeader.titleView = segments
-        for item in [feedHeader, savedHeader, inboxHeader, guestProfileHeader] {
+        header.feedPicker = segments
+        var style = UIButton.Configuration.glass()
+        style.cornerStyle = .capsule
+        style.image = UIImage(systemName: "magnifyingglass")
+        let button = UIButton(configuration: style, primaryAction: nil)
+        button.addAction(UIAction { [weak self] _ in self?.openSearch() }, for: .primaryActionTriggered)
+        button.accessibilityLabel = "Пошук"
+        button.accessibilityIdentifier = "header.action"
+        button.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            button.widthAnchor.constraint(equalToConstant: FeedSectionPicker.height),
+            button.heightAnchor.constraint(equalTo: button.widthAnchor)
+        ])
+        let feedSearch = UIBarButtonItem(customView: button)
+        feedSearch.identifier = "header.context"
+        feedSearch.hidesSharedBackground = true
+        feedHeader.rightBarButtonItem = feedSearch
+        segments.searchButton = button
+        for item in [savedHeader, inboxHeader, guestProfileHeader] {
             let search = UIBarButtonItem(primaryAction: UIAction(image: UIImage(systemName: "magnifyingglass")) { [weak self] _ in
                 self?.openSearch()
             })
@@ -155,11 +173,7 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         view.bringSubviewToFront(header)
-        if header.topItem === feedHeader {
-            let height = feedHeader.rightBarButtonItem?.accessibilityFrame.height ?? 0
-            let measured = height > 0 && height.isFinite ? height : header.bounds.height
-            if measured > 0 { segments.buttonHeight = measured }
-        }
+
     }
 
     func tabBarController(_ tabBarController: UITabBarController, shouldSelect controller: UIViewController) -> Bool {

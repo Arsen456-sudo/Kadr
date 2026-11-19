@@ -129,14 +129,12 @@ final class FeedSectionPicker: UIView {
     private let control = UISegmentedControl(items: ["Для тебе", "Підписки"])
     var onSelection: ((FeedSection) -> Void)?
 
-    var buttonHeight: CGFloat = 44 {
-        didSet { if oldValue != buttonHeight { invalidateIntrinsicContentSize() } }
-    }
-    override var intrinsicContentSize: CGSize { CGSize(width: 184, height: buttonHeight) }
+    static let height: CGFloat = 44
+    override var intrinsicContentSize: CGSize { CGSize(width: 184, height: Self.height) }
 
     init() {
         super.init(frame: .zero)
-        control.pin(to: self)
+        addSubview(control)
         let attributes: [NSAttributedString.Key: Any] = [.font: UIFont.preferredFont(forTextStyle: .footnote)]
         control.setTitleTextAttributes(attributes, for: .normal)
         control.setTitleTextAttributes(attributes, for: .selected)
@@ -148,6 +146,24 @@ final class FeedSectionPicker: UIView {
     }
 
     required init?(coder: NSCoder) { fatalError("Use init()") }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        alignControl()
+    }
+
+    weak var searchButton: UIButton?
+
+    func alignControl() {
+        guard let searchButton, let window, searchButton.window === window,
+              searchButton.bounds.height > 0 else {
+            control.frame = bounds
+            return
+        }
+        let search = searchButton.convert(searchButton.bounds, to: self)
+        control.frame = CGRect(x: 0, y: search.midY - search.height / 2,
+                               width: bounds.width, height: search.height)
+    }
 
     func updateSelection(_ section: FeedSection) {
         let index = section == .following ? 1 : 0
@@ -220,5 +236,15 @@ class FormController: UIViewController {
             content.bottomAnchor.constraint(equalTo: scroll.contentLayoutGuide.bottomAnchor, constant: -24),
             content.widthAnchor.constraint(equalTo: scroll.frameLayoutGuide.widthAnchor, constant: -44)
         ])
+    }
+}
+
+
+final class FeedNavigationBar: UINavigationBar {
+    weak var feedPicker: FeedSectionPicker?
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        if let picker = feedPicker, topItem?.titleView === picker { picker.alignControl() }
     }
 }
