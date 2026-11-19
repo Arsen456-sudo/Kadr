@@ -136,7 +136,7 @@ final class FeedSectionPicker: UIView {
 
     init() {
         super.init(frame: .zero)
-        control.pin(to: self)
+        control.pin(to: self, insets: .init(top: 0, leading: 0, bottom: 4, trailing: 0))
         let attributes: [NSAttributedString.Key: Any] = [.font: UIFont.preferredFont(forTextStyle: .footnote)]
         control.setTitleTextAttributes(attributes, for: .normal)
         control.setTitleTextAttributes(attributes, for: .selected)
