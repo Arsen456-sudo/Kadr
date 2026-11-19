@@ -173,10 +173,6 @@ class GlassSectionPicker: UIView {
         if abs(controlHeight.constant - height) > 0.25 { controlHeight.constant = height }
     }
 
-    func setSelectionTintColor(_ color: UIColor) {
-        control.selectedSegmentTintColor = color
-    }
-
     func selectIndex(_ index: Int) {
         control.selectedSegmentIndex = index
         control.accessibilityValue = titles[index]

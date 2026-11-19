@@ -21,23 +21,59 @@ enum ProfileSection: Int, CaseIterable {
     }
 }
 
-final class ProfileSectionPicker: GlassSectionPicker {
+// Native glass buttons provide a material-backed selected capsule at rest.
+// UISegmentedControl only supplies its Liquid Glass thumb during interaction.
+final class ProfileSectionPicker: UIView {
     var onSelection: ((ProfileSection) -> Void)?
+    private let container = glassGroup()
+    private let surface = glassIsland(style: .clear, interactive: false)
+    private let stack = UIStackView()
+    private var buttons: [UIButton] = []
+
+    override var intrinsicContentSize: CGSize { CGSize(width: 184, height: 44) }
 
     init() {
-        super.init(titles: ProfileSection.allCases.map(\.title), symbols: ProfileSection.allCases.map(\.symbol))
-        // Clear Liquid Glass adds no tinted backing and leaves the native selection capsule intact.
-        let glass = glassIsland(style: .clear)
-        glass.isUserInteractionEnabled = false
-        glass.pin(to: self)
-        sendSubviewToBack(glass)
-        setSelectionTintColor(UIColor(white: 0.12, alpha: 0.8))
-        matchSearchHeight(44)
-        onIndexSelection = { [weak self] index in
-            guard let section = ProfileSection(rawValue: index) else { return }
-            self?.onSelection?(section)
+        super.init(frame: .zero)
+        accessibilityIdentifier = "profile.sections"
+        container.pin(to: self)
+        surface.pin(to: container.contentView)
+        surface.isUserInteractionEnabled = false
+        stack.axis = .horizontal
+        stack.distribution = .fillEqually
+        stack.spacing = 0
+        stack.pin(to: container.contentView, insets: .init(top: 4, leading: 4, bottom: 4, trailing: 4))
+        for section in ProfileSection.allCases {
+            let button = UIButton(type: .system)
+            button.isPointerInteractionEnabled = true
+            button.accessibilityLabel = section.title
+            button.accessibilityIdentifier = "profile.section.\(section.rawValue)"
+            button.configurationUpdateHandler = { button in
+                var style = button.isSelected ? UIButton.Configuration.glass() : .plain()
+                style.cornerStyle = .capsule
+                style.automaticallyUpdateForSelection = false
+                style.image = UIImage(systemName: section.symbol)
+                style.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 18, weight: .medium)
+                style.baseForegroundColor = .label
+                style.contentInsets = .zero
+                button.configuration = style
+            }
+            button.addAction(UIAction { [weak self] _ in
+                self?.select(section)
+                self?.onSelection?(section)
+            }, for: .primaryActionTriggered)
+            stack.addArrangedSubview(button)
+            buttons.append(button)
         }
+        select(.posts)
     }
+
     required init?(coder: NSCoder) { fatalError("Use init()") }
-    func select(_ section: ProfileSection) { selectIndex(section.rawValue) }
+
+    func select(_ section: ProfileSection) {
+        for (index, button) in buttons.enumerated() {
+            button.isSelected = index == section.rawValue
+            button.setNeedsUpdateConfiguration()
+        }
+        accessibilityValue = section.title
+    }
 }

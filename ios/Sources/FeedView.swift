@@ -4,11 +4,21 @@ import CoreImage.CIFilterBuiltins
 import UIKit
 import Symbols
 
-final class FeedController: UIViewController, UIPageViewControllerDataSource, UIPageViewControllerDelegate {
+final class FeedController: UIViewController, UICollectionViewDataSource, UICollectionViewDelegate {
     enum Reaction { case like, bookmark }
 
     private let store: LocalStore
-    private let pager = UIPageViewController(transitionStyle: .scroll, navigationOrientation: .vertical)
+    private let pagingLayout: UICollectionViewFlowLayout = {
+        let layout = UICollectionViewFlowLayout()
+        layout.scrollDirection = .vertical
+        layout.minimumLineSpacing = 0
+        layout.minimumInteritemSpacing = 0
+        return layout
+    }()
+    private lazy var pager = UICollectionView(frame: .zero, collectionViewLayout: pagingLayout)
+    private var currentIndex = 0
+    private var pages: [String: VideoPage] = [:]
+    private var pageSize: CGSize = .zero
     private let author = makeLabel(.headline)
     private let caption = makeLabel(.subheadline)
     private let like = GlyphButton(symbol: "heart", label: "Подобається", compact: true)
@@ -23,19 +33,14 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
     private let sound = UIButton()
     private let authorAvatar = UIButton()
     private let actionStack = UIStackView()
-    var edgeScrollView: UIScrollView? {
-        guard let root = pager.viewIfLoaded else { return nil }
-        var level = [root]
-        while !level.isEmpty {
-            if let scroll = level.compactMap({ $0 as? UIScrollView }).first { return scroll }
-            level = level.flatMap(\.subviews)
-        }
-        return nil
-    }
+    var edgeScrollView: UIScrollView? { isViewLoaded ? pager : nil }
     private lazy var captionStack = UIStackView(arrangedSubviews: [author, caption])
     private var clips: [Clip] = []
     private weak var playingPage: VideoPage?
-    private var page: VideoPage? { pager.viewControllers?.first as? VideoPage }
+    private var page: VideoPage? {
+        guard clips.indices.contains(currentIndex) else { return nil }
+        return pages[clips[currentIndex].id]
+    }
     private(set) var section = FeedSection.recommended
 
     var onAuthor: ((UUID) -> Void)?
@@ -65,9 +70,16 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .black
+        pager.backgroundColor = .clear
         pager.dataSource = self
         pager.delegate = self
-        embed(pager, in: view)
+        pager.isPagingEnabled = true
+        pager.alwaysBounceVertical = true
+        pager.showsVerticalScrollIndicator = false
+        pager.contentInsetAdjustmentBehavior = .never
+        pager.accessibilityIdentifier = "feed.pages"
+        pager.register(UICollectionViewCell.self, forCellWithReuseIdentifier: "page")
+        pager.pin(to: view)
         empty.pin(to: view)
         author.numberOfLines = 1
         caption.numberOfLines = 2
@@ -160,16 +172,21 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+        let size = pager.bounds.size
+        if size.width > 0, size.height > 0, size != pageSize {
+            pageSize = size
+            pagingLayout.itemSize = size
+            pagingLayout.invalidateLayout()
+            pager.layoutIfNeeded()
+            pager.setContentOffset(CGPoint(x: 0, y: CGFloat(currentIndex) * size.height), animated: false)
+        }
         connectContentScrollView()
     }
 
     private func connectContentScrollView() {
         guard let scroll = edgeScrollView else { return }
-        // Register the vertical pager explicitly. Automatic discovery can select
-        // a photo album's nested horizontal scroller, or no scroller on video pages.
+        // This is the feed's own public scroll view, shared by photo and video cells.
         setContentScrollView(scroll, for: .all)
-        pager.setContentScrollView(scroll, for: .all)
-        page?.setContentScrollView(scroll, for: .all)
         scroll.topEdgeEffect.style = .soft
         scroll.bottomEdgeEffect.style = .soft
         scroll.topEdgeEffect.isHidden = immersive
@@ -197,14 +214,26 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
     func refresh(preferredID: String? = nil, reset: Bool = false) {
         guard isViewLoaded else { return }
         let current = page?.clip.id
-        clips = store.feed(section)
+        let updated = store.feed(section)
         let target = preferredID ?? (reset ? nil : current)
-        let next = clips.first { $0.id == target } ?? clips.first
-        empty.isHidden = next != nil
-        pager.view.isHidden = next == nil
-        if let next, next.id != current || playingPage == nil {
+        let nextIndex = updated.firstIndex { $0.id == target } ?? 0
+        let changed = clips.map(\.id) != updated.map(\.id)
+        if changed {
             playingPage?.setPlaying(false, muted: muted)
-            pager.setViewControllers([VideoPage(clip: next)], direction: .forward, animated: false)
+            for controller in pages.values { detach(controller) }
+            pages.removeAll()
+            clips = updated
+        }
+        currentIndex = nextIndex
+        empty.isHidden = !clips.isEmpty
+        pager.isHidden = clips.isEmpty
+        if changed { pager.reloadData() }
+        if clips.indices.contains(currentIndex) {
+            _ = controller(at: currentIndex)
+            pager.layoutIfNeeded()
+            if pager.bounds.height > 0, !pager.isDragging, !pager.isDecelerating {
+                pager.setContentOffset(CGPoint(x: 0, y: CGFloat(currentIndex) * pager.bounds.height), animated: false)
+            }
         }
         updateCurrent()
     }
@@ -285,28 +314,57 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
         current?.setPlaying(playbackEnabled && view.window != nil, muted: muted)
     }
 
-    func pageViewController(_ pageViewController: UIPageViewController,
-                            viewControllerBefore viewController: UIViewController) -> UIViewController? {
-        adjacentPage(to: viewController, offset: -1)
+    private func controller(at index: Int) -> VideoPage {
+        let clip = clips[index]
+        if let existing = pages[clip.id] { return existing }
+        let controller = VideoPage(clip: clip)
+        pages[clip.id] = controller
+        return controller
     }
 
-    func pageViewController(_ pageViewController: UIPageViewController,
-                            viewControllerAfter viewController: UIViewController) -> UIViewController? {
-        adjacentPage(to: viewController, offset: 1)
+    private func detach(_ controller: VideoPage) {
+        controller.setPlaying(false, muted: muted)
+        guard controller.parent != nil else { return }
+        controller.willMove(toParent: nil)
+        controller.view.removeFromSuperview()
+        controller.removeFromParent()
     }
 
-    private func adjacentPage(to controller: UIViewController, offset: Int) -> VideoPage? {
-        guard let current = controller as? VideoPage,
-              let index = clips.firstIndex(where: { $0.id == current.clip.id }),
-              clips.indices.contains(index + offset) else { return nil }
-        return VideoPage(clip: clips[index + offset])
+    func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
+        clips.count
     }
 
-    func pageViewController(_ pageViewController: UIPageViewController, didFinishAnimating finished: Bool,
-                            previousViewControllers: [UIViewController], transitionCompleted completed: Bool) {
-        if completed {
-            (previousViewControllers.first as? VideoPage)?.setPlaying(false, muted: muted)
-            updateCurrent()
+    func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
+        let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "page", for: indexPath)
+        let controller = controller(at: indexPath.item)
+        // Reused cells can still contain an offscreen child controller's view.
+        for child in cell.contentView.subviews { child.removeFromSuperview() }
+        let added = controller.parent == nil
+        if added { addChild(controller) }
+        let content = controller.view!
+        content.translatesAutoresizingMaskIntoConstraints = true
+        content.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        content.frame = cell.contentView.bounds
+        cell.contentView.addSubview(content)
+        if added { controller.didMove(toParent: self) }
+        controller.setImmersive(immersive)
+        return cell
+    }
+
+    func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) { finishPaging() }
+    func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+        if !decelerate { finishPaging() }
+    }
+
+    private func finishPaging() {
+        guard !clips.isEmpty, pager.bounds.height > 0 else { return }
+        currentIndex = min(clips.count - 1, max(0, Int((pager.contentOffset.y / pager.bounds.height).rounded())))
+        _ = controller(at: currentIndex)
+        updateCurrent()
+        // Keep only the current page and its neighbours, so long feeds do not retain players.
+        let retained = Set(clips.indices.filter { abs($0 - currentIndex) <= 1 }.map { clips[$0].id })
+        for id in Array(pages.keys) where !retained.contains(id) {
+            if let controller = pages.removeValue(forKey: id) { detach(controller) }
         }
     }
 }
