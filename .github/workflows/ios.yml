@@ -11,7 +11,7 @@ permissions:
 jobs:
   build:
     runs-on: macos-26
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - name: Generate Xcode project
@@ -38,3 +38,24 @@ jobs:
           name: Kadr-iOS-Simulator
           path: Kadr-iOS-Simulator.zip
           if-no-files-found: error
+      - name: Test native navigation on an iPhone simulator
+        run: |
+          set -euo pipefail
+          simulator="$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          runtimes = json.load(sys.stdin)["devices"]
+          phones = [device for runtime, devices in reversed(list(runtimes.items()))
+                    if ".iOS-" in runtime for device in devices
+                    if device["name"].startswith("iPhone") and device["isAvailable"]]
+          sys.exit("No iPhone simulator runtime is available") if not phones else print(phones[0]["udid"])
+          ')"
+          xcodebuild -project ios/Kadr.xcodeproj -scheme Kadr \
+            -configuration Debug -destination "platform=iOS Simulator,id=$simulator" \
+            -derivedDataPath ios/build CODE_SIGNING_ALLOWED=NO \
+            -parallel-testing-enabled NO -resultBundlePath ios/build/KadrUITests.xcresult test
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: Kadr-navigation-test-result
+          path: ios/build/KadrUITests.xcresult
+          if-no-files-found: ignore

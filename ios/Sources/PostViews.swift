@@ -1,159 +1,303 @@
 import AVFoundation
-import CoreTransferable
 import PhotosUI
-import SwiftUI
+import UIKit
 import UniformTypeIdentifiers
 
-struct CommentsSheet: View {
-    let store: LocalStore
-    let clip: Clip
-    @State private var draft = ""
-    @State private var showAccount = false
-    @FocusState private var composing: Bool
+final class CommentsController: UIViewController, UITableViewDataSource, UITextFieldDelegate {
+    private let store: LocalStore
+    private let clip: Clip
+    private let table = UITableView()
+    private let field = UITextField()
+    private let send = GlyphButton(symbol: "arrow.up", label: "Надіслати коментар")
+    private var comments: [Comment] = []
+    var onAccount: (() -> Void)?
+    var onComment: (() -> Void)?
 
-    var body: some View {
-        NavigationStack {
-            List {
-                if store.comments(clip).isEmpty {
-                    ContentUnavailableView("Коментарів ще немає", systemImage: "bubble")
-                }
-                ForEach(store.comments(clip)) { comment in
-                    if let author = store.profile(comment.authorID) {
-                        HStack(alignment: .top, spacing: 10) {
-                            Avatar(data: author.avatar, size: 34)
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text("@\(author.handle)").font(.caption.weight(.semibold))
-                                    .foregroundStyle(Color.peach)
-                                Text(comment.text)
-                            }
-                        }
-                    }
-                }
-            }
-            .listStyle(.plain)
-            .navigationTitle("Коментарі")
-            .navigationBarTitleDisplayMode(.inline)
-            .safeAreaInset(edge: .bottom) {
-                Group {
-                    if store.active == nil {
-                        Button("Створи акаунт, щоб коментувати") { showAccount = true }
-                            .buttonStyle(.borderedProminent)
-                    } else {
-                        HStack {
-                            TextField("Написати коментар", text: $draft, axis: .vertical)
-                                .lineLimit(1...4)
-                                .focused($composing)
-                            Button {
-                                if store.addComment(draft, to: clip) {
-                                    draft = ""
-                                    composing = false
-                                }
-                            } label: {
-                                Image(systemName: "arrow.up.circle.fill").font(.title2)
-                            }
-                            .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                                      || draft.count > 500)
-                            .accessibilityLabel("Надіслати коментар")
-                        }
-                    }
-                }
-                .padding()
-                .frame(maxWidth: .infinity)
-                .background(.regularMaterial)
-            }
+    init(store: LocalStore, clip: Clip) {
+        self.store = store
+        self.clip = clip
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    required init?(coder: NSCoder) { fatalError("Use init(store:clip:)") }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        title = "Коментарі"
+        view.backgroundColor = .systemBackground
+        table.dataSource = self
+        table.keyboardDismissMode = .interactive
+        table.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(table)
+
+        let composer: UIView
+        if store.active == nil {
+            composer = textButton("Увійти, щоб коментувати", prominent: true) { [weak self] in self?.onAccount?() }
+        } else {
+            field.borderStyle = .roundedRect
+            field.placeholder = "Написати коментар"
+            field.returnKeyType = .send
+            field.delegate = self
+            field.font = .preferredFont(forTextStyle: .body)
+            field.adjustsFontForContentSizeCategory = true
+            field.addAction(UIAction { [weak self] _ in self?.updateSendButton() }, for: .editingChanged)
+            send.addAction(UIAction { [weak self] _ in self?.sendComment() }, for: .primaryActionTriggered)
+            let row = UIStackView(arrangedSubviews: [field, send])
+            row.alignment = .center
+            row.spacing = 8
+            composer = row
         }
-        .presentationDragIndicator(.visible)
-        .sheet(isPresented: $showAccount) { AccountSheet(store: store) }
+        composer.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(composer)
+        let safe = view.safeAreaLayoutGuide
+        NSLayoutConstraint.activate([
+            table.topAnchor.constraint(equalTo: safe.topAnchor),
+            table.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            table.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            table.bottomAnchor.constraint(equalTo: composer.topAnchor, constant: -8),
+            composer.leadingAnchor.constraint(equalTo: safe.leadingAnchor, constant: 16),
+            composer.trailingAnchor.constraint(equalTo: safe.trailingAnchor, constant: -16),
+            composer.bottomAnchor.constraint(equalTo: view.keyboardLayoutGuide.topAnchor, constant: -8),
+            composer.heightAnchor.constraint(greaterThanOrEqualToConstant: 48)
+        ])
+        updateSendButton()
+        refreshComments()
+    }
+
+    private var draft: String { (field.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    private func updateSendButton() {
+        send.isEnabled = !draft.isEmpty && draft.count <= 500
+    }
+
+    private func sendComment() {
+        guard send.isEnabled else { return }
+        guard store.addComment(draft, to: clip) else {
+            showMessage(store.errorMessage ?? "Не вдалося зберегти коментар.")
+            store.errorMessage = nil
+            return
+        }
+        field.text = nil
+        updateSendButton()
+        refreshComments()
+        table.scrollToRow(at: IndexPath(row: comments.count - 1, section: 0), at: .bottom,
+                          animated: !UIAccessibility.isReduceMotionEnabled)
+        UISelectionFeedbackGenerator().selectionChanged()
+        onComment?()
+    }
+
+    private func refreshComments() {
+        comments = store.comments(clip)
+        if comments.isEmpty {
+            var empty = UIContentUnavailableConfiguration.empty()
+            empty.text = "Коментарів ще немає"
+            empty.image = UIImage(systemName: "bubble")
+            contentUnavailableConfiguration = nil
+            table.backgroundView = UIContentUnavailableView(configuration: empty)
+            table.backgroundView?.isUserInteractionEnabled = false
+        } else {
+            table.backgroundView = nil
+        }
+        table.reloadData()
+    }
+
+    func textFieldShouldReturn(_ textField: UITextField) -> Bool {
+        sendComment()
+        return false
+    }
+
+    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { comments.count }
+
+    func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
+        let comment = comments[indexPath.row]
+        let profile = store.profile(comment.authorID)
+        let cell = tableView.dequeueReusableCell(withIdentifier: "comment") ??
+            UITableViewCell(style: .default, reuseIdentifier: "comment")
+        var configuration = cell.defaultContentConfiguration()
+        configuration.text = profile.map { "@\($0.handle)" }
+        configuration.textProperties.color = .kadrPeach
+        configuration.secondaryText = comment.text
+        configuration.secondaryTextProperties.color = .label
+        configuration.image = profile?.avatar.flatMap { UIImage(data: $0) } ?? UIImage(systemName: "person.crop.circle.fill")
+        configuration.imageProperties.maximumSize = CGSize(width: 34, height: 34)
+        configuration.imageProperties.cornerRadius = 17
+        configuration.imageProperties.tintColor = .kadrPeach
+        cell.contentConfiguration = configuration
+        cell.selectionStyle = .none
+        return cell
     }
 }
 
-struct PublishSheet: View {
-    let publish: (URL, String) -> Bool
-    @Environment(\.dismiss) private var dismiss
-    @State private var picker: PhotosPickerItem?
-    @State private var movie: ImportedMovie?
-    @State private var caption = ""
-    @State private var error: String?
-    @State private var loading = false
+final class PublishController: FormController, PHPickerViewControllerDelegate {
+    private let store: LocalStore
+    private let preview = VideoSurface()
+    private let caption = UITextField()
+    private let busy = UIActivityIndicatorView(style: .medium)
+    private lazy var submit = textButton("Опублікувати на пристрої", prominent: true) { [weak self] in self?.publish() }
+    private var movie: URL?
+    private var generation = 0
+    var onPublish: ((Clip) -> Void)?
 
-    var body: some View {
-        NavigationStack {
-            Form {
-                PhotosPicker(selection: $picker, matching: .videos) {
-                    Label(movie == nil ? "Вибрати відео" : "Замінити відео", systemImage: "film")
-                }
-                if loading {
-                    ProgressView("Відкриваємо відео…")
-                } else if let movie {
-                    LoopingVideo(url: movie.url, playing: true, muted: true)
-                        .frame(height: 225)
-                        .clipShape(.rect(cornerRadius: 16))
-                }
-                TextField("Опис відео", text: $caption, axis: .vertical)
-                    .lineLimit(2...4)
-                if let error { Text(error).foregroundStyle(.red) }
-                Button("Опублікувати на пристрої") {
-                    guard let movie else { return }
-                    let description = caption.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if publish(movie.url, description.isEmpty ? "Нове відео" : String(description.prefix(200))) {
-                        dismiss()
-                    } else {
-                        error = "Не вдалося опублікувати відео."
-                    }
-                }
-                .disabled(movie == nil || loading)
-            }
-            .navigationTitle("Нове відео")
-            .toolbar { Button("Скасувати", role: .cancel) { dismiss() } }
+    init(store: LocalStore) {
+        self.store = store
+        super.init(nibName: nil, bundle: nil)
+    }
+
+    required init?(coder: NSCoder) { fatalError("Use init(store:)") }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        title = "Нове відео"
+        content.addArrangedSubview(textButton("Вибрати відео", symbol: "film") { [weak self] in self?.pickVideo() })
+        content.addArrangedSubview(busy)
+        let previewHeight = preview.heightAnchor.constraint(equalToConstant: 205)
+        previewHeight.priority = .defaultHigh
+        previewHeight.isActive = true
+        preview.layer.cornerRadius = 18
+        preview.clipsToBounds = true
+        preview.isHidden = true
+        content.addArrangedSubview(preview)
+        caption.placeholder = "Опис відео"
+        caption.borderStyle = .roundedRect
+        caption.font = .preferredFont(forTextStyle: .body)
+        caption.adjustsFontForContentSizeCategory = true
+        content.addArrangedSubview(caption)
+        submit.isEnabled = false
+        content.addArrangedSubview(submit)
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        preview.setPlaying(false)
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        preview.setPlaying(movie != nil)
+    }
+
+    private func pickVideo() {
+        var configuration = PHPickerConfiguration()
+        configuration.filter = .videos
+        configuration.preferredAssetRepresentationMode = .current
+        let picker = PHPickerViewController(configuration: configuration)
+        picker.delegate = self
+        present(picker, animated: true)
+    }
+
+    func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+        picker.dismiss(animated: true)
+        guard let provider = results.first?.itemProvider else { return }
+        guard let format = provider.registeredTypeIdentifiers.first(where: { UTType($0)?.conforms(to: .movie) == true }) else {
+            reportImportError()
+            return
         }
-        .task(id: picker) {
-            guard let picker else { return }
-            loading = true
-            movie = nil
-            error = nil
+        generation += 1
+        let request = generation
+        busy.startAnimating()
+        submit.isEnabled = false
+        provider.loadFileRepresentation(forTypeIdentifier: format) { [weak self] url, _ in
+            guard let url else {
+                DispatchQueue.main.async {
+                    if self?.generation == request { self?.reportImportError() }
+                }
+                return
+            }
+            let suffix = url.pathExtension.isEmpty ? "mov" : url.pathExtension
+            let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+                .appendingPathExtension(suffix)
             do {
-                guard let imported = try await picker.loadTransferable(type: ImportedMovie.self) else {
-                    if !Task.isCancelled {
-                        error = "Не вдалося імпортувати відео."
-                        loading = false
-                    }
+                try FileManager.default.copyItem(at: url, to: temporary)
+            } catch {
+                DispatchQueue.main.async {
+                    if self?.generation == request { self?.reportImportError() }
+                }
+                return
+            }
+            Task { @MainActor [weak self] in
+                let asset = AVURLAsset(url: temporary)
+                let playable = (try? await asset.load(.isPlayable)) == true
+                let tracks = playable ? (try? await asset.loadTracks(withMediaType: .video)) : nil
+                let hasVideo = tracks?.isEmpty == false
+                guard let self, self.generation == request, hasVideo else {
+                    try? FileManager.default.removeItem(at: temporary)
+                    if self?.generation == request { self?.reportImportError() }
                     return
                 }
-                let asset = AVURLAsset(url: imported.url)
-                let isPlayable = try await asset.load(.isPlayable)
-                let tracks = try await asset.loadTracks(withMediaType: .video)
-                guard !Task.isCancelled else { return }
-                if isPlayable && !tracks.isEmpty {
-                    movie = imported
-                } else {
-                    error = "Цей відеофайл не підтримується."
-                }
-                loading = false
-            } catch {
-                if !Task.isCancelled {
-                    self.error = "Не вдалося імпортувати відео."
-                    loading = false
-                }
+                self.preview.load(temporary)
+                if let old = self.movie { try? FileManager.default.removeItem(at: old) }
+                self.movie = temporary
+                self.preview.isHidden = false
+                self.preview.setPlaying(true)
+                self.busy.stopAnimating()
+                self.submit.isEnabled = true
             }
         }
     }
+
+    private func reportImportError() {
+        busy.stopAnimating()
+        submit.isEnabled = movie != nil
+        showMessage("Не вдалося імпортувати відео.")
+    }
+
+    private func publish() {
+        guard let movie else { return }
+        let text = (caption.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let clip = store.publish(movie, caption: text.isEmpty ? "Нове відео" : String(text.prefix(200))) else {
+            showMessage(store.errorMessage ?? "Не вдалося опублікувати відео.")
+            store.errorMessage = nil
+            return
+        }
+        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        onPublish?(clip)
+    }
+
+    deinit {
+        if let movie { try? FileManager.default.removeItem(at: movie) }
+    }
 }
 
-private final class ImportedMovie: Transferable, Sendable {
-    let url: URL
+final class ClipPreviewController: UIViewController {
+    private let clip: Clip
+    private let video = VideoSurface()
+    private var paused = false
 
-    private init(url: URL) { self.url = url }
+    init(clip: Clip) {
+        self.clip = clip
+        super.init(nibName: nil, bundle: nil)
+    }
 
-    deinit { try? FileManager.default.removeItem(at: url) }
+    required init?(coder: NSCoder) { fatalError("Use init(clip:)") }
 
-    static var transferRepresentation: some TransferRepresentation {
-        FileRepresentation(importedContentType: .movie) { received in
-            let suffix = received.file.pathExtension
-            let destination = FileManager.default.temporaryDirectory
-                .appending(path: UUID().uuidString)
-                .appendingPathExtension(suffix.isEmpty ? "mov" : suffix)
-            try FileManager.default.copyItem(at: received.file, to: destination)
-            return ImportedMovie(url: destination)
-        }
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        title = clip.caption
+        view.backgroundColor = .black
+        video.pin(to: view)
+        video.load(clip.url)
+        let control = GlyphButton(symbol: "pause.fill", label: "Призупинити")
+        view.addSubview(control)
+        NSLayoutConstraint.activate([
+            control.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            control.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -14)
+        ])
+        control.addAction(UIAction { [weak self, weak control] _ in
+            guard let self else { return }
+            self.paused.toggle()
+            self.video.setPlaying(!self.paused)
+            control?.update(symbol: self.paused ? "play.fill" : "pause.fill",
+                            label: self.paused ? "Відтворити" : "Призупинити")
+        }, for: .primaryActionTriggered)
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        video.setPlaying(!paused, muted: false)
+    }
+
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        video.setPlaying(false)
     }
 }

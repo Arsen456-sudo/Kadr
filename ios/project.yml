@@ -27,6 +27,20 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.kadr.prototype
         TARGETED_DEVICE_FAMILY: "1"
-        MARKETING_VERSION: "0.1.0"
+        MARKETING_VERSION: "0.2.0"
         CURRENT_PROJECT_VERSION: "1"
-    scheme: {}
+    scheme:
+      testTargets:
+        - KadrUITests
+  KadrUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - UITests
+    dependencies:
+      - target: Kadr
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        PRODUCT_BUNDLE_IDENTIFIER: app.kadr.prototype.ui-tests
+        TARGETED_DEVICE_FAMILY: "1"

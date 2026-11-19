@@ -1,366 +1,272 @@
 import AVFoundation
-import SwiftUI
 import UIKit
+import Symbols
 
-struct FeedView: View {
-    let store: LocalStore
-    @Environment(\.scenePhase) private var scenePhase
-    @AppStorage("hasSeenWelcome") private var hasSeenWelcome = false
-    @State private var selectedID: String?
-    @State private var section = FeedSection.recommended
-    @State private var paused = false
-    @State private var muted = true
-    @State private var sheet: FeedSheet?
+final class FeedController: UIViewController, UIPageViewControllerDataSource, UIPageViewControllerDelegate {
+    enum Reaction { case like, bookmark }
 
-    private var clips: [Clip] { store.feed(section) }
-    private var selected: Clip? { clips.first { $0.id == selectedID } ?? clips.first }
+    private let store: LocalStore
+    private let pager = UIPageViewController(transitionStyle: .scroll, navigationOrientation: .vertical)
+    private let author = makeLabel(.headline)
+    private let caption = makeLabel(.subheadline)
+    private let like = GlyphButton(symbol: "heart", label: "Подобається", compact: true)
+    private let comments = GlyphButton(symbol: "bubble", label: "Коментарі", compact: true)
+    private let bookmark = GlyphButton(symbol: "bookmark", label: "Зберегти", compact: true)
+    private let empty = UIViewController()
+    private let reactionIsland = UIVisualEffectView(effect: UIGlassEffect(style: .regular))
+    private lazy var captionStack = UIStackView(arrangedSubviews: [author, caption])
+    private var clips: [Clip] = []
+    private weak var playingPage: VideoPage?
+    private var page: VideoPage? { pager.viewControllers?.first as? VideoPage }
+    private(set) var section = FeedSection.recommended
 
-    var body: some View {
-        GeometryReader { geometry in
-            let insets = geometry.safeAreaInsets
-            ZStack {
-                Color.black
-                if clips.isEmpty {
-                    if section == .saved {
-                        ContentUnavailableView("Немає збережених відео", systemImage: "bookmark")
-                    } else {
-                        ContentUnavailableView("Немає відео від підписок", systemImage: "person.2")
-                    }
-                } else {
-                    ScrollView(.vertical) {
-                        LazyVStack(spacing: 0) {
-                            ForEach(clips) { clip in
-                                videoPage(clip)
-                                    .id(clip.id)
-                            }
-                        }
-                        .scrollTargetLayout()
-                    }
-                    .scrollIndicators(.hidden)
-                    .scrollTargetBehavior(.paging)
-                    .scrollPosition(id: $selectedID)
-                    .onChange(of: selectedID) { _, _ in paused = false }
-                }
+    var onReaction: ((Clip, Bool) -> Void)?
+    var onComments: ((Clip) -> Void)?
+    var playbackEnabled = false { didSet { syncPlayback() } }
+    var muted = true { didSet { syncPlayback() } }
 
-                VStack {
-                    header
-                    Spacer()
-                    if let clip = selected {
-                        actions(clip)
-                        caption(clip)
-                    }
-                    navigation
-                }
-                .padding(.horizontal, 18)
-                .padding(.top, insets.top + 8)
-                .padding(.bottom, insets.bottom + 10)
-            }
-            .ignoresSafeArea()
-        }
-        .background(Color.black)
-        .onAppear {
-            if !hasSeenWelcome && store.active == nil {
-                hasSeenWelcome = true
-                sheet = .account
-            }
-        }
-        .onChange(of: store.active?.id) { _, _ in
-            section = .recommended
-            selectedID = clips.first?.id
-            paused = false
-        }
-        .sheet(item: $sheet) { destination in
-            switch destination {
-            case .account:
-                AccountSheet(store: store)
-            case let .comments(clip):
-                CommentsSheet(store: store, clip: clip)
-                    .presentationDetents([.medium, .large])
-            case .search:
-                SearchSheet(store: store)
-            case .profile:
-                if let profile = store.active {
-                    NavigationStack {
-                        ProfileView(store: store, profile: profile, isOwnProfile: true)
-                    }
-                }
-            case .publish:
-                PublishSheet { url, caption in
-                    if let clip = store.publish(url, caption: caption) {
-                        section = .recommended
-                        selectedID = clip.id
-                        return true
-                    }
-                    return false
-                }
-            }
-        }
-        .alert("Локальні дані", isPresented: Binding(
-            get: { store.errorMessage != nil },
-            set: { if !$0 { store.errorMessage = nil } }
-        )) {
-            Button("Гаразд", role: .cancel) {}
-        } message: {
-            Text(store.errorMessage ?? "")
-        }
+    init(store: LocalStore) {
+        self.store = store
+        super.init(nibName: nil, bundle: nil)
     }
 
-    private func videoPage(_ clip: Clip) -> some View {
-        ZStack {
-            Color.black
-            if let url = clip.url {
-                LoopingVideo(url: url, playing: selected?.id == clip.id && !paused
-                             && sheet == nil && scenePhase == .active, muted: muted)
-            }
-            LinearGradient(colors: [.black.opacity(0.50), .clear, .clear, .black.opacity(0.78)],
-                           startPoint: .top, endPoint: .bottom)
-                .allowsHitTesting(false)
-            if paused && selected?.id == clip.id {
-                Image(systemName: "play.fill")
-                    .font(.system(size: 34))
-                    .frame(width: 76, height: 76)
-                    .glassEffect(in: .circle)
-                    .allowsHitTesting(false)
-            }
-        }
-        .containerRelativeFrame([.horizontal, .vertical])
-        .clipped()
-        .contentShape(Rectangle())
-        .onTapGesture { paused.toggle() }
-        .accessibilityAddTraits(.isButton)
-        .accessibilityLabel(paused ? "Відтворити" : "Призупинити")
-        .accessibilityAction { paused.toggle() }
+    required init?(coder: NSCoder) { fatalError("Use init(store:)") }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .black
+        pager.dataSource = self
+        pager.delegate = self
+        embed(pager, in: view)
+        empty.view.isUserInteractionEnabled = false
+        embed(empty, in: view)
+
+        author.numberOfLines = 1
+        caption.numberOfLines = 2
+        captionStack.axis = .vertical
+        captionStack.spacing = 3
+        captionStack.isUserInteractionEnabled = false
+        captionStack.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(captionStack)
+
+        like.addAction(UIAction { [weak self] _ in
+            guard let self, let clip = self.page?.clip else { return }
+            self.onReaction?(clip, false)
+        }, for: .primaryActionTriggered)
+        comments.addAction(UIAction { [weak self] _ in
+            guard let self, let clip = self.page?.clip else { return }
+            self.onComments?(clip)
+        }, for: .primaryActionTriggered)
+        bookmark.addAction(UIAction { [weak self] _ in
+            guard let self, let clip = self.page?.clip else { return }
+            self.onReaction?(clip, true)
+        }, for: .primaryActionTriggered)
+
+        let controls = UIStackView(arrangedSubviews: [like, comments, bookmark])
+        controls.axis = .vertical
+        controls.spacing = 4
+        reactionIsland.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(reactionIsland)
+        controls.translatesAutoresizingMaskIntoConstraints = false
+        reactionIsland.contentView.addSubview(controls)
+        let safe = view.safeAreaLayoutGuide
+        NSLayoutConstraint.activate([
+            controls.centerXAnchor.constraint(equalTo: reactionIsland.contentView.centerXAnchor),
+            controls.centerYAnchor.constraint(equalTo: reactionIsland.contentView.centerYAnchor),
+            reactionIsland.widthAnchor.constraint(equalTo: controls.widthAnchor, constant: 6),
+            reactionIsland.heightAnchor.constraint(equalTo: controls.heightAnchor, constant: 8),
+            reactionIsland.trailingAnchor.constraint(equalTo: safe.trailingAnchor, constant: -16),
+            reactionIsland.bottomAnchor.constraint(equalTo: safe.bottomAnchor, constant: -70),
+            captionStack.leadingAnchor.constraint(equalTo: safe.leadingAnchor, constant: 18),
+            captionStack.trailingAnchor.constraint(equalTo: safe.trailingAnchor, constant: -130),
+            captionStack.bottomAnchor.constraint(equalTo: safe.bottomAnchor, constant: -14)
+        ])
+        var configuration = UIContentUnavailableConfiguration.empty()
+        configuration.image = UIImage(systemName: "person.2")
+        configuration.text = "У підписках поки немає відео"
+        configuration.secondaryText = "Підпишись на авторів, щоб бачити їхні публікації."
+        empty.contentUnavailableConfiguration = configuration
+        refresh()
     }
 
-    private var header: some View {
-        HStack {
-            HStack(spacing: 2) {
-                feedTab("Для тебе", destination: .recommended)
-                feedTab("Підписки", destination: .following)
-            }
-            .padding(4)
-            .glassEffect(in: .capsule)
-            Spacer()
-            roundButton("magnifyingglass", label: "Пошук") { sheet = .search }
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        playingPage?.setPlaying(false, muted: muted)
+    }
+
+    override func viewDidAppear(_ animated: Bool) {
+        super.viewDidAppear(animated)
+        syncPlayback()
+    }
+
+    func selectSection(_ section: FeedSection, preferredID: String? = nil) {
+        let changed = self.section != section
+        self.section = section
+        guard isViewLoaded else { return }
+        let updates = { self.refresh(preferredID: preferredID, reset: changed) }
+        if changed && view.window != nil && !UIAccessibility.isReduceMotionEnabled {
+            UIView.transition(with: view, duration: 0.22, options: [.transitionCrossDissolve, .beginFromCurrentState],
+                              animations: updates)
+        } else {
+            updates()
         }
     }
 
-    private func feedTab(_ title: String, destination: FeedSection) -> some View {
-        Button {
-            if destination == .following {
-                withAccount { changeFeed(to: destination) }
-            } else {
-                changeFeed(to: destination)
-            }
-        } label: {
-            Text(title)
-                .font(.subheadline.weight(section == destination ? .semibold : .medium))
-                .padding(.horizontal, 10)
-                .frame(height: 44)
-                .background(section == destination ? Color.peach.opacity(0.22) : .clear, in: Capsule())
-                .contentShape(Capsule())
+    func refresh(preferredID: String? = nil, reset: Bool = false) {
+        guard isViewLoaded else { return }
+        let current = page?.clip.id
+        clips = store.feed(section)
+        let target = preferredID ?? (reset ? nil : current)
+        let next = clips.first { $0.id == target } ?? clips.first
+        empty.view.isHidden = next != nil
+        pager.view.isHidden = next == nil
+        if let next, next.id != current || playingPage == nil {
+            playingPage?.setPlaying(false, muted: muted)
+            pager.setViewControllers([VideoPage(clip: next)], direction: .forward, animated: false)
         }
-        .buttonStyle(.plain)
-        .accessibilityAddTraits(section == destination ? .isSelected : [])
+        updateCurrent()
     }
 
-    private func actions(_ clip: Clip) -> some View {
-        HStack {
-            Spacer()
-            VStack(spacing: 10) {
-                actionButton(store.liked(clip) ? "heart.fill" : "heart", label: "Подобається",
-                             count: store.likes(clip), active: store.liked(clip)) {
-                    withAccount {
-                        UIImpactFeedbackGenerator(style: .soft).impactOccurred()
-                        withAnimation(.spring(response: 0.32, dampingFraction: 0.58)) {
-                            store.toggleReaction(clip)
-                        }
-                    }
-                }
-                actionButton("bubble", label: "Коментарі", count: store.comments(clip).count) {
-                    sheet = .comments(clip)
-                }
-                actionButton(store.bookmarked(clip) ? "bookmark.fill" : "bookmark",
-                             label: "Зберегти", active: store.bookmarked(clip)) {
-                    withAccount { store.toggleReaction(clip, bookmark: true) }
-                }
-            }
-            .padding(.vertical, 8)
-            .glassEffect(in: .capsule)
+    private func updateCurrent() {
+        let active = clips.isEmpty ? nil : page?.clip
+        captionStack.isHidden = active == nil
+        reactionIsland.isHidden = active == nil
+        if let active {
+            author.text = store.profile(active.authorID).map { "@\($0.handle)" } ?? active.credit
+            caption.text = active.caption
+            updateReactions()
         }
+        syncPlayback()
     }
 
-    private func caption(_ clip: Clip) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(store.profile(clip.authorID).map { "@\($0.handle)" } ?? clip.credit)
-                .font(.headline)
-            Text(clip.caption)
-                .font(.subheadline)
-                .lineLimit(2)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .shadow(color: .black.opacity(0.8), radius: 4)
-        .padding(.bottom, 12)
+    func updateReactions(bounce: Reaction? = nil) {
+        guard let clip = page?.clip else { return }
+        let liked = store.liked(clip)
+        let saved = store.bookmarked(clip)
+        like.update(symbol: liked ? "heart.fill" : "heart", label: liked ? "Прибрати лайк" : "Подобається",
+                    color: liked ? .kadrPeach : .label, count: store.likes(clip), animated: bounce == .like)
+        comments.update(symbol: "bubble", label: "Коментарі", count: store.comments(clip).count, animated: false)
+        bookmark.update(symbol: saved ? "bookmark.fill" : "bookmark", label: saved ? "Прибрати зі збереженого" : "Зберегти",
+                        color: saved ? .kadrPeach : .label, animated: bounce == .bookmark)
+        if bounce == .like && liked { like.bounce() }
+        if bounce == .bookmark && saved { bookmark.bounce() }
     }
 
-    private var navigation: some View {
-        HStack(spacing: 10) {
-            HStack(spacing: 8) {
-                navButton("house.fill", label: "Стрічка", active: section != .saved) {
-                    changeFeed(to: .recommended)
-                }
-                navButton("bookmark", label: "Збережені відео", active: section == .saved) {
-                    withAccount { changeFeed(to: .saved) }
-                }
-                navButton("person.crop.circle", label: "Профіль", active: false) {
-                    withAccount { sheet = .profile }
-                }
-            }
-            .padding(5)
-            .glassEffect(in: .capsule)
-            roundButton("plus", label: "Додати відео") { withAccount { sheet = .publish } }
-            roundButton(muted ? "speaker.slash" : "speaker.wave.2", label: muted ? "Увімкнути звук" : "Вимкнути звук") {
-                muted.toggle()
-            }
-        }
+    private func syncPlayback() {
+        guard isViewLoaded else { return }
+        let current = clips.isEmpty ? nil : page
+        if current !== playingPage { playingPage?.setPlaying(false, muted: muted) }
+        playingPage = current
+        current?.setPlaying(playbackEnabled && view.window != nil, muted: muted)
     }
 
-    private func actionButton(_ symbol: String, label: String, count: Int? = nil,
-                              active: Bool = false, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            VStack(spacing: 3) {
-                Image(systemName: symbol)
-                    .font(.system(size: 23, weight: .medium))
-                    .scaleEffect(active ? 1.12 : 1)
-                    .contentTransition(.symbolEffect(.replace))
-                if let count { Text(count.formatted()).font(.caption2.weight(.semibold)) }
-            }
-            .frame(width: 58, height: 48)
-            .foregroundStyle(active ? Color.peach : .white)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(Text(label))
-        .accessibilityValue(Text(count.map { $0.formatted() } ?? ""))
-        .accessibilityAddTraits(active ? .isSelected : [])
+    func pageViewController(_ pageViewController: UIPageViewController,
+                            viewControllerBefore viewController: UIViewController) -> UIViewController? {
+        adjacentPage(to: viewController, offset: -1)
     }
 
-    private func navButton(_ symbol: String, label: String, active: Bool,
-                           action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 20, weight: .medium))
-                .foregroundStyle(active ? Color.peach : .white)
-                .frame(width: 56, height: 44)
-                .background(active ? Color.peach.opacity(0.20) : .clear, in: Capsule())
-                .contentShape(Capsule())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(Text(label))
-        .accessibilityAddTraits(active ? .isSelected : [])
+    func pageViewController(_ pageViewController: UIPageViewController,
+                            viewControllerAfter viewController: UIViewController) -> UIViewController? {
+        adjacentPage(to: viewController, offset: 1)
     }
 
-    private func roundButton(_ symbol: String, label: String,
-                             action: @escaping () -> Void) -> some View {
-        GlassIconButton(symbol: symbol, label: label, action: action)
-            .frame(width: 48, height: 48)
+    private func adjacentPage(to controller: UIViewController, offset: Int) -> VideoPage? {
+        guard let current = controller as? VideoPage,
+              let index = clips.firstIndex(where: { $0.id == current.clip.id }),
+              clips.indices.contains(index + offset) else { return nil }
+        return VideoPage(clip: clips[index + offset])
     }
 
-    private func changeFeed(to destination: FeedSection) {
-        withAnimation(.easeInOut(duration: 0.22)) {
-            section = destination
-            selectedID = clips.first?.id
-            paused = false
-        }
-    }
-
-    private func withAccount(_ action: () -> Void) {
-        if store.active == nil { sheet = .account } else { action() }
-    }
-}
-
-private struct GlassIconButton: UIViewRepresentable {
-    let symbol: String
-    let label: String
-    let action: () -> Void
-
-    final class Coordinator {
-        var action: () -> Void
-
-        init(action: @escaping () -> Void) { self.action = action }
-    }
-
-    func makeCoordinator() -> Coordinator { Coordinator(action: action) }
-
-    func makeUIView(context: Context) -> UIButton {
-        let coordinator = context.coordinator
-        return UIButton(configuration: .glass(), primaryAction: UIAction { _ in coordinator.action() })
-    }
-
-    func updateUIView(_ button: UIButton, context: Context) {
-        context.coordinator.action = action
-        var configuration = UIButton.Configuration.glass()
-        configuration.image = UIImage(systemName: symbol,
-                                     withConfiguration: UIImage.SymbolConfiguration(pointSize: 19, weight: .semibold))
-        configuration.cornerStyle = .capsule
-        configuration.baseForegroundColor = .white
-        button.configuration = configuration
-        button.accessibilityLabel = label
-    }
-}
-
-private enum FeedSheet: Identifiable {
-    case account, comments(Clip), search, profile, publish
-
-    var id: String {
-        switch self {
-        case .account: "account"
-        case let .comments(clip): "comments-\(clip.id)"
-        case .search: "search"
-        case .profile: "profile"
-        case .publish: "publish"
+    func pageViewController(_ pageViewController: UIPageViewController, didFinishAnimating finished: Bool,
+                            previousViewControllers: [UIViewController], transitionCompleted completed: Bool) {
+        if completed {
+            (previousViewControllers.first as? VideoPage)?.setPlaying(false, muted: muted)
+            updateCurrent()
         }
     }
 }
 
-struct LoopingVideo: UIViewRepresentable {
-    let url: URL
-    let playing: Bool
-    let muted: Bool
+private final class VideoPage: UIViewController {
+    let clip: Clip
+    private let video = VideoSurface()
+    private let resumeButton = GlyphButton(symbol: "play.fill", label: "Відтворити")
+    private var enabled = false
+    private var paused = false
 
-    func makeUIView(context: Context) -> VideoSurface { VideoSurface() }
-
-    func updateUIView(_ view: VideoSurface, context: Context) {
-        view.update(url: url, playing: playing, muted: muted)
+    init(clip: Clip) {
+        self.clip = clip
+        super.init(nibName: nil, bundle: nil)
     }
 
-    static func dismantleUIView(_ view: VideoSurface, coordinator: ()) { view.stop() }
+    required init?(coder: NSCoder) { fatalError("Use init(clip:)") }
+
+    override func viewDidLoad() {
+        super.viewDidLoad()
+        view.backgroundColor = .black
+        video.pin(to: view)
+        video.load(clip.url)
+        let shade = GradientView()
+        shade.gradient.colors = [UIColor.black.withAlphaComponent(0.44).cgColor,
+                                  UIColor.clear.cgColor, UIColor.clear.cgColor,
+                                  UIColor.black.withAlphaComponent(0.74).cgColor]
+        shade.isUserInteractionEnabled = false
+        shade.pin(to: view)
+        let tapArea = UIButton(type: .custom)
+        tapArea.isAccessibilityElement = true
+        tapArea.accessibilityTraits = .button
+        tapArea.accessibilityLabel = "Призупинити відео"
+        tapArea.pin(to: view)
+        tapArea.addAction(UIAction { [weak self, weak tapArea] _ in
+            guard let self else { return }
+            self.paused.toggle()
+            tapArea?.accessibilityLabel = self.paused ? "Відтворити відео" : "Призупинити відео"
+            self.updatePauseIndicator()
+        }, for: .primaryActionTriggered)
+        resumeButton.isUserInteractionEnabled = false
+        resumeButton.isAccessibilityElement = false
+        resumeButton.alpha = 0
+        view.addSubview(resumeButton)
+        NSLayoutConstraint.activate([
+            resumeButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
+            resumeButton.centerYAnchor.constraint(equalTo: view.centerYAnchor)
+        ])
+    }
+
+    func setPlaying(_ enabled: Bool, muted: Bool) {
+        loadViewIfNeeded()
+        self.enabled = enabled
+        video.setPlaying(enabled && !paused, muted: muted)
+    }
+
+    private func updatePauseIndicator() {
+        video.setPlaying(enabled && !paused)
+        let update = { self.resumeButton.alpha = self.paused ? 1 : 0 }
+        if UIAccessibility.isReduceMotionEnabled { update() }
+        else { UIView.animate(withDuration: 0.18, animations: update) }
+    }
 }
 
 final class VideoSurface: UIView {
     override class var layerClass: AnyClass { AVPlayerLayer.self }
     private var playerLayer: AVPlayerLayer { layer as! AVPlayerLayer }
-    private var url: URL?
     private var looper: AVPlayerLooper?
 
-    func update(url: URL, playing: Bool, muted: Bool) {
-        if url != self.url {
-            stop()
-            self.url = url
-            let player = AVQueuePlayer()
-            looper = AVPlayerLooper(player: player, templateItem: AVPlayerItem(url: url))
-            playerLayer.videoGravity = .resizeAspectFill
-            playerLayer.player = player
-        }
-        playerLayer.player?.isMuted = muted
-        if playing { playerLayer.player?.play() } else { playerLayer.player?.pause() }
-    }
-
-    func stop() {
+    func load(_ url: URL?) {
         playerLayer.player?.pause()
         looper?.disableLooping()
         looper = nil
         playerLayer.player = nil
-        url = nil
+        guard let url else { return }
+        let player = AVQueuePlayer()
+        player.isMuted = true
+        looper = AVPlayerLooper(player: player, templateItem: AVPlayerItem(url: url))
+        playerLayer.videoGravity = .resizeAspectFill
+        playerLayer.player = player
+    }
+
+    func setPlaying(_ playing: Bool, muted: Bool? = nil) {
+        if let muted { playerLayer.player?.isMuted = muted }
+        if playing { playerLayer.player?.play() }
+        else { playerLayer.player?.pause() }
     }
 }

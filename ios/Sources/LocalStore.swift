@@ -1,5 +1,4 @@
 import Foundation
-import Observation
 
 struct Profile: Codable, Identifiable {
     let id: UUID
@@ -35,7 +34,6 @@ struct Comment: Codable, Identifiable {
     let text: String
 }
 
-@Observable
 final class LocalStore {
     struct State: Codable {
         var profiles: [Profile] = []
