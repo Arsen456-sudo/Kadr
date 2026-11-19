@@ -33,7 +33,7 @@ jobs:
           set -euo pipefail
           app=ios/build/device/Build/Products/Release-iphoneos/Kadr.app
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleSupportedPlatforms:0' "$app/Info.plist")" = iPhoneOS
-          lipo -verify_arch arm64 "$app/Kadr"
+          lipo "$app/Kadr" -verify_arch arm64
           test -s "$app/bunny.mp4"
           test -s "$app/sintel.mp4"
           mkdir -p "$RUNNER_TEMP/kadr-device/Payload" ios/build/ipa
