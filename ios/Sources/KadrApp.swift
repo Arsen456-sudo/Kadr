@@ -156,8 +156,9 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
         super.viewDidLayoutSubviews()
         view.bringSubviewToFront(header)
         if header.topItem === feedHeader {
-            let height = feedHeader.rightBarButtonItem?.accessibilityFrame.height ?? 0
-            let measured = height > 0 && height.isFinite ? height : header.bounds.height
+            let frame = feedHeader.rightBarButtonItem?.accessibilityFrame ?? .zero
+            let diameter = min(frame.width, frame.height)
+            let measured = diameter > 0 && diameter.isFinite ? min(44, diameter) : 44
             if measured > 0 { segments.buttonHeight = measured }
         }
     }
