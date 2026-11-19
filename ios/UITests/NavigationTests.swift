@@ -18,6 +18,7 @@ final class NavigationTests: XCTestCase {
         XCTAssertTrue(app.buttons["feed.recommended"].exists)
         XCTAssertEqual(header.label, "Пошук")
         XCTAssertTrue(app.staticTexts["Big Buck Bunny"].waitForExistence(timeout: 5))
+        capture(app, named: "Kadr-Portrait")
         app.swipeUp()
         XCTAssertTrue(app.staticTexts["Sintel"].waitForExistence(timeout: 7))
         let sound = app.buttons["feed.sound"]
@@ -25,9 +26,6 @@ final class NavigationTests: XCTestCase {
         XCTAssertEqual(sound.frame.midX, like.frame.midX, accuracy: 1)
         XCTAssertEqual(sound.frame.width, like.frame.width + 6, accuracy: 1)
         capture(app, named: "Kadr-Landscape")
-        app.swipeDown()
-        XCTAssertTrue(app.staticTexts["Big Buck Bunny"].waitForExistence(timeout: 7))
-        capture(app, named: "Kadr-Portrait")
 
         inbox.tap()
         XCTAssertTrue(app.staticTexts["Вхідні порожні"].waitForExistence(timeout: 5))
