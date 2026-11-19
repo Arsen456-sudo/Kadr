@@ -14,6 +14,7 @@ final class PublishController: UITableViewController, PHPickerViewControllerDele
     private let location = UITextField()
     private let comments = UISwitch()
     private let privacy = UISwitch()
+    private var coverTask: Task<Void, Never>?
     private var importing = false
     private var importTask: Task<Void, Never>?
     var onPublish: ((Clip) -> Void)?
@@ -54,6 +55,7 @@ final class PublishController: UITableViewController, PHPickerViewControllerDele
         }
         isModalInPresentation = !media.isEmpty
         navigationController?.isModalInPresentation = isModalInPresentation
+        reloadEditor()
     }
 
     override func numberOfSections(in tableView: UITableView) -> Int { 5 }
@@ -132,6 +134,41 @@ final class PublishController: UITableViewController, PHPickerViewControllerDele
         }
     }
 
+    private func reloadEditor() {
+        coverTask?.cancel()
+        let container = UIView(frame: CGRect(x: 0, y: 0, width: tableView.bounds.width, height: 248))
+        let artwork = UIImageView()
+        artwork.contentMode = .scaleAspectFill
+        artwork.clipsToBounds = true
+        artwork.layer.cornerRadius = 24
+        artwork.backgroundColor = .secondarySystemGroupedBackground
+        artwork.pin(to: container, insets: .init(top: 16, leading: 20, bottom: 8, trailing: 20))
+        let button = textButton(media.isEmpty ? "Обрати фотографії" : "Переглянути",
+                                symbol: media.isEmpty ? "photo.badge.plus" : "arrow.up.left.and.arrow.down.right") { [weak self] in
+            guard let self, !self.importing else { return }
+            if self.media.isEmpty { self.pick(photos: true) }
+            else { self.preview(self.options.coverIndex) }
+        }
+        button.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(button)
+        NSLayoutConstraint.activate([
+            button.centerXAnchor.constraint(equalTo: container.centerXAnchor),
+            button.centerYAnchor.constraint(equalTo: container.centerYAnchor)
+        ])
+        tableView.tableHeaderView = container
+        if media.indices.contains(options.coverIndex) {
+            let item = media[options.coverIndex]
+            coverTask = Task { [weak artwork] in
+                let image: UIImage?
+                if item.1 == .photo { image = await PhotoLoader.image(item.0, maxPixel: 1200) }
+                else { image = await VideoPoster.image(for: item.0).map { UIImage(cgImage: $0) } }
+                guard !Task.isCancelled else { return }
+                artwork?.image = image
+            }
+        }
+        tableView.reloadData()
+    }
+
     private func pick(photos: Bool) {
         var configuration = PHPickerConfiguration()
         configuration.filter = photos ? .images : .videos
@@ -149,7 +186,7 @@ final class PublishController: UITableViewController, PHPickerViewControllerDele
         importing = true
         isModalInPresentation = true
         navigationController?.isModalInPresentation = true
-        tableView.reloadData()
+        reloadEditor()
         importTask = Task { [weak self] in
             guard let self else { return }
             var imported: [(URL, MediaKind)] = []
@@ -177,7 +214,7 @@ final class PublishController: UITableViewController, PHPickerViewControllerDele
             self.importing = false
             self.isModalInPresentation = !self.media.isEmpty
             self.navigationController?.isModalInPresentation = self.isModalInPresentation
-            self.tableView.reloadData()
+            self.reloadEditor()
             if failed > 0 { self.showMessage("Не вдалося імпортувати файлів: \(failed). Решту додано.") }
         }
     }
@@ -230,7 +267,7 @@ final class PublishController: UITableViewController, PHPickerViewControllerDele
         let item = media.remove(at: source.row)
         media.insert(item, at: destination.row)
         options.coverIndex = media.firstIndex { $0.0 == cover } ?? 0
-        tableView.reloadData()
+        reloadEditor()
     }
     override func tableView(_ tableView: UITableView, commit editingStyle: UITableViewCell.EditingStyle, forRowAt indexPath: IndexPath) {
         guard editingStyle == .delete else { return }
@@ -244,7 +281,7 @@ final class PublishController: UITableViewController, PHPickerViewControllerDele
         }
         let cover = UIContextualAction(style: .normal, title: "Обкладинка") { [weak self] _, _, done in
             self?.options.coverIndex = indexPath.row
-            self?.tableView.reloadData()
+            self?.reloadEditor()
             done(true)
         }
         return UISwipeActionsConfiguration(actions: media.first?.1 == .photo ? [delete, cover] : [delete])
@@ -255,7 +292,7 @@ final class PublishController: UITableViewController, PHPickerViewControllerDele
         options.coverIndex = media.firstIndex { $0.0 == cover } ?? 0
         isModalInPresentation = !media.isEmpty
         navigationController?.isModalInPresentation = isModalInPresentation
-        tableView.reloadData()
+        reloadEditor()
     }
 
     private func save(draft: Bool) {
@@ -285,6 +322,7 @@ final class PublishController: UITableViewController, PHPickerViewControllerDele
         present(alert, animated: true)
     }
     deinit {
+        coverTask?.cancel()
         importTask?.cancel()
         try? FileManager.default.removeItem(at: directory)
     }
