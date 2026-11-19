@@ -49,7 +49,9 @@ final class CommentsController: UIViewController, UITableViewDataSource, UITextF
             let row = UIStackView(arrangedSubviews: [fieldIsland, send])
             row.alignment = .center
             row.spacing = 8
-            composer = row
+            let group = glassGroup()
+            row.pin(to: group.contentView)
+            composer = group
         }
         composer.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(composer)

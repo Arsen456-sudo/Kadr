@@ -19,17 +19,20 @@ final class KadrToolbarState: ObservableObject {
     struct Context: Equatable {
         var screen: Screen
         var canSignOut: Bool
+        var hasBanner: Bool = false
     }
 
     @Published var context = Context(screen: .feed, canSignOut: false)
     var screen: Screen { context.screen }
     var canSignOut: Bool { context.canSignOut }
+    var hasBanner: Bool { context.hasBanner }
     @Published var immersive = false
     @Published var feedSection = FeedSection.recommended
     var onSection: ((FeedSection) -> Void)?
     var onSearch: (() -> Void)?
     var onSignOut: (() -> Void)?
-    var onBanner: (() -> Void)?
+    var onChooseBanner: (() -> Void)?
+    var onRemoveBanner: (() -> Void)?
     var onImmersive: (() -> Void)?
 }
 
@@ -76,8 +79,19 @@ struct KadrNavigationShell: View {
                         }
                     } else if state.canSignOut {
                         ToolbarItem(placement: .topBarLeading) {
-                            Button {
-                                state.onBanner?()
+                            Menu {
+                                Button {
+                                    state.onChooseBanner?()
+                                } label: {
+                                    Label("Вибрати фото або відео", systemImage: "photo.on.rectangle")
+                                }
+                                if state.hasBanner {
+                                    Button(role: .destructive) {
+                                        state.onRemoveBanner?()
+                                    } label: {
+                                        Label("Прибрати банер", systemImage: "trash")
+                                    }
+                                }
                             } label: {
                                 Image(systemName: "photo.on.rectangle")
                             }
@@ -86,6 +100,7 @@ struct KadrNavigationShell: View {
                     }
                 }
                 .toolbar(state.immersive ? .hidden : .visible, for: .navigationBar)
+                .toolbarBackground(state.screen == .feed ? .hidden : .automatic, for: .navigationBar)
         }
         .overlay(alignment: .topLeading) {
             if state.immersive {

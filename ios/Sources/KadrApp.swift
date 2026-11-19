@@ -106,10 +106,12 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
         saved.onAccount = { [weak self] in self?.openAccount() }
         profile.onClip = { [weak self] clip in self?.openClip(clip) }
         profile.onAccount = { [weak self] in self?.openAccount() }
+        profile.onChange = { [weak self] in self?.refresh() }
 
         toolbarState.onSearch = { [weak self] in self?.openSearch() }
         toolbarState.onSignOut = { [weak self] in self?.signOut() }
-        toolbarState.onBanner = { [weak self] in self?.profile.editBanner(from: nil) }
+        toolbarState.onChooseBanner = { [weak self] in self?.profile.chooseBanner() }
+        toolbarState.onRemoveBanner = { [weak self] in self?.profile.removeBanner() }
         toolbarState.onImmersive = { [weak self] in
             guard let self else { return }
             self.setImmersive(!self.immersive)
@@ -215,7 +217,7 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
         scroll?.bottomEdgeEffect.style = .soft
         scroll?.topEdgeEffect.style = .soft
         bottomEdge.scrollView = scroll
-        topEdge.scrollView = scroll
+        topEdge.scrollView = isFeed ? nil : scroll
         showHeader(for: controller, animated: animated)
     }
 
@@ -226,9 +228,11 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
         else if controller === saved { screen = .saved }
         else { screen = .feed }
         let canSignOut = screen == .profile && store.active != nil
-        guard toolbarState.screen != screen || toolbarState.canSignOut != canSignOut else { return }
+        let context = KadrToolbarState.Context(screen: screen, canSignOut: canSignOut,
+                                               hasBanner: canSignOut && store.active?.bannerURL != nil)
+        guard toolbarState.context != context else { return }
         withAnimation(animated && !UIAccessibility.isReduceMotionEnabled ? .default : nil) {
-            toolbarState.context = .init(screen: screen, canSignOut: canSignOut)
+            toolbarState.context = context
         }
         view.setNeedsLayout()
     }

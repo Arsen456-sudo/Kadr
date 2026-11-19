@@ -105,7 +105,7 @@ final class GlyphButton: UIButton {
     }
 }
 
-func glassIsland(style: UIGlassEffect.Style = .regular, interactive: Bool = false) -> UIVisualEffectView {
+func glassIsland(style: UIGlassEffect.Style = .regular, interactive: Bool = true) -> UIVisualEffectView {
     let effect = UIGlassEffect(style: style)
     effect.isInteractive = interactive
     let view = UIVisualEffectView(effect: effect)
@@ -114,23 +114,43 @@ func glassIsland(style: UIGlassEffect.Style = .regular, interactive: Bool = fals
     return view
 }
 
+func glassGroup(spacing: CGFloat = 12) -> UIVisualEffectView {
+    let effect = UIGlassContainerEffect()
+    effect.spacing = spacing
+    let container = UIVisualEffectView(effect: effect)
+    container.translatesAutoresizingMaskIntoConstraints = false
+    return container
+}
+
 class GlassSectionPicker: UIView {
-    private let control = UISegmentedControl()
+    private var control = UISegmentedControl()
     private let titles: [String]
-    private let symbols: [String]
     private let contentInset: CGFloat
     private var controlHeight: NSLayoutConstraint!
-    private var lastWidth: CGFloat = -1
     var onIndexSelection: ((Int) -> Void)?
 
     override var intrinsicContentSize: CGSize { CGSize(width: 184, height: 44) }
 
     init(titles: [String], symbols: [String] = [], glassContainer: Bool = false) {
         self.titles = titles
-        self.symbols = symbols
         contentInset = glassContainer ? 4 : 0
         super.init(frame: .zero)
-        for (index, title) in titles.enumerated() { control.insertSegment(withTitle: title, at: index, animated: false) }
+        if symbols.isEmpty {
+            control = UISegmentedControl(items: titles)
+            control.addAction(UIAction { [weak self] _ in
+                guard let self else { return }
+                self.onIndexSelection?(self.control.selectedSegmentIndex)
+            }, for: .valueChanged)
+        } else {
+            let actions = titles.indices.map { index in
+                UIAction(title: titles[index],
+                         image: UIImage(systemName: symbols[index],
+                                        withConfiguration: UIImage.SymbolConfiguration(pointSize: 18, weight: .medium))) { [weak self] _ in
+                    self?.onIndexSelection?(index)
+                }
+            }
+            control = UISegmentedControl(frame: .zero, actions: actions)
+        }
         let container: UIView
         if glassContainer {
             let island = glassIsland()
@@ -140,12 +160,11 @@ class GlassSectionPicker: UIView {
             let clear = UIGraphicsImageRenderer(size: CGSize(width: 1, height: 1)).image { _ in }
             control.setBackgroundImage(clear, for: .normal, barMetrics: .default)
             control.setDividerImage(clear, forLeftSegmentState: .normal, rightSegmentState: .normal, barMetrics: .default)
-            control.selectedSegmentTintColor = nil
             control.tintColor = .label
         } else { container = self }
         control.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(control)
-        controlHeight = control.heightAnchor.constraint(equalToConstant: glassContainer ? 32 : 44)
+        controlHeight = control.heightAnchor.constraint(equalToConstant: glassContainer ? 36 : 44)
         NSLayoutConstraint.activate([
             control.centerYAnchor.constraint(equalTo: container.centerYAnchor),
             control.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: contentInset),
@@ -154,16 +173,9 @@ class GlassSectionPicker: UIView {
         let font = UIFont.preferredFont(forTextStyle: .footnote)
         control.setTitleTextAttributes([.font: font], for: .normal)
         control.setTitleTextAttributes([.font: font], for: .selected)
+        control.apportionsSegmentWidthsByContent = false
         control.selectedSegmentIndex = 0
-        control.addAction(UIAction { [weak self] _ in
-            guard let self else { return }
-            self.onIndexSelection?(self.control.selectedSegmentIndex)
-        }, for: .valueChanged)
-        registerForTraitChanges([UITraitPreferredContentSizeCategory.self, UITraitUserInterfaceStyle.self]) {
-            (picker: GlassSectionPicker, _: UITraitCollection) in
-            picker.lastWidth = -1
-            picker.setNeedsLayout()
-        }
+        control.accessibilityValue = titles.first
     }
 
     required init?(coder: NSCoder) { fatalError("Use init(titles:)") }
@@ -177,38 +189,6 @@ class GlassSectionPicker: UIView {
     func selectIndex(_ index: Int) {
         control.selectedSegmentIndex = index
         control.accessibilityValue = titles[index]
-    }
-
-    override func layoutSubviews() {
-        super.layoutSubviews()
-        guard !symbols.isEmpty, bounds.width > 0, lastWidth != bounds.width else { return }
-        lastWidth = bounds.width
-        let base = UIFont.preferredFont(forTextStyle: .footnote)
-        let natural = titles.reduce(CGFloat(0)) { $0 + ($1 as NSString).size(withAttributes: [.font: base]).width + base.pointSize + 17 }
-        let font = base.withSize(base.pointSize * min(1, max(0.65, (bounds.width - contentInset * 2) / natural)))
-        let color = UIColor.label.resolvedColor(with: traitCollection)
-        control.apportionsSegmentWidthsByContent = true
-        for index in titles.indices {
-            let title = titles[index]
-            let text = (title as NSString).size(withAttributes: [.font: font])
-            let size = CGSize(width: ceil(font.pointSize + 5 + text.width), height: ceil(text.height))
-            let image = UIGraphicsImageRenderer(size: size).image { _ in
-                let icon = UIImage(systemName: symbols[index],
-                                   withConfiguration: UIImage.SymbolConfiguration(pointSize: font.pointSize, weight: .medium))
-                icon?.withTintColor(color, renderingMode: .alwaysOriginal).draw(in:
-                    CGRect(x: 0, y: (size.height - font.pointSize) / 2, width: font.pointSize, height: font.pointSize))
-                (title as NSString).draw(at: CGPoint(x: font.pointSize + 5, y: 0),
-                                         withAttributes: [.font: font, .foregroundColor: color])
-            }.withRenderingMode(.alwaysOriginal)
-            control.setImage(image, forSegmentAt: index)
-        }
-        control.accessibilityCustomActions = titles.indices.map { index in
-            UIAccessibilityCustomAction(name: titles[index]) { [weak self] _ in
-                self?.selectIndex(index)
-                self?.onIndexSelection?(index)
-                return true
-            }
-        }
     }
 }
 

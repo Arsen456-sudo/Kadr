@@ -81,14 +81,6 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
         grid.register(ProfileHero.self, forSupplementaryViewOfKind: UICollectionView.elementKindSectionHeader,
                       withReuseIdentifier: "hero")
         grid.pin(to: view)
-        if let profileID, store.active?.id == profileID {
-            let button = UIBarButtonItem(primaryAction: UIAction(image: UIImage(systemName: "photo.on.rectangle")) { [weak self] _ in
-                self?.editBanner(from: self?.navigationItem.leftBarButtonItem)
-            })
-            button.accessibilityLabel = "Змінити банер"
-            navigationItem.leftItemsSupplementBackButton = true
-            navigationItem.leftBarButtonItem = button
-        }
         sectionIsland.translatesAutoresizingMaskIntoConstraints = true
         sectionIsland.onSelection = { [weak self] section in self?.select(section) }
         view.addSubview(sectionIsland)
@@ -155,6 +147,7 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
 
     func refresh() {
         guard isViewLoaded else { return }
+        configureBannerMenu()
         let profile = profileID.flatMap { store.profile($0) } ?? (profileID == nil ? store.active : nil)
         let resetScroll = visibleProfile?.id != profile?.id
         let changedBanner = visibleProfile?.bannerFile != profile?.bannerFile
@@ -254,29 +247,34 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
         return view
     }
 
-    func editBanner(from button: UIBarButtonItem?) {
-        guard let profile = store.active, profileID == nil || profile.id == profileID else { return }
-        if profile.bannerURL == nil {
-            openBannerPicker(for: profile.id)
-        } else {
-            let menu = UIAlertController(title: "Банер профілю", message: nil, preferredStyle: .actionSheet)
-            menu.addAction(UIAlertAction(title: "Вибрати фото або відео", style: .default) { [weak self] _ in
-                self?.openBannerPicker(for: profile.id)
+    private func configureBannerMenu() {
+        guard let profileID, store.active?.id == profileID else { return }
+        var actions = [UIAction(title: "Вибрати фото або відео", image: UIImage(systemName: "photo.on.rectangle")) { [weak self] _ in
+            self?.chooseBanner()
+        }]
+        if store.active?.bannerURL != nil {
+            actions.append(UIAction(title: "Прибрати банер", image: UIImage(systemName: "trash"), attributes: .destructive) { [weak self] _ in
+                self?.removeBanner()
             })
-            menu.addAction(UIAlertAction(title: "Прибрати банер", style: .destructive) { [weak self] _ in
-                guard let self else { return }
-                self.store.setBanner(nil, extension: "", for: profile.id)
-                self.showStorageErrorIfNeeded()
-                self.refresh()
-            })
-            menu.addAction(UIAlertAction(title: "Скасувати", style: .cancel))
-            if let button {
-                menu.popoverPresentationController?.barButtonItem = button
-            } else {
-                menu.popoverPresentationController?.sourceView = view
-            }
-            present(menu, animated: true)
         }
+        let button = UIBarButtonItem(title: nil, image: UIImage(systemName: "photo.on.rectangle"),
+                                     primaryAction: nil, menu: UIMenu(children: actions))
+        button.accessibilityLabel = "Змінити банер"
+        navigationItem.leftItemsSupplementBackButton = true
+        navigationItem.leftBarButtonItem = button
+    }
+
+    func chooseBanner() {
+        guard let profile = store.active, profileID == nil || profile.id == profileID else { return }
+        openBannerPicker(for: profile.id)
+    }
+
+    func removeBanner() {
+        guard let profile = store.active, profileID == nil || profile.id == profileID else { return }
+        if store.setBanner(nil, extension: "", for: profile.id) {
+            refresh()
+            onChange?()
+        } else { showStorageErrorIfNeeded() }
     }
 
     private func openBannerPicker(for id: UUID) {
@@ -386,6 +384,7 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
         guard store.active?.id == owner else { return }
         if store.setBanner(url, extension: suffix, for: owner) {
             refresh()
+            onChange?()
         } else {
             showStorageErrorIfNeeded()
         }

@@ -18,11 +18,8 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
                                        message: "Підпишись на авторів, щоб бачити їхні публікації.",
                                        symbol: "person.2")
     private let reactionIsland = glassIsland(interactive: true)
-    private let actionGlass: UIVisualEffectView = {
-        let effect = UIGlassContainerEffect()
-        effect.spacing = 6
-        return UIVisualEffectView(effect: effect)
-    }()
+    private let actionGlass = glassGroup()
+    private let topShadow = FeedTopShadow()
     private let actionEdge = UIScrollEdgeElementContainerInteraction()
     private let sound = UIButton()
     private let authorAvatar = UIButton()
@@ -67,6 +64,14 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
         pager.delegate = self
         embed(pager, in: view)
         empty.pin(to: view)
+        topShadow.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(topShadow)
+        NSLayoutConstraint.activate([
+            topShadow.topAnchor.constraint(equalTo: view.topAnchor),
+            topShadow.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            topShadow.trailingAnchor.constraint(equalTo: view.trailingAnchor),
+            topShadow.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 100)
+        ])
 
         author.numberOfLines = 1
         caption.numberOfLines = 2
@@ -76,9 +81,12 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
         captionStack.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(captionStack)
 
+        like.changesSelectionAsPrimaryAction = true
+        bookmark.changesSelectionAsPrimaryAction = true
         like.addAction(UIAction { [weak self] _ in
             guard let self, let clip = self.page?.clip else { return }
             self.onReaction?(clip, false)
+            self.like.isSelected = self.store.liked(clip)
         }, for: .primaryActionTriggered)
         comments.addAction(UIAction { [weak self] _ in
             guard let self, let clip = self.page?.clip else { return }
@@ -87,6 +95,7 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
         bookmark.addAction(UIAction { [weak self] _ in
             guard let self, let clip = self.page?.clip else { return }
             self.onReaction?(clip, true)
+            self.bookmark.isSelected = self.store.bookmarked(clip)
         }, for: .primaryActionTriggered)
 
         let controls = UIStackView(arrangedSubviews: [like, comments, bookmark])
@@ -192,7 +201,8 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
         empty.isHidden = active != nil || immersive
         page?.setImmersive(immersive)
         edgeScrollView?.topEdgeEffect.style = .soft
-        edgeScrollView?.topEdgeEffect.isHidden = immersive
+        edgeScrollView?.topEdgeEffect.isHidden = true
+        topShadow.isHidden = immersive
         edgeScrollView?.bottomEdgeEffect.style = .soft
         edgeScrollView?.bottomEdgeEffect.isHidden = immersive
         reactionIsland.isHidden = active == nil
@@ -287,6 +297,33 @@ final class FeedController: UIViewController, UIPageViewControllerDataSource, UI
             (previousViewControllers.first as? VideoPage)?.setPlaying(false, muted: muted)
             updateCurrent()
         }
+    }
+}
+
+private final class FeedTopShadow: UIView {
+    private let blur = UIVisualEffectView(effect: UIBlurEffect(style: .systemThinMaterialDark))
+    private let fadeMask = GradientView()
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isOpaque = false
+        isUserInteractionEnabled = false
+        accessibilityElementsHidden = true
+        blur.pin(to: self)
+        fadeMask.gradient.colors = [UIColor.black.cgColor, UIColor.black.withAlphaComponent(0.85).cgColor, UIColor.clear.cgColor]
+        fadeMask.gradient.locations = [0, 0.3, 1]
+        fadeMask.gradient.startPoint = CGPoint(x: 0.5, y: 0)
+        fadeMask.gradient.endPoint = CGPoint(x: 0.5, y: 1)
+        blur.mask = fadeMask
+    }
+
+    required init?(coder: NSCoder) { fatalError("Use init(frame:)") }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard fadeMask.frame != blur.bounds else { return }
+        fadeMask.frame = blur.bounds
+        blur.mask = fadeMask
     }
 }
 
