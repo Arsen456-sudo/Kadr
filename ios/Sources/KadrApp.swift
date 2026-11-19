@@ -42,14 +42,17 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
     private lazy var saved = SavedController(store: store)
     private lazy var profile = ProfileController(store: store, profileID: nil)
     private let segments = FeedSectionPicker()
-    private let sectionTitle = UILabel()
-    private let headerAction = HeaderActionButton()
+    private let header = UINavigationBar()
+    private let feedHeader = UINavigationItem()
+    private let savedHeader = UINavigationItem(title: "Збережене")
+    private let inboxHeader = UINavigationItem(title: "Вхідні")
+    private let profileHeader = UINavigationItem(title: "Профіль")
+    private let guestProfileHeader = UINavigationItem(title: "Профіль")
     private let topEdge = UIScrollEdgeElementContainerInteraction()
     private let bottomEdge = UIScrollEdgeElementContainerInteraction()
     private let addTab = UIViewController()
     private let inbox = InboxController()
     private var keepsFeedPlaying = false
-    private var showingProfileAction = false
     private weak var selectedScreen: UIViewController?
     private var welcomePresented = false
     var sceneActive = false { didSet { updatePlayback() } }
@@ -99,52 +102,59 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
         profile.onClip = { [weak self] clip in self?.openClip(clip) }
         profile.onAccount = { [weak self] in self?.openAccount() }
 
-        headerAction.accessibilityIdentifier = "header.action"
         segments.onSelection = { [weak self] section in
             guard let self else { return }
             if section == .following && self.store.active == nil {
+                self.segments.updateSelection(self.feed.section)
                 self.openAccount()
                 return
             }
             self.feed.selectSection(section)
             self.segments.updateSelection(section)
         }
-
-        headerAction.addAction(UIAction { [weak self] _ in self?.performHeaderAction() }, for: .primaryActionTriggered)
     }
 
     private func configureChrome() {
-        let safe = view.safeAreaLayoutGuide
-        sectionTitle.font = .preferredFont(forTextStyle: .title2).withTraits(.traitBold)
-        sectionTitle.adjustsFontForContentSizeCategory = true
-        sectionTitle.accessibilityTraits.insert(.header)
-        sectionTitle.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        for item in [sectionTitle, segments, headerAction] {
-            item.translatesAutoresizingMaskIntoConstraints = false
-            view.addSubview(item)
-        }
+        header.translatesAutoresizingMaskIntoConstraints = false
+        view.addSubview(header)
         NSLayoutConstraint.activate([
-            headerAction.topAnchor.constraint(equalTo: safe.topAnchor, constant: 5),
-            headerAction.trailingAnchor.constraint(equalTo: safe.trailingAnchor, constant: -16),
-            segments.centerXAnchor.constraint(equalTo: safe.centerXAnchor),
-            segments.centerYAnchor.constraint(equalTo: headerAction.centerYAnchor),
-            segments.heightAnchor.constraint(equalToConstant: HeaderActionButton.side),
-            segments.widthAnchor.constraint(equalToConstant: 184),
-            sectionTitle.leadingAnchor.constraint(equalTo: safe.leadingAnchor, constant: 16),
-            sectionTitle.centerYAnchor.constraint(equalTo: headerAction.centerYAnchor),
-            sectionTitle.trailingAnchor.constraint(lessThanOrEqualTo: headerAction.leadingAnchor, constant: -10)
+            header.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor),
+            header.leadingAnchor.constraint(equalTo: view.leadingAnchor),
+            header.trailingAnchor.constraint(equalTo: view.trailingAnchor)
         ])
+        header.isTranslucent = true
+        header.tintColor = .label
+        feedHeader.titleView = segments
+        for item in [feedHeader, savedHeader, inboxHeader, guestProfileHeader] {
+            let search = UIBarButtonItem(primaryAction: UIAction(image: UIImage(systemName: "magnifyingglass")) { [weak self] _ in
+                self?.openSearch()
+            })
+            search.accessibilityLabel = "Пошук"
+            search.accessibilityIdentifier = "header.action"
+            search.identifier = "header.context"
+            item.rightBarButtonItem = search
+        }
+        let logout = UIBarButtonItem(primaryAction: UIAction(title: "Вийти") { [weak self] _ in
+            self?.signOut()
+        })
+        logout.accessibilityIdentifier = "header.action"
+        logout.identifier = "header.context"
+        profileHeader.rightBarButtonItem = logout
+        let editBanner = UIBarButtonItem(primaryAction: UIAction(image: UIImage(systemName: "photo.on.rectangle")) { [weak self] _ in
+            self?.profile.editBanner(from: self?.profileHeader.leftBarButtonItem)
+        })
+        editBanner.accessibilityLabel = "Змінити банер"
+        profileHeader.leftBarButtonItem = editBanner
+
         topEdge.edge = .top
-        headerAction.addInteraction(topEdge)
+        header.addInteraction(topEdge)
         bottomEdge.edge = .bottom
         tabBar.addInteraction(bottomEdge)
     }
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
-        view.bringSubviewToFront(sectionTitle)
-        view.bringSubviewToFront(segments)
-        view.bringSubviewToFront(headerAction)
+        view.bringSubviewToFront(header)
     }
 
     func tabBarController(_ tabBarController: UITabBarController, shouldSelect controller: UIViewController) -> Bool {
@@ -152,7 +162,7 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
             openPublisher()
             return false
         }
-        updateHeaderAction(for: controller, animated: true)
+        showHeader(for: controller, animated: true)
         return true
     }
 
@@ -175,23 +185,28 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
         let isFeed = controller === feed
         let isProfile = controller === profile
         segments.updateSelection(feed.section)
-        sectionTitle.text = isProfile ? "Профіль" : controller === inbox ? "Вхідні" : "Збережене"
         let scroll: UIScrollView? = isFeed ? feed.edgeScrollView
             : isProfile ? profile.edgeScrollView : controller === inbox ? inbox.scrollView : saved.tableView
         scroll?.bottomEdgeEffect.style = .soft
         scroll?.topEdgeEffect.style = .soft
         bottomEdge.scrollView = scroll
         topEdge.scrollView = isFeed ? nil : scroll
-        updateHeaderAction(for: controller, animated: animated)
-        segments.isHidden = !isFeed
-        sectionTitle.isHidden = isFeed
+        showHeader(for: controller, animated: animated)
     }
 
-    private func updateHeaderAction(for controller: UIViewController?, animated: Bool) {
-        let canSignOut = controller === profile && store.active != nil
-        guard canSignOut != showingProfileAction else { return }
-        showingProfileAction = canSignOut
-        headerAction.setLogout(canSignOut, animated: animated)
+    private func showHeader(for controller: UIViewController?, animated: Bool) {
+        let item: UINavigationItem
+        if controller === profile {
+            item = store.active == nil ? guestProfileHeader : profileHeader
+        } else if controller === inbox {
+            item = inboxHeader
+        } else if controller === saved {
+            item = savedHeader
+        } else {
+            item = feedHeader
+        }
+        guard header.topItem !== item else { return }
+        header.setItems([item], animated: animated)
     }
 
     private func updatePlayback() {
@@ -199,20 +214,20 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
         feed.playbackEnabled = sceneActive && selectedViewController === feed && (presentedViewController == nil || keepsFeedPlaying)
     }
 
-    private func performHeaderAction() {
-        if showingProfileAction {
-            store.select(nil)
-            if store.active == nil { feed.selectSection(.recommended) }
-            refresh()
-            showStoreError()
-        } else {
-            let search = SearchController(store: store)
-            search.onChange = { [weak self] in self?.refresh() }
-            search.onClip = { [weak self, weak search] clip in
-                self?.openClip(clip, from: search?.navigationController)
-            }
-            showSheet(search)
+    private func signOut() {
+        store.select(nil)
+        if store.active == nil { feed.selectSection(.recommended) }
+        refresh()
+        showStoreError()
+    }
+
+    private func openSearch() {
+        let search = SearchController(store: store)
+        search.onChange = { [weak self] in self?.refresh() }
+        search.onClip = { [weak self, weak search] clip in
+            self?.openClip(clip, from: search?.navigationController)
         }
+        showSheet(search)
     }
 
     private func react(to clip: Clip, bookmark: Bool) {

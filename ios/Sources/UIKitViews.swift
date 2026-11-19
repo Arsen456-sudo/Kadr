@@ -125,134 +125,32 @@ func glassIsland(style: UIGlassEffect.Style = .regular) -> UIVisualEffectView {
     return view
 }
 
-final class HeaderActionButton: UIButton {
-    static let side: CGFloat = 46
-    private lazy var width = widthAnchor.constraint(equalToConstant: Self.side)
-    private let contentBlur = UIVisualEffectView(effect: nil)
-    private var revision = 0
-
-    init() {
-        super.init(frame: .zero)
-        translatesAutoresizingMaskIntoConstraints = false
-        width.isActive = true
-        heightAnchor.constraint(equalToConstant: Self.side).isActive = true
-        contentBlur.isUserInteractionEnabled = false
-        contentBlur.accessibilityElementsHidden = true
-        contentBlur.cornerConfiguration = .capsule()
-        contentBlur.pin(to: self, insets: .init(top: 3, leading: 3, bottom: 3, trailing: 3))
-        setLogout(false, animated: false)
-    }
-
-    required init?(coder: NSCoder) { fatalError("Use init()") }
-
-    func setLogout(_ logout: Bool, animated: Bool) {
-        revision += 1
-        let request = revision
-        var style = UIButton.Configuration.glass()
-        style.cornerStyle = .capsule
-        style.buttonSize = .medium
-        style.baseForegroundColor = .label
-        style.image = UIImage(systemName: logout ? "rectangle.portrait.and.arrow.right" : "magnifyingglass")
-        style.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
-            pointSize: logout ? 20 : 18, weight: .semibold)
-        style.title = logout ? "Вийти" : nil
-        style.imagePadding = 6
-        let titleWidth = ("Вийти" as NSString).size(withAttributes: [.font: UIFont.preferredFont(forTextStyle: .body)]).width
-        let targetWidth = logout ? max(104, ceil(titleWidth + 57)) : Self.side
-        accessibilityLabel = logout ? "Вийти" : "Пошук"
-
-        guard let host = superview, animated, window != nil, !UIAccessibility.isReduceMotionEnabled else {
-            configuration = style
-            width.constant = targetWidth
-            contentBlur.effect = nil
-            return
-        }
-
-        host.layoutIfNeeded()
-        width.constant = targetWidth
-        let resize = UIViewPropertyAnimator(duration: 0.28, dampingRatio: 0.84) {
-            host.layoutIfNeeded()
-        }
-        resize.startAnimation()
-
-        bringSubviewToFront(contentBlur)
-        let options: UIView.AnimationOptions = [.beginFromCurrentState, .allowUserInteraction]
-        UIView.animate(withDuration: 0.10, delay: 0, options: options, animations: {
-            self.contentBlur.effect = UIBlurEffect(style: .systemUltraThinMaterialDark)
-        }, completion: { [weak self] _ in
-            guard let self, self.revision == request else { return }
-            UIView.performWithoutAnimation {
-                self.configuration = style
-                self.bringSubviewToFront(self.contentBlur)
-            }
-            UIView.animate(withDuration: 0.18, delay: 0, options: options) {
-                self.contentBlur.effect = nil
-            }
-        })
-    }
-}
-
 final class FeedSectionPicker: UIView {
-    private let island = glassIsland(style: .clear)
-    private let recommended = UIButton()
-    private let following = UIButton()
-    private var selected: FeedSection?
+    private let control = UISegmentedControl(items: ["Для тебе", "Підписки"])
     var onSelection: ((FeedSection) -> Void)?
 
+    override var intrinsicContentSize: CGSize { CGSize(width: 184, height: 46) }
+
     init() {
         super.init(frame: .zero)
+        let island = glassIsland()
         island.pin(to: self)
-        let choices = UIStackView(arrangedSubviews: [recommended, following])
-        choices.spacing = UIStackView.spacingUseSystem
-        choices.distribution = .fillEqually
-        choices.translatesAutoresizingMaskIntoConstraints = false
-        island.contentView.addSubview(choices)
-
-        // The system spacing keeps the inner glass capsules inset from the shared island.
-        let inset = island.contentView
-        NSLayoutConstraint.activate([
-            choices.leadingAnchor.constraint(equalToSystemSpacingAfter: inset.leadingAnchor, multiplier: 0.5),
-            inset.trailingAnchor.constraint(equalToSystemSpacingAfter: choices.trailingAnchor, multiplier: 0.5),
-            choices.topAnchor.constraint(equalToSystemSpacingBelow: inset.topAnchor, multiplier: 0.5),
-            inset.bottomAnchor.constraint(equalToSystemSpacingBelow: choices.bottomAnchor, multiplier: 0.5)
-        ])
-        recommended.accessibilityIdentifier = "feed.recommended"
-        following.accessibilityIdentifier = "feed.following"
-        recommended.addAction(UIAction { [weak self] _ in self?.onSelection?(.recommended) }, for: .primaryActionTriggered)
-        following.addAction(UIAction { [weak self] _ in self?.onSelection?(.following) }, for: .primaryActionTriggered)
-        updateSelection(.recommended)
+        control.pin(to: island.contentView, insets: .init(top: 4, leading: 4, bottom: 4, trailing: 4))
+        let attributes: [NSAttributedString.Key: Any] = [.font: UIFont.preferredFont(forTextStyle: .footnote)]
+        control.setTitleTextAttributes(attributes, for: .normal)
+        control.setTitleTextAttributes(attributes, for: .selected)
+        control.selectedSegmentIndex = 0
+        control.addAction(UIAction { [weak self] _ in
+            guard let self else { return }
+            self.onSelection?(self.control.selectedSegmentIndex == 1 ? .following : .recommended)
+        }, for: .valueChanged)
     }
 
     required init?(coder: NSCoder) { fatalError("Use init()") }
 
     func updateSelection(_ section: FeedSection) {
-        guard section != selected else { return }
-        selected = section
-        configure(recommended, title: "Для тебе", selected: section == .recommended)
-        configure(following, title: "Підписки", selected: section == .following)
-    }
-
-    private func configure(_ button: UIButton, title: String, selected: Bool) {
-        var style = selected ? UIButton.Configuration.glass() : .plain()
-        style.cornerStyle = .capsule
-        style.buttonSize = .small
-        style.baseForegroundColor = .label
-        if selected {
-            style.background.backgroundColor = UIColor(white: 0.12, alpha: 0.72)
-        }
-        style.title = title
-        style.titleLineBreakMode = .byTruncatingTail
-        style.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
-            var result = attributes
-            result.font = .preferredFont(forTextStyle: .footnote)
-            return result
-        }
-        button.configuration = style
-        button.titleLabel?.numberOfLines = 1
-        button.titleLabel?.adjustsFontSizeToFitWidth = true
-        button.titleLabel?.minimumScaleFactor = 0.8
-        if selected { button.accessibilityTraits.insert(.selected) }
-        else { button.accessibilityTraits.remove(.selected) }
+        let index = section == .following ? 1 : 0
+        if control.selectedSegmentIndex != index { control.selectedSegmentIndex = index }
     }
 }
 

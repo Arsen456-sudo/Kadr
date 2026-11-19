@@ -191,7 +191,9 @@ final class PublishController: FormController, PHPickerViewControllerDelegate {
     func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
         picker.dismiss(animated: true)
         guard let provider = results.first?.itemProvider else { return }
-        guard let format = provider.registeredTypeIdentifiers.first(where: { UTType($0)?.conforms(to: .movie) == true }) else {
+        // Request a concrete representation supplied by Photos when one is available.
+        let formats = provider.registeredTypeIdentifiers.compactMap(UTType.init).filter { $0.conforms(to: .movie) }
+        guard let format = formats.first(where: { $0.preferredFilenameExtension != nil }) ?? formats.first else {
             reportImportError()
             return
         }
@@ -199,14 +201,14 @@ final class PublishController: FormController, PHPickerViewControllerDelegate {
         let request = generation
         busy.startAnimating()
         submit.isEnabled = false
-        provider.loadFileRepresentation(forTypeIdentifier: format) { [weak self] url, _ in
+        provider.loadFileRepresentation(forTypeIdentifier: format.identifier) { [weak self] url, _ in
             guard let url else {
                 DispatchQueue.main.async {
                     if self?.generation == request { self?.reportImportError() }
                 }
                 return
             }
-            let suffix = url.pathExtension.isEmpty ? "mov" : url.pathExtension
+            let suffix = url.pathExtension.isEmpty ? (format.preferredFilenameExtension ?? "mov") : url.pathExtension
             let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
                 .appendingPathExtension(suffix)
             do {

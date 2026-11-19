@@ -36,6 +36,8 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
         layout.minimumLineSpacing = 2
         grid.backgroundColor = .systemBackground
         grid.contentInsetAdjustmentBehavior = .never
+        grid.topEdgeEffect.style = .soft
+        grid.topEdgeEffect.isHidden = true
         grid.accessibilityIdentifier = "profile.screen"
         grid.dataSource = self
         grid.delegate = self
@@ -43,7 +45,20 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
         grid.register(ProfileHero.self, forSupplementaryViewOfKind: UICollectionView.elementKindSectionHeader,
                       withReuseIdentifier: "hero")
         grid.pin(to: view)
+        if let profileID, store.active?.id == profileID {
+            let button = UIBarButtonItem(primaryAction: UIAction(image: UIImage(systemName: "photo.on.rectangle")) { [weak self] _ in
+                self?.editBanner(from: self?.navigationItem.leftBarButtonItem)
+            })
+            button.accessibilityLabel = "Змінити банер"
+            navigationItem.leftItemsSupplementBackButton = true
+            navigationItem.leftBarButtonItem = button
+        }
         refresh()
+    }
+
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        let atTop = scrollView.contentOffset.y + scrollView.adjustedContentInset.top <= 1
+        if scrollView.topEdgeEffect.isHidden != atTop { scrollView.topEdgeEffect.isHidden = atTop }
     }
 
     override func viewDidLayoutSubviews() {
@@ -139,9 +154,8 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
         let view = collectionView.dequeueReusableSupplementaryView(ofKind: kind, withReuseIdentifier: "hero",
                                                                    for: indexPath) as! ProfileHero
         guard let profile = visibleProfile else { return view }
-        let change: (() -> Void)? = store.active?.id == profile.id ? { [weak self] in self?.chooseBanner(for: profile) } : nil
         let follow = followState
-        view.show(profile, hasPosts: !clips.isEmpty, edit: change, following: follow) { [weak self] in
+        view.show(profile, hasPosts: !clips.isEmpty, following: follow) { [weak self] in
             guard let self else { return }
             self.store.toggleFollow(profile)
             self.showStorageErrorIfNeeded()
@@ -161,7 +175,8 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
         (view as? ProfileHero)?.setPlaying(false)
     }
 
-    private func chooseBanner(for profile: Profile) {
+    func editBanner(from button: UIBarButtonItem?) {
+        guard let profile = store.active, profileID == nil || profile.id == profileID else { return }
         if profile.bannerURL == nil {
             openBannerPicker(for: profile.id)
         } else {
@@ -176,7 +191,11 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
                 self.refresh()
             })
             menu.addAction(UIAlertAction(title: "Скасувати", style: .cancel))
-            menu.popoverPresentationController?.sourceView = hero?.editButton ?? view
+            if let button {
+                menu.popoverPresentationController?.barButtonItem = button
+            } else {
+                menu.popoverPresentationController?.sourceView = view
+            }
             present(menu, animated: true)
         }
     }
@@ -270,7 +289,8 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
 }
 
 private final class ProfileHero: UICollectionReusableView {
-    private static let bannerRatio: CGFloat = 0.42
+    private static let identityOffset: CGFloat = 0.42
+    private static let bannerRatio: CGFloat = 0.49
     private static let avatarSide: CGFloat = 64
     private static let margin: CGFloat = 20
     private static let gap: CGFloat = 14
@@ -286,7 +306,6 @@ private final class ProfileHero: UICollectionReusableView {
     private let identity = UIStackView()
     private let followActions = UIStackView()
     private var isVideo = false
-    private(set) var editButton: UIButton?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -299,9 +318,12 @@ private final class ProfileHero: UICollectionReusableView {
         video.pin(to: banner)
         shade.gradient.startPoint = CGPoint(x: 0.5, y: 0)
         shade.gradient.endPoint = CGPoint(x: 0.5, y: 1)
-        shade.gradient.colors = [UIColor.black.withAlphaComponent(0.28).cgColor, UIColor.clear.cgColor,
-                                 UIColor.systemBackground.resolvedColor(with: UITraitCollection(userInterfaceStyle: .dark)).cgColor]
-        shade.gradient.locations = [0, 0.52, 1]
+        let background = UIColor.systemBackground.resolvedColor(with: UITraitCollection(userInterfaceStyle: .dark))
+        shade.gradient.colors = [UIColor.black.withAlphaComponent(0.12).cgColor,
+                                 background.withAlphaComponent(0).cgColor,
+                                 background.withAlphaComponent(0.22).cgColor,
+                                 background.withAlphaComponent(0.75).cgColor, background.cgColor]
+        shade.gradient.locations = [0, 0.44, 0.69, 0.87, 1]
         shade.isUserInteractionEnabled = false
         shade.pin(to: banner)
 
@@ -321,10 +343,21 @@ private final class ProfileHero: UICollectionReusableView {
         footer.pin(to: footerContainer, insets: .init(top: 0, leading: Self.margin, bottom: 0, trailing: Self.margin))
         footerContainer.heightAnchor.constraint(equalToConstant: Self.footerHeight).isActive = true
 
-        let sections = UIStackView(arrangedSubviews: [banner, insetDetails, footerContainer])
+        banner.isUserInteractionEnabled = false
+        banner.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(banner)
+        let spacer = UIView()
+        spacer.isUserInteractionEnabled = false
+        let sections = UIStackView(arrangedSubviews: [spacer, insetDetails, footerContainer])
         sections.axis = .vertical
         sections.pin(to: self)
-        banner.heightAnchor.constraint(equalTo: widthAnchor, multiplier: Self.bannerRatio).isActive = true
+        NSLayoutConstraint.activate([
+            spacer.heightAnchor.constraint(equalTo: widthAnchor, multiplier: Self.identityOffset),
+            banner.topAnchor.constraint(equalTo: topAnchor),
+            banner.leadingAnchor.constraint(equalTo: leadingAnchor),
+            banner.trailingAnchor.constraint(equalTo: trailingAnchor),
+            banner.heightAnchor.constraint(equalTo: widthAnchor, multiplier: Self.bannerRatio)
+        ])
     }
 
     required init?(coder: NSCoder) { fatalError("Use init(frame:)") }
@@ -335,7 +368,7 @@ private final class ProfileHero: UICollectionReusableView {
         let measured = labels.systemLayoutSizeFitting(CGSize(width: textWidth, height: 0),
             withHorizontalFittingPriority: .required, verticalFittingPriority: .fittingSizeLevel).height
         let actionHeight = showsFollow ? followHeight + verticalPadding : 0
-        return ceil(width * bannerRatio + max(avatarSide, measured) + 2 * verticalPadding + actionHeight + footerHeight)
+        return ceil(width * identityOffset + max(avatarSide, measured) + 2 * verticalPadding + actionHeight + footerHeight)
     }
 
     override func prepareForReuse() {
@@ -343,11 +376,9 @@ private final class ProfileHero: UICollectionReusableView {
         video.load(nil)
     }
 
-    func show(_ profile: Profile, hasPosts: Bool, edit: (() -> Void)?, following: Bool?, onFollow: @escaping () -> Void) {
+    func show(_ profile: Profile, hasPosts: Bool, following: Bool?, onFollow: @escaping () -> Void) {
         identity.arrangedSubviews.forEach { $0.removeFromSuperview() }
         followActions.arrangedSubviews.forEach { $0.removeFromSuperview() }
-        editButton?.removeFromSuperview()
-        editButton = nil
 
         let avatar = avatarView(profile.avatar)
         avatar.layer.cornerRadius = Self.avatarSide / 2
@@ -357,28 +388,12 @@ private final class ProfileHero: UICollectionReusableView {
         identity.addArrangedSubview(avatar)
         identity.addArrangedSubview(Self.makeDetails(profile))
 
-        if let edit {
-            var glass = UIButton.Configuration.glass()
-            glass.cornerStyle = .capsule
-            glass.image = UIImage(systemName: "photo.on.rectangle")
-            glass.baseForegroundColor = .label
-            let button = UIButton(configuration: glass, primaryAction: UIAction { _ in edit() })
-            button.accessibilityLabel = "Змінити банер"
-            button.translatesAutoresizingMaskIntoConstraints = false
-            banner.addSubview(button)
-            NSLayoutConstraint.activate([
-                button.trailingAnchor.constraint(equalTo: banner.trailingAnchor, constant: -Self.margin),
-                button.bottomAnchor.constraint(equalTo: banner.bottomAnchor, constant: -8),
-                button.widthAnchor.constraint(equalToConstant: 44),
-                button.heightAnchor.constraint(equalToConstant: 44)
-            ])
-            editButton = button
-        } else if let following {
+        if let following {
             let button = textButton(following ? "Відписатися" : "Підписатися", prominent: !following, action: onFollow)
             button.heightAnchor.constraint(equalToConstant: Self.followHeight).isActive = true
             followActions.addArrangedSubview(button)
         }
-        followActions.isHidden = following == nil || edit != nil
+        followActions.isHidden = following == nil
 
         footer.text = hasPosts ? "Публікації" : "Поки немає відео"
         footer.textColor = hasPosts ? .label : .secondaryLabel

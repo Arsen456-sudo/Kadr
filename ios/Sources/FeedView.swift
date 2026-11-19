@@ -290,10 +290,11 @@ func makePlaybackButton(symbol: String, label: String) -> UIButton {
 final class VideoSurface: UIView {
     private let foreground = AVPlayerLayer()
     private let backdrop = UIImageView()
-    private static let context = CIContext()
     private var player: AVQueuePlayer?
     private var looper: AVPlayerLooper?
-    private var observer: Any?
+    private var backdropLink: CADisplayLink?
+    private var renderingBackdrop = false
+    private var playing = false
     private var frameOutput: AVPlayerItemVideoOutput?
     private weak var observedItem: AVPlayerItem?
     private var metadata: Task<Void, Never>?
@@ -340,6 +341,7 @@ final class VideoSurface: UIView {
         itemObservation = nil
         sizeObservation = nil
         stopBackdrop()
+        playing = false
         player?.pause()
         looper?.disableLooping()
         looper = nil
@@ -383,7 +385,11 @@ final class VideoSurface: UIView {
             guard let self, self.revision == loadRevision, self.landscape,
                   let poster = await VideoPoster.image(for: url), !Task.isCancelled,
                   self.revision == loadRevision, self.backdrop.image == nil else { return }
-            self.backdrop.image = self.blurred(CIImage(cgImage: poster))
+            BackdropRenderer.render(CIImage(cgImage: poster)) { [weak self] image in
+                guard let self, self.revision == loadRevision, self.landscape,
+                      self.backdrop.image == nil, let image else { return }
+                self.backdrop.image = UIImage(cgImage: image)
+            }
         }
     }
 
@@ -395,6 +401,7 @@ final class VideoSurface: UIView {
                 self.applyPresentationSize(size)
             }
         }
+        if landscape { attachBackdrop(to: item) }
     }
 
     private func applyPresentationSize(_ size: CGSize) {
@@ -412,59 +419,99 @@ final class VideoSurface: UIView {
     }
 
     func setPlaying(_ playing: Bool, muted: Bool? = nil) {
+        self.playing = playing
         if let muted { player?.isMuted = muted }
         if playing { player?.play() }
         else { player?.pause() }
+        updateBackdropClock()
+    }
+
+    override func didMoveToWindow() {
+        super.didMoveToWindow()
+        updateBackdropClock()
     }
 
     private func startBackdrop() {
-        guard observer == nil, let player else { return }
-        observer = player.addPeriodicTimeObserver(forInterval: CMTime(value: 1, timescale: 8), queue: .main) { [weak self] time in
-            Task { @MainActor [weak self] in self?.updateBackdrop(at: time) }
-        }
+        guard backdropLink == nil else { return }
+        attachBackdrop(to: player?.currentItem)
+        let target = BackdropClock(surface: self)
+        let link = CADisplayLink(target: target, selector: #selector(BackdropClock.tick(_:)))
+        link.preferredFrameRateRange = CAFrameRateRange(minimum: 30, maximum: 60, preferred: 60)
+        backdropLink = link
+        link.add(to: .main, forMode: .common)
+        updateBackdropClock()
     }
 
-    private func updateBackdrop(at time: CMTime) {
-        guard landscape, let current = player?.currentItem else { return }
-        if current !== observedItem {
-            if let frameOutput { observedItem?.remove(frameOutput) }
-            let output = AVPlayerItemVideoOutput(pixelBufferAttributes: [
-                kCVPixelBufferPixelFormatTypeKey as String: kCVPixelFormatType_32BGRA
-            ])
-            current.add(output)
-            observedItem = current
+    private func updateBackdropClock() {
+        backdropLink?.isPaused = !playing || window == nil
+    }
+
+    private func attachBackdrop(to item: AVPlayerItem?) {
+        guard item !== observedItem else { return }
+        if let frameOutput { observedItem?.remove(frameOutput) }
+        frameOutput = nil
+        observedItem = item
+        if let item {
+            let output = AVPlayerItemVideoOutput(pixelBufferAttributes: nil)
+            item.add(output)
             frameOutput = output
-            return
-        }
-        guard let frameOutput, frameOutput.hasNewPixelBuffer(forItemTime: time),
-              let frame = frameOutput.copyPixelBuffer(forItemTime: time, itemTimeForDisplay: nil) else { return }
-        if let image = blurred(CIImage(cvPixelBuffer: frame).transformed(by: frameTransform)) {
-            backdrop.image = image
         }
     }
 
-    private func blurred(_ image: CIImage) -> UIImage? {
-        let factor = min(1, 192 / max(image.extent.width, image.extent.height))
-        let scaled = image.transformed(by: CGAffineTransform(scaleX: factor, y: factor))
-        let filter = CIFilter.gaussianBlur()
-        filter.inputImage = scaled.clampedToExtent()
-        filter.radius = 16
-        guard let filtered = filter.outputImage,
-              let cgImage = Self.context.createCGImage(filtered, from: scaled.extent) else { return nil }
-        return UIImage(cgImage: cgImage)
+    fileprivate func updateBackdrop(at hostTime: CFTimeInterval) {
+        guard !renderingBackdrop, let frameOutput, let item = observedItem,
+              item === player?.currentItem else { return }
+        let time = frameOutput.itemTime(forHostTime: hostTime)
+        guard frameOutput.hasNewPixelBuffer(forItemTime: time),
+              let frame = frameOutput.copyPixelBuffer(forItemTime: time, itemTimeForDisplay: nil) else { return }
+        renderingBackdrop = true
+        let request = revision
+        let source = CIImage(cvPixelBuffer: frame).transformed(by: frameTransform)
+        BackdropRenderer.render(source) { [weak self, weak item] image in
+            guard let self else { return }
+            self.renderingBackdrop = false
+            guard request == self.revision, self.landscape, item === self.observedItem, let image else { return }
+            self.backdrop.image = UIImage(cgImage: image)
+        }
     }
 
     private func stopBackdrop() {
-        if let observer { player?.removeTimeObserver(observer) }
-        observer = nil
-        if let frameOutput { observedItem?.remove(frameOutput) }
-        observedItem = nil
-        frameOutput = nil
+        backdropLink?.invalidate()
+        backdropLink = nil
+        attachBackdrop(to: nil)
     }
 
     deinit {
         metadata?.cancel()
-        if let observer { player?.removeTimeObserver(observer) }
+        backdropLink?.invalidate()
+    }
+}
+
+@MainActor
+private final class BackdropClock: NSObject {
+    private weak var surface: VideoSurface?
+
+    init(surface: VideoSurface) { self.surface = surface }
+
+    @objc func tick(_ link: CADisplayLink) {
+        surface?.updateBackdrop(at: link.targetTimestamp)
+    }
+}
+
+private enum BackdropRenderer {
+    private static let queue = DispatchQueue(label: "kadr.video-backdrop", qos: .userInitiated)
+    private static let context = CIContext(options: [.cacheIntermediates: false])
+
+    static func render(_ source: CIImage, completion: @escaping @MainActor (CGImage?) -> Void) {
+        queue.async {
+            let factor = min(1, 192 / max(source.extent.width, source.extent.height))
+            let scaled = source.transformed(by: CGAffineTransform(scaleX: factor, y: factor))
+            let filter = CIFilter.gaussianBlur()
+            filter.inputImage = scaled.clampedToExtent()
+            filter.radius = 16
+            let image = filter.outputImage.flatMap { context.createCGImage($0, from: scaled.extent) }
+            DispatchQueue.main.async { completion(image) }
+        }
     }
 }
 
