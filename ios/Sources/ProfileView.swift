@@ -324,7 +324,7 @@ private final class ProfileHero: UICollectionReusableView {
         super.init(frame: frame)
         backgroundColor = .clear
         banner.backgroundColor = .clear
-        identity.alignment = .top
+        identity.alignment = .center
         identity.spacing = Self.gap
         followActions.axis = .vertical
         let details = UIStackView(arrangedSubviews: [identity, followActions])
