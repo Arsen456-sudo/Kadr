@@ -189,9 +189,9 @@ final class ChatController: UIViewController, UITableViewDataSource, UITextField
         let mine = message.senderID == accountID
         content.text = message.text
         content.textProperties.numberOfLines = 0
-        content.textProperties.alignment = mine ? .trailing : .leading
+        content.textProperties.alignment = .natural
         content.secondaryText = message.createdAt.formatted(date: .abbreviated, time: .shortened)
-        content.secondaryTextProperties.alignment = mine ? .trailing : .leading
+        content.secondaryTextProperties.alignment = .natural
         var background = UIBackgroundConfiguration.listPlainCell()
         background.backgroundColor = mine ? UIColor.kadrPeach.withAlphaComponent(0.15) : .secondarySystemBackground
         background.cornerRadius = 18

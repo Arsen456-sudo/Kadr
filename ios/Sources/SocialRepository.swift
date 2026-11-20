@@ -63,6 +63,7 @@ final class LocalSocialRepository: SocialRepository {
 // supplied by the account session, never embedded in the public app or repository.
 @MainActor
 final class RemoteSocialRepository: SocialRepository {
+    private struct Failure: Decodable { let error: String }
     private let baseURL: URL
     private let token: () async throws -> String
     private let session: URLSession
@@ -85,7 +86,6 @@ final class RemoteSocialRepository: SocialRepository {
         let (data, response) = try await session.data(for: request)
         guard let response = response as? HTTPURLResponse else { throw SocialError.unavailable }
         guard (200..<300).contains(response.statusCode) else {
-            struct Failure: Decodable { let error: String }
             let message = (try? JSONDecoder().decode(Failure.self, from: data))?.error ?? SocialError.unavailable.localizedDescription
             throw NSError(domain: "Kadr.API", code: response.statusCode, userInfo: [NSLocalizedDescriptionKey: message])
         }
