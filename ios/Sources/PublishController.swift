@@ -101,7 +101,7 @@ final class PublishController: UITableViewController, PHPickerViewControllerDele
         switch indexPath.section {
         case 0:
             content.text = importing ? "Завантаження…" : indexPath.row == 0 ? "Додати фотографії" : "Вибрати відео"
-            content.image = UIImage(systemName: indexPath.row == 0 ? "photo.on.rectangle.angled" : "video")
+            content.image = AppSymbol.image( indexPath.row == 0 ? "photo.on.rectangle.angled" : "video")
             content.textProperties.font = .preferredFont(forTextStyle: .headline)
             content.imageProperties.tintColor = .kadrPeach
             cell.accessoryType = .disclosureIndicator
@@ -112,11 +112,11 @@ final class PublishController: UITableViewController, PHPickerViewControllerDele
             return cell
         case 3:
             content.text = indexPath.row == 0 ? "Дозволити коментарі" : "Бачу тільки я"
-            content.image = UIImage(systemName: indexPath.row == 0 ? "bubble.left" : "lock")
+            content.image = AppSymbol.image( indexPath.row == 0 ? "bubble.left" : "lock")
             cell.accessoryView = indexPath.row == 0 ? comments : privacy
         default:
             content.text = indexPath.row == 0 ? "Опублікувати" : "Зберегти чернетку"
-            content.image = UIImage(systemName: indexPath.row == 0 ? "arrow.up.circle.fill" : "square.and.pencil")
+            content.image = AppSymbol.image( indexPath.row == 0 ? "arrow.up.circle.fill" : "square.and.pencil")
             content.textProperties.font = .preferredFont(forTextStyle: .headline)
             content.textProperties.color = media.isEmpty || importing ? .tertiaryLabel : .kadrPeach
         }
@@ -339,7 +339,7 @@ private final class MediaEditCell: UITableViewCell {
         var configuration = defaultContentConfiguration()
         configuration.text = media.1 == .photo ? "Фото \(number)" : "Відео"
         configuration.secondaryText = cover ? "Обкладинка" : nil
-        configuration.image = UIImage(systemName: media.1 == .photo ? "photo" : "video")
+        configuration.image = AppSymbol.image( media.1 == .photo ? "photo" : "video")
         configuration.imageProperties.maximumSize = CGSize(width: 64, height: 72)
         configuration.imageProperties.cornerRadius = 10
         contentConfiguration = configuration

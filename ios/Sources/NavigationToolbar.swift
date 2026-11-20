@@ -86,7 +86,7 @@ struct KadrNavigationShell: View {
                                 Button {
                                     state.onChooseBanner?()
                                 } label: {
-                                    Label("Вибрати фото або відео", systemImage: "photo.on.rectangle")
+                                    Label("Вибрати фото або відео", systemImage: AppSymbol.name("photo.on.rectangle"))
                                 }
                                 if state.hasBanner {
                                     Button(role: .destructive) {
@@ -96,7 +96,7 @@ struct KadrNavigationShell: View {
                                     }
                                 }
                             } label: {
-                                Image(systemName: "photo.on.rectangle")
+                                Image(systemName: AppSymbol.name("photo.on.rectangle"))
                             }
                             .accessibilityLabel("Змінити банер")
                         }
@@ -114,6 +114,7 @@ struct KadrNavigationShell: View {
             }
         }
         .statusBarHidden(state.immersive)
+        .symbolRenderingMode(.hierarchical)
         .buttonStyle(.automatic)
         .tint(Color(uiColor: .label))
     }

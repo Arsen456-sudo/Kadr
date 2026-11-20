@@ -15,7 +15,7 @@ func textButton(_ title: String, symbol: String? = nil, prominent: Bool = false,
                 action: @escaping () -> Void) -> UIButton {
     var configuration = prominent ? UIButton.Configuration.prominentGlass() : .glass()
     configuration.title = title
-    configuration.image = symbol.flatMap { UIImage(systemName: $0) }
+    configuration.image = symbol.flatMap { AppSymbol.image( $0) }
     configuration.imagePadding = 8
     configuration.buttonSize = .large
     return UIButton(configuration: configuration, primaryAction: UIAction { _ in action() })
@@ -93,7 +93,7 @@ final class GlyphButton: UIButton {
         accessibilityLabel = label
         accessibilityValue = count?.formatted()
         var style = configuration
-        style?.image = UIImage(systemName: symbol)
+        style?.image = AppSymbol.image( symbol)
         style?.title = count?.formatted()
         style?.baseForegroundColor = color
         style?.symbolContentTransition = animated && !UIAccessibility.isReduceMotionEnabled ? UISymbolContentTransition(.replace) : nil
@@ -142,7 +142,7 @@ class GlassSectionPicker: UIView {
         } else {
             let actions = titles.indices.map { index in
                 UIAction(title: titles[index],
-                         image: UIImage(systemName: symbols[index],
+                         image: AppSymbol.image( symbols[index],
                                         withConfiguration: UIImage.SymbolConfiguration(pointSize: 18, weight: .medium))) { [weak self] _ in
                     self?.onIndexSelection?(index)
                 }
@@ -201,7 +201,7 @@ final class GradientView: UIView {
 final class EmptyStateView: UIView {
     init(title: String, message: String, symbol: String, action: UIButton? = nil) {
         super.init(frame: .zero)
-        let image = UIImageView(image: UIImage(systemName: symbol))
+        let image = UIImageView(image: AppSymbol.image( symbol))
         image.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 42, weight: .regular)
         image.tintColor = .secondaryLabel
         image.isAccessibilityElement = false

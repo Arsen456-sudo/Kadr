@@ -1,13 +1,16 @@
 import UIKit
 
-final class OverviewPostCell: UICollectionViewCell {
+final class OverviewPostCell: FeedMediaCell {
     let mediaContainer = UIView()
+    override var mediaHost: UIView { mediaContainer }
     private let author = UIButton(configuration: .plain())
     private let like = UIButton(configuration: .plain())
     private let comments = UIButton(configuration: .plain())
     private let bookmark = UIButton(configuration: .plain())
     private let sound = UIButton(configuration: .plain())
-    private let descriptionButton = UIButton(configuration: .plain())
+    private let descriptionRow = InlineCaptionView()
+    private var descriptionHeight: NSLayoutConstraint!
+    private var avatarKey: String?
     var onAuthor: (() -> Void)?
     var onLike: (() -> Void)?
     var onComments: (() -> Void)?
@@ -22,7 +25,7 @@ final class OverviewPostCell: UICollectionViewCell {
         let spacer = UIView()
         let actions = UIStackView(arrangedSubviews: [like, comments, spacer, sound, bookmark])
         actions.spacing = 8
-        let stack = UIStackView(arrangedSubviews: [author, mediaContainer, actions, descriptionButton])
+        let stack = UIStackView(arrangedSubviews: [author, mediaContainer, actions, descriptionRow])
         stack.axis = .vertical
         stack.spacing = 0
         stack.pin(to: contentView)
@@ -30,15 +33,15 @@ final class OverviewPostCell: UICollectionViewCell {
         mediaHeight.isActive = true
         author.heightAnchor.constraint(equalToConstant: 48).isActive = true
         actions.heightAnchor.constraint(equalToConstant: 44).isActive = true
-        descriptionButton.heightAnchor.constraint(equalToConstant: 56).isActive = true
+        descriptionHeight = descriptionRow.heightAnchor.constraint(equalToConstant: 32)
+        descriptionHeight.isActive = true
         author.contentHorizontalAlignment = .leading
-        descriptionButton.contentHorizontalAlignment = .leading
         author.addAction(UIAction { [weak self] _ in self?.onAuthor?() }, for: .primaryActionTriggered)
         like.addAction(UIAction { [weak self] _ in self?.onLike?() }, for: .primaryActionTriggered)
         comments.addAction(UIAction { [weak self] _ in self?.onComments?() }, for: .primaryActionTriggered)
         sound.addAction(UIAction { [weak self] _ in self?.onSound?() }, for: .primaryActionTriggered)
         bookmark.addAction(UIAction { [weak self] _ in self?.onBookmark?() }, for: .primaryActionTriggered)
-        descriptionButton.addAction(UIAction { [weak self] _ in self?.onDescription?() }, for: .primaryActionTriggered)
+        descriptionRow.onMore = { [weak self] in self?.onDescription?() }
     }
     required init?(coder: NSCoder) { fatalError("Use init(frame:)") }
 
@@ -46,10 +49,12 @@ final class OverviewPostCell: UICollectionViewCell {
         mediaHeight.constant = height
         var heading = author.configuration!
         heading.title = store.profile(clip.authorID).map { "@\($0.handle)" } ?? clip.credit
-        heading.image = store.profile(clip.authorID)?.avatar.flatMap { UIImage(data: $0) } ?? UIImage(systemName: "person.crop.circle")
-        // Avoid full-size avatar data determining the button's intrinsic width.
-        if let image = heading.image {
-            heading.image = image.preparingThumbnail(of: CGSize(width: 30, height: 30))
+        let profile = store.profile(clip.authorID)
+        let key = (profile?.id.uuidString ?? "sample") + (profile?.avatarRevision?.uuidString ?? "")
+        if key != avatarKey {
+            avatarKey = key
+            let image = profile?.avatar.flatMap { UIImage(data: $0) }
+            heading.image = image?.preparingThumbnail(of: CGSize(width: 30, height: 30)) ?? AppSymbol.image( "person.crop.circle")
         }
         heading.imagePadding = 8
         heading.baseForegroundColor = .label
@@ -57,28 +62,23 @@ final class OverviewPostCell: UICollectionViewCell {
         author.imageView?.layer.cornerRadius = 15
         author.imageView?.clipsToBounds = true
         author.isEnabled = clip.authorID != nil
-        like.configuration?.image = UIImage(systemName: store.liked(clip) ? "heart.fill" : "heart")
+        like.configuration?.image = AppSymbol.image( store.liked(clip) ? "heart.fill" : "heart")
         like.configuration?.title = String(store.likes(clip))
         like.configuration?.baseForegroundColor = store.liked(clip) ? .kadrPeach : .label
         like.accessibilityLabel = "Подобається"
         like.accessibilityValue = String(store.likes(clip))
-        comments.configuration?.image = UIImage(systemName: "bubble")
+        comments.configuration?.image = AppSymbol.image( "bubble")
         comments.configuration?.title = String(store.comments(clip).count)
         comments.isHidden = !clip.settings.allowsComments
         comments.accessibilityLabel = "Коментарі"
-        bookmark.configuration?.image = UIImage(systemName: store.bookmarked(clip) ? "bookmark.fill" : "bookmark")
+        bookmark.configuration?.image = AppSymbol.image( store.bookmarked(clip) ? "bookmark.fill" : "bookmark")
         bookmark.accessibilityLabel = "Зберегти"
         sound.isHidden = clip.isPhoto
-        sound.configuration?.image = UIImage(systemName: muted ? "speaker.slash" : "speaker.wave.2")
+        sound.configuration?.image = AppSymbol.image( muted ? "speaker.slash" : "speaker.wave.2")
         sound.accessibilityLabel = muted ? "Увімкнути звук" : "Вимкнути звук"
-        var description = descriptionButton.configuration!
-        description.title = clip.caption.isEmpty ? "Відкрити опис" : clip.caption
-        description.subtitle = "Повний опис ›"
-        description.titleLineBreakMode = .byTruncatingTail
-        description.baseForegroundColor = .label
-        descriptionButton.configuration = description
-        descriptionButton.titleLabel?.numberOfLines = 1
-        descriptionButton.accessibilityLabel = "Відкрити повний опис"
+        let hasDescription = !clip.caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        descriptionHeight.constant = hasDescription ? 32 : 0
+        descriptionRow.show(clip.caption)
     }
 }
 

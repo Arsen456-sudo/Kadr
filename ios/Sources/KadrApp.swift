@@ -53,6 +53,8 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
     override var prefersHomeIndicatorAutoHidden: Bool { immersive }
     private let topEdge = UIScrollEdgeElementContainerInteraction()
     private let bottomEdge = UIScrollEdgeElementContainerInteraction()
+    private weak var observedScroll: UIScrollView?
+    private var observedImmersive = false
     private let addTab = UIViewController()
     private lazy var social = LocalSocialRepository(store: store)
     private lazy var inbox = InboxController(store: store, repository: social)
@@ -66,13 +68,13 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
         view.backgroundColor = .black
         delegate = self
         tabBar.tintColor = .kadrPeach
-        feed.tabBarItem = UITabBarItem(title: "Стрічка", image: UIImage(systemName: "house"),
-                                       selectedImage: UIImage(systemName: "house.fill"))
-        profile.tabBarItem = UITabBarItem(title: "Профіль", image: UIImage(systemName: "person.crop.circle"),
-                                          selectedImage: UIImage(systemName: "person.crop.circle.fill"))
-        addTab.tabBarItem = UITabBarItem(title: "Додати", image: UIImage(systemName: "plus.circle.fill"), selectedImage: nil)
-        inbox.tabBarItem = UITabBarItem(title: "Вхідні", image: UIImage(systemName: "tray"),
-                                         selectedImage: UIImage(systemName: "tray.fill"))
+        feed.tabBarItem = UITabBarItem(title: "Стрічка", image: AppSymbol.image( "house"),
+                                       selectedImage: AppSymbol.image( "house.fill"))
+        profile.tabBarItem = UITabBarItem(title: "Профіль", image: AppSymbol.image( "person"),
+                                          selectedImage: AppSymbol.image( "person.fill"))
+        addTab.tabBarItem = UITabBarItem(title: "Додати", image: AppSymbol.image( "plus.circle.fill"), selectedImage: nil)
+        inbox.tabBarItem = UITabBarItem(title: "Вхідні", image: AppSymbol.image( "tray"),
+                                         selectedImage: AppSymbol.image( "tray.fill"))
         inbox.additionalSafeAreaInsets.top = 58
         setViewControllers([feed, addTab, inbox, profile], animated: false)
         selectedScreen = feed
@@ -210,9 +212,9 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
     }
 
     private func refresh(animated: Bool = true) {
-        inbox.refresh()
-        profile.refresh()
-        feed.refresh()
+        if selectedViewController === inbox { inbox.refresh() }
+        if selectedViewController === profile { profile.refresh() }
+        if selectedViewController === feed { feed.refresh() }
         updateChrome(for: selectedViewController, animated: animated)
         updatePlayback()
     }
@@ -229,20 +231,26 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
         let isFeed = controller === feed
         let scroll: UIScrollView? = isFeed ? feed.edgeScrollView
             : controller === profile ? profile.edgeScrollView : controller === inbox ? inbox.scrollView : nil
-        // Keep the native bars attached to the selected screen's actual scroller,
-        // including through the SwiftUI hosting controller's containment hierarchy.
-        setContentScrollView(scroll, for: .all)
-        var ancestor = parent
-        while let controller = ancestor {
-            controller.setContentScrollView(scroll, for: .all)
-            ancestor = controller.parent
+        let changed = observedScroll !== scroll
+        let hidden = isFeed && immersive
+        if changed {
+            observedScroll = scroll
+            setContentScrollView(scroll, for: .all)
+            var ancestor = parent
+            while let controller = ancestor {
+                controller.setContentScrollView(scroll, for: .all)
+                ancestor = controller.parent
+            }
+            bottomEdge.scrollView = scroll
+            topEdge.scrollView = scroll
         }
-        scroll?.topEdgeEffect.style = .soft
-        scroll?.bottomEdgeEffect.style = .soft
-        scroll?.topEdgeEffect.isHidden = isFeed && immersive
-        scroll?.bottomEdgeEffect.isHidden = isFeed && immersive
-        if bottomEdge.scrollView !== scroll { bottomEdge.scrollView = scroll }
-        if topEdge.scrollView !== scroll { topEdge.scrollView = scroll }
+        if changed || observedImmersive != hidden {
+            observedImmersive = hidden
+            scroll?.topEdgeEffect.style = .soft
+            scroll?.bottomEdgeEffect.style = .soft
+            scroll?.topEdgeEffect.isHidden = hidden
+            scroll?.bottomEdgeEffect.isHidden = hidden
+        }
     }
 
     private func showHeader(for controller: UIViewController?, animated: Bool) {

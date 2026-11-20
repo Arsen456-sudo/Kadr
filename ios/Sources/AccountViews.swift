@@ -80,7 +80,7 @@ private final class AccountPhotoController: FormController, PHPickerViewControll
         content.addArrangedSubview(textButton("Далі", prominent: true) { [weak self] in self?.advance() })
         content.addArrangedSubview(textButton("Пропустити фото") { [weak self] in
             self?.photo = nil
-            self?.avatar.image = UIImage(systemName: "person.crop.circle.fill")
+            self?.avatar.image = AppSymbol.image( "person.crop.circle.fill")
             self?.advance()
         })
     }
@@ -204,7 +204,7 @@ private final class AccountNameController: FormController {
 }
 
 func avatarView(_ data: Data? = nil) -> UIImageView {
-    let avatar = UIImageView(image: data.flatMap { UIImage(data: $0) } ?? UIImage(systemName: "person.crop.circle.fill"))
+    let avatar = UIImageView(image: data.flatMap { UIImage(data: $0) } ?? AppSymbol.image( "person.crop.circle.fill"))
     avatar.contentMode = .scaleAspectFill
     avatar.tintColor = .kadrPeach
     avatar.clipsToBounds = true

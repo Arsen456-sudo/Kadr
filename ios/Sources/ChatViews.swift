@@ -62,7 +62,7 @@ final class InboxController: LibraryController {
         content.text = "@\(row.profile.handle)"
         content.secondaryText = row.lastMessage.text
         content.secondaryTextProperties.numberOfLines = 2
-        content.image = row.profile.avatar.flatMap { UIImage(data: $0) } ?? UIImage(systemName: "person.crop.circle.fill")
+        content.image = row.profile.avatar.flatMap { UIImage(data: $0) } ?? AppSymbol.image( "person.crop.circle.fill")
         content.imageProperties.maximumSize = CGSize(width: 44, height: 44)
         content.imageProperties.cornerRadius = 22
         cell.contentConfiguration = content
@@ -117,7 +117,7 @@ final class ChatController: UIViewController, UITableViewDataSource, UITextField
         let island = glassIsland()
         field.pin(to: island.contentView, insets: .init(top: 0, leading: 16, bottom: 0, trailing: 16))
         island.heightAnchor.constraint(equalToConstant: 48).isActive = true
-        send.configuration?.image = UIImage(systemName: "arrow.up")
+        send.configuration?.image = AppSymbol.image( "arrow.up")
         send.accessibilityLabel = "Надіслати повідомлення"
         send.widthAnchor.constraint(equalToConstant: 48).isActive = true
         send.heightAnchor.constraint(equalToConstant: 48).isActive = true

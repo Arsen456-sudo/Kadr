@@ -135,7 +135,7 @@ final class AvatarMenuController: UIViewController {
         super.viewDidLoad()
         title = "Фото профілю"
         view.backgroundColor = .black
-        let image = UIImageView(image: data.flatMap { UIImage(data: $0) } ?? UIImage(systemName: "person.crop.circle"))
+        let image = UIImageView(image: data.flatMap { UIImage(data: $0) } ?? AppSymbol.image( "person.crop.circle"))
         image.contentMode = .scaleAspectFit
         image.tintColor = .secondaryLabel
         image.pin(to: view, insets: .init(top: 100, leading: 16, bottom: 120, trailing: 16))

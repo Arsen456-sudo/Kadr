@@ -1,16 +1,26 @@
 import UIKit
 import ImageIO
+import CoreImage
 
 enum PhotoLoader {
+    private static let cache: NSCache<NSString, UIImage> = {
+        let cache = NSCache<NSString, UIImage>()
+        cache.totalCostLimit = 64 * 1024 * 1024
+        return cache
+    }()
     static func image(_ url: URL, maxPixel: CGFloat = 1800) async -> UIImage? {
-        await Task.detached(priority: .userInitiated) {
+        let key = (url.absoluteString + "#" + String(Int(maxPixel))) as NSString
+        if let image = cache.object(forKey: key) { return image }
+        return await Task.detached(priority: .userInitiated) {
             guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
                   let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
                     kCGImageSourceCreateThumbnailFromImageAlways: true,
                     kCGImageSourceCreateThumbnailWithTransform: true,
                     kCGImageSourceThumbnailMaxPixelSize: maxPixel
                   ] as CFDictionary) else { return nil }
-            return UIImage(cgImage: image)
+            let result = UIImage(cgImage: image)
+            cache.setObject(result, forKey: key, cost: image.width * image.height * 4)
+            return result
         }.value
     }
 }
@@ -87,7 +97,6 @@ private final class PhotoPage: UIViewController, UIScrollViewDelegate {
     private let scroll = UIScrollView()
     private let image = UIImageView()
     private let backdrop = UIImageView()
-    private let blur = UIVisualEffectView(effect: UIBlurEffect(style: .dark))
     private var task: Task<Void, Never>?
     init(url: URL, index: Int) {
         self.url = url
@@ -100,9 +109,7 @@ private final class PhotoPage: UIViewController, UIScrollViewDelegate {
         backdrop.contentMode = .scaleAspectFill
         backdrop.clipsToBounds = true
         backdrop.pin(to: view)
-        blur.pin(to: view)
         backdrop.isHidden = true
-        blur.isHidden = true
         scroll.pin(to: view)
         scroll.backgroundColor = .clear
         scroll.delegate = self
@@ -114,10 +121,14 @@ private final class PhotoPage: UIViewController, UIScrollViewDelegate {
             let result = await PhotoLoader.image(url)
             guard !Task.isCancelled else { return }
             self?.image.image = result
-            self?.backdrop.image = result
             let wide = (result?.size.width ?? 0) > (result?.size.height ?? 0)
             self?.backdrop.isHidden = !wide
-            self?.blur.isHidden = !wide
+            if wide, let cgImage = result?.cgImage {
+                MediaBackdropRenderer.render(CIImage(cgImage: cgImage)) { [weak self] image in
+                    guard let self, let image else { return }
+                    self.backdrop.image = UIImage(cgImage: image)
+                }
+            }
         }
     }
     override func viewDidLayoutSubviews() {

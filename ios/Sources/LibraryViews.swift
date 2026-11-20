@@ -134,7 +134,7 @@ final class SearchController: UITableViewController, UISearchResultsUpdating {
         var configuration = cell.defaultContentConfiguration()
         configuration.text = profile.name
         configuration.secondaryText = "@\(profile.handle)"
-        configuration.image = profile.avatar.flatMap { UIImage(data: $0) } ?? UIImage(systemName: "person.crop.circle.fill")
+        configuration.image = profile.avatar.flatMap { UIImage(data: $0) } ?? AppSymbol.image( "person.crop.circle.fill")
         configuration.imageProperties.maximumSize = CGSize(width: 40, height: 40)
         configuration.imageProperties.cornerRadius = 20
         configuration.imageProperties.tintColor = .kadrPeach
@@ -157,7 +157,7 @@ private func clipCell(in table: UITableView, clip: Clip, store: LocalStore) -> U
     let cell = table.dequeueReusableCell(withIdentifier: "clip") ??
         UITableViewCell(style: .default, reuseIdentifier: "clip")
     var configuration = cell.defaultContentConfiguration()
-    configuration.image = UIImage(systemName: clip.isPhoto ? "photo.on.rectangle" : "play.rectangle.fill")
+    configuration.image = AppSymbol.image( clip.isPhoto ? "photo.on.rectangle" : "play.rectangle.fill")
     configuration.imageProperties.tintColor = .kadrPeach
     configuration.text = clip.caption
     configuration.secondaryText = store.profile(clip.authorID).map { "@\($0.handle)" } ?? clip.credit

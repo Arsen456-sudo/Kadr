@@ -97,7 +97,7 @@ final class CommentsController: UIViewController, UITableViewDataSource, UITextF
         if comments.isEmpty {
             var empty = UIContentUnavailableConfiguration.empty()
             empty.text = "Коментарів ще немає"
-            empty.image = UIImage(systemName: "bubble")
+            empty.image = AppSymbol.image( "bubble")
             contentUnavailableConfiguration = nil
             table.backgroundView = UIContentUnavailableView(configuration: empty)
             table.backgroundView?.isUserInteractionEnabled = false
@@ -124,7 +124,7 @@ final class CommentsController: UIViewController, UITableViewDataSource, UITextF
         configuration.textProperties.color = .kadrPeach
         configuration.secondaryText = comment.text
         configuration.secondaryTextProperties.color = .label
-        configuration.image = profile?.avatar.flatMap { UIImage(data: $0) } ?? UIImage(systemName: "person.crop.circle.fill")
+        configuration.image = profile?.avatar.flatMap { UIImage(data: $0) } ?? AppSymbol.image( "person.crop.circle.fill")
         configuration.imageProperties.maximumSize = CGSize(width: 34, height: 34)
         configuration.imageProperties.cornerRadius = 17
         configuration.imageProperties.tintColor = .kadrPeach

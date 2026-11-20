@@ -4,7 +4,7 @@ import CoreImage.CIFilterBuiltins
 import UIKit
 import Symbols
 
-final class FeedController: UIViewController, UICollectionViewDataSource, UICollectionViewDelegate {
+final class FeedController: UIViewController, UICollectionViewDataSource, UICollectionViewDelegateFlowLayout {
     enum Reaction { case like, bookmark }
 
     private let store: LocalStore
@@ -20,8 +20,7 @@ final class FeedController: UIViewController, UICollectionViewDataSource, UIColl
     private var pages: [String: VideoPage] = [:]
     private var pageSize: CGSize = .zero
     private let author = makeLabel(.headline)
-    private let caption = makeLabel(.subheadline)
-    private let descriptionButton = UIButton(configuration: .plain())
+    private let caption = InlineCaptionView()
     private let like = GlyphButton(symbol: "heart", label: "Подобається", compact: true)
     private let comments = GlyphButton(symbol: "bubble", label: "Коментарі", compact: true)
     private let bookmark = GlyphButton(symbol: "bookmark", label: "Зберегти", compact: true)
@@ -31,6 +30,8 @@ final class FeedController: UIViewController, UICollectionViewDataSource, UIColl
     private let reactionIsland = glassIsland(interactive: true)
     private let actionGlass = glassGroup()
     private let actionEdge = UIScrollEdgeElementContainerInteraction()
+    private var contentScrollRegistered = false
+    private var edgeEffectsHidden: Bool?
     private let sound = UIButton()
     private let authorAvatar = UIButton()
     private let actionStack = UIStackView()
@@ -48,7 +49,7 @@ final class FeedController: UIViewController, UICollectionViewDataSource, UIColl
         min(view.bounds.width * 1.25, max(140, view.bounds.height - view.safeAreaInsets.top - view.safeAreaInsets.bottom - 180))
     }
     private var itemSize: CGSize {
-        CGSize(width: pager.bounds.width, height: overview ? overviewMediaHeight + 148 : pager.bounds.height)
+        CGSize(width: pager.bounds.width, height: overview ? overviewMediaHeight + 124 : pager.bounds.height)
     }
     var onDescription: ((Clip) -> Void)?
 
@@ -108,23 +109,17 @@ final class FeedController: UIViewController, UICollectionViewDataSource, UIColl
         pager.showsVerticalScrollIndicator = false
         pager.contentInsetAdjustmentBehavior = .never
         pager.accessibilityIdentifier = "feed.pages"
-        pager.register(UICollectionViewCell.self, forCellWithReuseIdentifier: "page")
+        pager.register(FeedMediaCell.self, forCellWithReuseIdentifier: "page")
         pager.register(OverviewPostCell.self, forCellWithReuseIdentifier: "overview")
         pager.pin(to: view)
         empty.pin(to: view)
         author.numberOfLines = 1
-        caption.numberOfLines = 2
         captionStack.axis = .vertical
         captionStack.spacing = 3
-        captionStack.addArrangedSubview(descriptionButton)
-        descriptionButton.configuration?.title = "Повний опис"
-        descriptionButton.configuration?.image = UIImage(systemName: "chevron.down")
-        descriptionButton.configuration?.imagePlacement = .trailing
-        descriptionButton.contentHorizontalAlignment = .leading
-        descriptionButton.addAction(UIAction { [weak self] _ in
+        caption.onMore = { [weak self] in
             guard let self, let clip = self.page?.clip else { return }
             self.onDescription?(clip)
-        }, for: .primaryActionTriggered)
+        }
         captionStack.isUserInteractionEnabled = true
         captionStack.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(captionStack)
@@ -151,7 +146,7 @@ final class FeedController: UIViewController, UICollectionViewDataSource, UIColl
         controls.spacing = 4
         var soundStyle = UIButton.Configuration.glass()
         soundStyle.cornerStyle = .capsule
-        soundStyle.image = UIImage(systemName: "speaker.slash")
+        soundStyle.image = AppSymbol.image( "speaker.slash")
         soundStyle.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: 20, weight: .semibold)
         soundStyle.symbolContentTransition = UISymbolContentTransition(.replace)
         soundStyle.automaticallyUpdateForSelection = false
@@ -231,11 +226,17 @@ final class FeedController: UIViewController, UICollectionViewDataSource, UIColl
     private func connectContentScrollView() {
         guard let scroll = edgeScrollView else { return }
         // This is the feed's own public scroll view, shared by photo and video cells.
-        setContentScrollView(scroll, for: .all)
-        scroll.topEdgeEffect.style = .soft
-        scroll.bottomEdgeEffect.style = .soft
-        scroll.topEdgeEffect.isHidden = immersive
-        scroll.bottomEdgeEffect.isHidden = immersive
+        if !contentScrollRegistered {
+            contentScrollRegistered = true
+            setContentScrollView(scroll, for: .all)
+        }
+        if edgeEffectsHidden != immersive {
+            edgeEffectsHidden = immersive
+            scroll.topEdgeEffect.style = .soft
+            scroll.bottomEdgeEffect.style = .soft
+            scroll.topEdgeEffect.isHidden = immersive
+            scroll.bottomEdgeEffect.isHidden = immersive
+        }
         if actionEdge.scrollView !== scroll { actionEdge.scrollView = scroll }
     }
 
@@ -276,7 +277,7 @@ final class FeedController: UIViewController, UICollectionViewDataSource, UIColl
         if clips.indices.contains(currentIndex) {
             _ = controller(at: currentIndex)
             pager.layoutIfNeeded()
-            if pager.bounds.height > 0, !pager.isDragging, !pager.isDecelerating {
+            if (changed || reset || preferredID != nil), pager.bounds.height > 0, !pager.isDragging, !pager.isDecelerating {
                 if overview { pager.scrollToItem(at: IndexPath(item: currentIndex, section: 0), at: .top, animated: false) }
                 else { pager.setContentOffset(CGPoint(x: 0, y: CGFloat(currentIndex) * pager.bounds.height), animated: false) }
             }
@@ -295,7 +296,7 @@ final class FeedController: UIViewController, UICollectionViewDataSource, UIColl
         sound.isHidden = active == nil || active?.isPhoto == true
         if let active {
             author.text = store.profile(active.authorID).map { "@\($0.handle)" } ?? active.credit
-            caption.text = [active.caption, active.settings.tags, active.settings.location].filter { !$0.isEmpty }.joined(separator: "\n")
+            caption.show(active.caption)
             updateReactions()
         }
         refreshAuthorAvatar()
@@ -304,7 +305,7 @@ final class FeedController: UIViewController, UICollectionViewDataSource, UIColl
 
     private func updateSound() {
         var style = sound.configuration
-        style?.image = UIImage(systemName: muted ? "speaker.slash" : "speaker.wave.2")
+        style?.image = AppSymbol.image( muted ? "speaker.slash" : "speaker.wave.2")
         style?.symbolContentTransition = UIAccessibility.isReduceMotionEnabled ? nil : UISymbolContentTransition(.replace)
         style?.baseForegroundColor = .label
         sound.configuration = style
@@ -328,7 +329,7 @@ final class FeedController: UIViewController, UICollectionViewDataSource, UIColl
             }
             style.image = thumbnail.withRenderingMode(.alwaysOriginal)
         } else {
-            style.image = UIImage(systemName: "person.crop.circle.fill",
+            style.image = AppSymbol.image( "person.crop.circle.fill",
                                   withConfiguration: UIImage.SymbolConfiguration(pointSize: 32))
         }
         authorAvatar.configuration = style
@@ -388,9 +389,9 @@ final class FeedController: UIViewController, UICollectionViewDataSource, UIColl
     }
 
     func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
-        let cell = collectionView.dequeueReusableCell(withReuseIdentifier: overview ? "overview" : "page", for: indexPath)
-        let controller = controller(at: indexPath.item)
-        let target: UIView
+        let cell = collectionView.dequeueReusableCell(withReuseIdentifier: overview ? "overview" : "page", for: indexPath) as! FeedMediaCell
+        cell.representedID = clips[indexPath.item].id
+        cell.onRelease = { [weak self] cell in self?.releaseMedia(in: cell) }
         if let overviewCell = cell as? OverviewPostCell {
             let clip = clips[indexPath.item]
             overviewCell.show(clip, store: store, mediaHeight: overviewMediaHeight, muted: muted)
@@ -404,20 +405,55 @@ final class FeedController: UIViewController, UICollectionViewDataSource, UIColl
                 self.muted.toggle()
                 self.updateReactions()
             }
-            target = overviewCell.mediaContainer
-        } else { target = cell.contentView }
-        // Reused cells can still contain an offscreen child controller's view.
-        for child in target.subviews { child.removeFromSuperview() }
-        let added = controller.parent == nil
-        if added { addChild(controller) }
-        let content = controller.view!
-        content.translatesAutoresizingMaskIntoConstraints = true
-        content.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        content.frame = target.bounds
-        target.addSubview(content)
-        if added { controller.didMove(toParent: self) }
-        controller.setImmersive(immersive)
+        }
+        mountMedia(in: cell, at: indexPath)
         return cell
+    }
+
+    private func mountMedia(in cell: FeedMediaCell, at indexPath: IndexPath) {
+        guard clips.indices.contains(indexPath.item) else { return }
+        let controller = controller(at: indexPath.item)
+        let target = cell.mediaHost
+        cell.representedID = clips[indexPath.item].id
+        cell.onRelease = { [weak self] cell in self?.releaseMedia(in: cell) }
+        if controller.viewIfLoaded?.superview !== target {
+            for child in target.subviews { child.removeFromSuperview() }
+            let added = controller.parent == nil
+            if added { addChild(controller) }
+            let content = controller.view!
+            content.translatesAutoresizingMaskIntoConstraints = true
+            content.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            content.frame = target.bounds
+            target.addSubview(content)
+            if added { controller.didMove(toParent: self) }
+        }
+        controller.setImmersive(immersive)
+    }
+
+    func collectionView(_ collectionView: UICollectionView, layout collectionViewLayout: UICollectionViewLayout,
+                        sizeForItemAt indexPath: IndexPath) -> CGSize {
+        guard overview, clips.indices.contains(indexPath.item) else { return pager.bounds.size }
+        let hasDescription = !clips[indexPath.item].caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return CGSize(width: collectionView.bounds.width, height: overviewMediaHeight + 92 + (hasDescription ? 32 : 0))
+    }
+
+    private func releaseMedia(in cell: FeedMediaCell) {
+        guard let id = cell.representedID, let controller = pages[id],
+              controller.viewIfLoaded?.superview === cell.mediaHost else { return }
+        detach(controller)
+        pages.removeValue(forKey: id)
+        if playingPage === controller { playingPage = nil }
+    }
+
+    func collectionView(_ collectionView: UICollectionView, didEndDisplaying cell: UICollectionViewCell,
+                        forItemAt indexPath: IndexPath) {
+        if let cell = cell as? FeedMediaCell { releaseMedia(in: cell) }
+    }
+
+    func collectionView(_ collectionView: UICollectionView, willDisplay cell: UICollectionViewCell,
+                        forItemAt indexPath: IndexPath) {
+        if let cell = cell as? FeedMediaCell { mountMedia(in: cell, at: indexPath) }
+        if indexPath.item == currentIndex { syncPlayback() }
     }
 
     func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) { finishPaging() }
@@ -505,6 +541,7 @@ private final class VideoPage: UIViewController {
     }
 
     func setPlaying(_ enabled: Bool, muted: Bool) {
+        guard enabled || isViewLoaded else { self.enabled = false; return }
         loadViewIfNeeded()
         self.enabled = enabled
         if !enabled { playbackButton.hideAfterContextChange() }
@@ -552,7 +589,7 @@ func makePlaybackButton(symbol: String, label: String) -> PlaybackButton {
     var style = UIButton.Configuration.glass()
     style.cornerStyle = .capsule
     style.symbolContentTransition = UIAccessibility.isReduceMotionEnabled ? nil : UISymbolContentTransition(.replace)
-    style.image = UIImage(systemName: symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 30, weight: .semibold))
+    style.image = AppSymbol.image( symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 30, weight: .semibold))
     style.baseForegroundColor = .label
     style.baseBackgroundColor = .clear
     style.automaticallyUpdateForSelection = false
@@ -564,7 +601,7 @@ func makePlaybackButton(symbol: String, label: String) -> PlaybackButton {
         var configuration = button.configuration
         configuration?.baseForegroundColor = .label
         configuration?.baseBackgroundColor = .clear
-        configuration?.image = UIImage(systemName: button.isSelected ? "play.fill" : "pause.fill",
+        configuration?.image = AppSymbol.image( button.isSelected ? "play.fill" : "pause.fill",
             withConfiguration: UIImage.SymbolConfiguration(pointSize: 30, weight: .semibold))
         configuration?.symbolContentTransition = UIAccessibility.isReduceMotionEnabled ? nil : UISymbolContentTransition(.replace)
         button.configuration = configuration
@@ -595,6 +632,7 @@ final class VideoSurface: UIView {
     private var revision = 0
     private var landscape = false
     private var fitsAllMedia = false
+    private var usesBackdrop: Bool { landscape || fitsAllMedia }
     private var aspectRatio: CGFloat = 1
     private var frameTransform: CGAffineTransform = .identity
 
@@ -676,11 +714,11 @@ final class VideoSurface: UIView {
                     self.applyPresentationSize(CGRect(origin: .zero, size: size).applying(transform).standardized.size)
                 }
             }
-            guard let self, self.revision == loadRevision, self.landscape,
+            guard let self, self.revision == loadRevision, self.usesBackdrop,
                   let poster = await VideoPoster.image(for: url), !Task.isCancelled,
                   self.revision == loadRevision, self.backdrop.image == nil else { return }
-            BackdropRenderer.render(CIImage(cgImage: poster)) { [weak self] image in
-                guard let self, self.revision == loadRevision, self.landscape,
+            MediaBackdropRenderer.render(CIImage(cgImage: poster)) { [weak self] image in
+                guard let self, self.revision == loadRevision, self.usesBackdrop,
                       self.backdrop.image == nil, let image else { return }
                 self.backdrop.image = UIImage(cgImage: image)
             }
@@ -695,7 +733,7 @@ final class VideoSurface: UIView {
                 self.applyPresentationSize(size)
             }
         }
-        if landscape { attachBackdrop(to: item) }
+        if usesBackdrop { attachBackdrop(to: item) }
     }
 
     private func applyPresentationSize(_ size: CGSize) {
@@ -706,15 +744,16 @@ final class VideoSurface: UIView {
         landscape = wide
         aspectRatio = ratio
         foreground.videoGravity = wide || fitsAllMedia ? .resizeAspect : .resizeAspectFill
-        backdrop.isHidden = !wide
+        backdrop.isHidden = !usesBackdrop
         setNeedsLayout()
-        if wide { startBackdrop() }
+        if usesBackdrop { startBackdrop() }
         else { stopBackdrop() }
     }
 
     func setPlaying(_ playing: Bool, muted: Bool? = nil) {
+        if let muted, player?.isMuted != muted { player?.isMuted = muted }
+        guard self.playing != playing else { updateBackdropClock(); return }
         self.playing = playing
-        if let muted { player?.isMuted = muted }
         if playing { player?.play() }
         else { player?.pause() }
         updateBackdropClock()
@@ -761,10 +800,10 @@ final class VideoSurface: UIView {
         renderingBackdrop = true
         let request = revision
         let source = CIImage(cvPixelBuffer: frame).transformed(by: frameTransform)
-        BackdropRenderer.render(source) { [weak self, weak item] image in
+        MediaBackdropRenderer.render(source) { [weak self, weak item] image in
             guard let self else { return }
             self.renderingBackdrop = false
-            guard request == self.revision, self.landscape, item === self.observedItem, let image else { return }
+            guard request == self.revision, self.usesBackdrop, item === self.observedItem, let image else { return }
             self.backdrop.image = UIImage(cgImage: image)
         }
     }
@@ -792,7 +831,7 @@ private final class BackdropClock: NSObject {
     }
 }
 
-private enum BackdropRenderer {
+enum MediaBackdropRenderer {
     private static let queue = DispatchQueue(label: "kadr.video-backdrop", qos: .userInitiated)
     private static let context = CIContext(options: [.cacheIntermediates: false])
 
@@ -802,7 +841,7 @@ private enum BackdropRenderer {
             let scaled = source.transformed(by: CGAffineTransform(scaleX: factor, y: factor))
             let filter = CIFilter.gaussianBlur()
             filter.inputImage = scaled.clampedToExtent()
-            filter.radius = 16
+            filter.radius = 13
             let image = filter.outputImage.flatMap { context.createCGImage($0, from: scaled.extent) }
             DispatchQueue.main.async { completion(image) }
         }
@@ -814,18 +853,30 @@ enum VideoPoster {
     private static let cache: NSCache<NSURL, UIImage> = {
         let cache = NSCache<NSURL, UIImage>()
         cache.countLimit = 96
+        cache.totalCostLimit = 32 * 1024 * 1024
         return cache
     }()
 
+    private static var requests: [URL: Task<CGImage?, Never>] = [:]
+
     static func image(for url: URL) async -> CGImage? {
         if let cached = cache.object(forKey: url as NSURL) { return cached.cgImage }
+        if let request = requests[url] { return await request.value }
+        let request = Task { await generate(for: url) }
+        requests[url] = request
+        defer { requests.removeValue(forKey: url) }
+        return await request.value
+    }
+
+    private static func generate(for url: URL) async -> CGImage? {
         let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
         generator.appliesPreferredTrackTransform = true
         generator.maximumSize = CGSize(width: 480, height: 640)
         var poster = try? await generator.image(at: CMTime(seconds: 0.5, preferredTimescale: 600))
         if poster == nil { poster = try? await generator.image(at: .zero) }
         guard let result = poster else { return nil }
-        cache.setObject(UIImage(cgImage: result.image), forKey: url as NSURL)
+        cache.setObject(UIImage(cgImage: result.image), forKey: url as NSURL,
+                        cost: result.image.width * result.image.height * 4)
         return result.image
     }
 }
