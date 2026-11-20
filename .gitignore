@@ -12,3 +12,7 @@
 *.ipa
 *.ipa.gpg
 *.xcarchive/
+
+# Local social API runtime state
+backend/*.sqlite3*
+backend/__pycache__/

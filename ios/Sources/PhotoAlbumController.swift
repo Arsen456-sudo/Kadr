@@ -20,8 +20,10 @@ final class PhotoAlbumController: UIPageViewController, UIPageViewControllerData
     private let counter = UILabel()
     private var index = 0
     private var immersive = false
+    private let compact: Bool
 
-    init(media: [PostMedia], index: Int = 0) {
+    init(media: [PostMedia], index: Int = 0, compact: Bool = false) {
+        self.compact = compact
         self.media = media
         self.index = min(max(0, index), max(0, media.count - 1))
         super.init(transitionStyle: .scroll, navigationOrientation: .horizontal)
@@ -45,7 +47,7 @@ final class PhotoAlbumController: UIPageViewController, UIPageViewControllerData
         view.addSubview(counter)
         NSLayoutConstraint.activate([
             counter.centerXAnchor.constraint(equalTo: view.centerXAnchor),
-            counter.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -82),
+            counter.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: compact ? -12 : -82),
             counter.widthAnchor.constraint(greaterThanOrEqualToConstant: 72),
             counter.heightAnchor.constraint(equalToConstant: 28)
         ])
@@ -84,6 +86,8 @@ private final class PhotoPage: UIViewController, UIScrollViewDelegate {
     private let url: URL
     private let scroll = UIScrollView()
     private let image = UIImageView()
+    private let backdrop = UIImageView()
+    private let blur = UIVisualEffectView(effect: UIBlurEffect(style: .dark))
     private var task: Task<Void, Never>?
     init(url: URL, index: Int) {
         self.url = url
@@ -93,7 +97,14 @@ private final class PhotoPage: UIViewController, UIScrollViewDelegate {
     required init?(coder: NSCoder) { fatalError("Use init(url:index:)") }
     override func viewDidLoad() {
         super.viewDidLoad()
+        backdrop.contentMode = .scaleAspectFill
+        backdrop.clipsToBounds = true
+        backdrop.pin(to: view)
+        blur.pin(to: view)
+        backdrop.isHidden = true
+        blur.isHidden = true
         scroll.pin(to: view)
+        scroll.backgroundColor = .clear
         scroll.delegate = self
         scroll.maximumZoomScale = 4
         scroll.contentInsetAdjustmentBehavior = .never
@@ -103,6 +114,10 @@ private final class PhotoPage: UIViewController, UIScrollViewDelegate {
             let result = await PhotoLoader.image(url)
             guard !Task.isCancelled else { return }
             self?.image.image = result
+            self?.backdrop.image = result
+            let wide = (result?.size.width ?? 0) > (result?.size.height ?? 0)
+            self?.backdrop.isHidden = !wide
+            self?.blur.isHidden = !wide
         }
     }
     override func viewDidLayoutSubviews() {

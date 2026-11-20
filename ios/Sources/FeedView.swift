@@ -21,6 +21,7 @@ final class FeedController: UIViewController, UICollectionViewDataSource, UIColl
     private var pageSize: CGSize = .zero
     private let author = makeLabel(.headline)
     private let caption = makeLabel(.subheadline)
+    private let descriptionButton = UIButton(configuration: .plain())
     private let like = GlyphButton(symbol: "heart", label: "Подобається", compact: true)
     private let comments = GlyphButton(symbol: "bubble", label: "Коментарі", compact: true)
     private let bookmark = GlyphButton(symbol: "bookmark", label: "Зберегти", compact: true)
@@ -42,6 +43,35 @@ final class FeedController: UIViewController, UICollectionViewDataSource, UIColl
         return pages[clips[currentIndex].id]
     }
     private(set) var section = FeedSection.recommended
+    private var overview = false
+    private var overviewMediaHeight: CGFloat {
+        min(view.bounds.width * 1.25, max(140, view.bounds.height - view.safeAreaInsets.top - view.safeAreaInsets.bottom - 180))
+    }
+    private var itemSize: CGSize {
+        CGSize(width: pager.bounds.width, height: overview ? overviewMediaHeight + 148 : pager.bounds.height)
+    }
+    var onDescription: ((Clip) -> Void)?
+
+    func setOverview(_ enabled: Bool) {
+        guard overview != enabled else { return }
+        overview = enabled
+        guard isViewLoaded else { return }
+        playingPage?.setPlaying(false, muted: muted)
+        for controller in pages.values { detach(controller) }
+        pages.removeAll()
+        pager.isPagingEnabled = !enabled
+        pager.contentInset = enabled ? .init(top: view.safeAreaInsets.top + 48, left: 0, bottom: view.safeAreaInsets.bottom, right: 0) : .zero
+        pagingLayout.minimumLineSpacing = enabled ? 20 : 0
+        pagingLayout.itemSize = itemSize
+        pagingLayout.invalidateLayout()
+        pager.reloadData()
+        pager.layoutIfNeeded()
+        if clips.indices.contains(currentIndex) {
+            _ = controller(at: currentIndex)
+            pager.scrollToItem(at: IndexPath(item: currentIndex, section: 0), at: .top, animated: false)
+        }
+        updateCurrent()
+    }
 
     var onAuthor: ((UUID) -> Void)?
     var onReaction: ((Clip, Bool) -> Void)?
@@ -79,13 +109,23 @@ final class FeedController: UIViewController, UICollectionViewDataSource, UIColl
         pager.contentInsetAdjustmentBehavior = .never
         pager.accessibilityIdentifier = "feed.pages"
         pager.register(UICollectionViewCell.self, forCellWithReuseIdentifier: "page")
+        pager.register(OverviewPostCell.self, forCellWithReuseIdentifier: "overview")
         pager.pin(to: view)
         empty.pin(to: view)
         author.numberOfLines = 1
         caption.numberOfLines = 2
         captionStack.axis = .vertical
         captionStack.spacing = 3
-        captionStack.isUserInteractionEnabled = false
+        captionStack.addArrangedSubview(descriptionButton)
+        descriptionButton.configuration?.title = "Повний опис"
+        descriptionButton.configuration?.image = UIImage(systemName: "chevron.down")
+        descriptionButton.configuration?.imagePlacement = .trailing
+        descriptionButton.contentHorizontalAlignment = .leading
+        descriptionButton.addAction(UIAction { [weak self] _ in
+            guard let self, let clip = self.page?.clip else { return }
+            self.onDescription?(clip)
+        }, for: .primaryActionTriggered)
+        captionStack.isUserInteractionEnabled = true
         captionStack.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(captionStack)
 
@@ -175,10 +215,15 @@ final class FeedController: UIViewController, UICollectionViewDataSource, UIColl
         let size = pager.bounds.size
         if size.width > 0, size.height > 0, size != pageSize {
             pageSize = size
-            pagingLayout.itemSize = size
+            pagingLayout.itemSize = itemSize
             pagingLayout.invalidateLayout()
             pager.layoutIfNeeded()
-            pager.setContentOffset(CGPoint(x: 0, y: CGFloat(currentIndex) * size.height), animated: false)
+            if overview {
+                pager.contentInset = .init(top: view.safeAreaInsets.top + 48, left: 0, bottom: view.safeAreaInsets.bottom, right: 0)
+                if clips.indices.contains(currentIndex) { pager.scrollToItem(at: IndexPath(item: currentIndex, section: 0), at: .top, animated: false) }
+            } else {
+                pager.setContentOffset(CGPoint(x: 0, y: CGFloat(currentIndex) * size.height), animated: false)
+            }
         }
         connectContentScrollView()
     }
@@ -232,7 +277,8 @@ final class FeedController: UIViewController, UICollectionViewDataSource, UIColl
             _ = controller(at: currentIndex)
             pager.layoutIfNeeded()
             if pager.bounds.height > 0, !pager.isDragging, !pager.isDecelerating {
-                pager.setContentOffset(CGPoint(x: 0, y: CGFloat(currentIndex) * pager.bounds.height), animated: false)
+                if overview { pager.scrollToItem(at: IndexPath(item: currentIndex, section: 0), at: .top, animated: false) }
+                else { pager.setContentOffset(CGPoint(x: 0, y: CGFloat(currentIndex) * pager.bounds.height), animated: false) }
             }
         }
         updateCurrent()
@@ -240,8 +286,8 @@ final class FeedController: UIViewController, UICollectionViewDataSource, UIColl
 
     private func updateCurrent() {
         let active = clips.isEmpty ? nil : page?.clip
-        actionGlass.isHidden = active == nil || immersive
-        captionStack.isHidden = active == nil || immersive
+        actionGlass.isHidden = active == nil || immersive || overview
+        captionStack.isHidden = active == nil || immersive || overview
         empty.isHidden = active != nil || immersive
         page?.setImmersive(immersive)
         connectContentScrollView()
@@ -293,6 +339,13 @@ final class FeedController: UIViewController, UICollectionViewDataSource, UIColl
     }
 
     func updateReactions(bounce: Reaction? = nil) {
+        if overview {
+            for indexPath in pager.indexPathsForVisibleItems {
+                if let cell = pager.cellForItem(at: indexPath) as? OverviewPostCell, clips.indices.contains(indexPath.item) {
+                    cell.show(clips[indexPath.item], store: store, mediaHeight: overviewMediaHeight, muted: muted)
+                }
+            }
+        }
         guard let clip = page?.clip else { return }
         comments.isHidden = !clip.settings.allowsComments
         let liked = store.liked(clip)
@@ -317,7 +370,7 @@ final class FeedController: UIViewController, UICollectionViewDataSource, UIColl
     private func controller(at index: Int) -> VideoPage {
         let clip = clips[index]
         if let existing = pages[clip.id] { return existing }
-        let controller = VideoPage(clip: clip)
+        let controller = VideoPage(clip: clip, fitsAllMedia: overview)
         pages[clip.id] = controller
         return controller
     }
@@ -335,17 +388,33 @@ final class FeedController: UIViewController, UICollectionViewDataSource, UIColl
     }
 
     func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
-        let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "page", for: indexPath)
+        let cell = collectionView.dequeueReusableCell(withReuseIdentifier: overview ? "overview" : "page", for: indexPath)
         let controller = controller(at: indexPath.item)
+        let target: UIView
+        if let overviewCell = cell as? OverviewPostCell {
+            let clip = clips[indexPath.item]
+            overviewCell.show(clip, store: store, mediaHeight: overviewMediaHeight, muted: muted)
+            overviewCell.onAuthor = { [weak self] in if let id = clip.authorID { self?.onAuthor?(id) } }
+            overviewCell.onLike = { [weak self] in self?.onReaction?(clip, false) }
+            overviewCell.onBookmark = { [weak self] in self?.onReaction?(clip, true) }
+            overviewCell.onComments = { [weak self] in self?.onComments?(clip) }
+            overviewCell.onDescription = { [weak self] in self?.onDescription?(clip) }
+            overviewCell.onSound = { [weak self] in
+                guard let self else { return }
+                self.muted.toggle()
+                self.updateReactions()
+            }
+            target = overviewCell.mediaContainer
+        } else { target = cell.contentView }
         // Reused cells can still contain an offscreen child controller's view.
-        for child in cell.contentView.subviews { child.removeFromSuperview() }
+        for child in target.subviews { child.removeFromSuperview() }
         let added = controller.parent == nil
         if added { addChild(controller) }
         let content = controller.view!
         content.translatesAutoresizingMaskIntoConstraints = true
         content.autoresizingMask = [.flexibleWidth, .flexibleHeight]
-        content.frame = cell.contentView.bounds
-        cell.contentView.addSubview(content)
+        content.frame = target.bounds
+        target.addSubview(content)
         if added { controller.didMove(toParent: self) }
         controller.setImmersive(immersive)
         return cell
@@ -358,11 +427,19 @@ final class FeedController: UIViewController, UICollectionViewDataSource, UIColl
 
     private func finishPaging() {
         guard !clips.isEmpty, pager.bounds.height > 0 else { return }
-        currentIndex = min(clips.count - 1, max(0, Int((pager.contentOffset.y / pager.bounds.height).rounded())))
+        if overview {
+            let center = pager.contentOffset.y + pager.bounds.height / 2
+            if let nearest = pager.indexPathsForVisibleItems.min(by: {
+                abs((pager.layoutAttributesForItem(at: $0)?.frame.midY ?? 0) - center) < abs((pager.layoutAttributesForItem(at: $1)?.frame.midY ?? 0) - center)
+            }) { currentIndex = nearest.item }
+        } else {
+            currentIndex = min(clips.count - 1, max(0, Int((pager.contentOffset.y / pager.bounds.height).rounded())))
+        }
         _ = controller(at: currentIndex)
         updateCurrent()
         // Keep only the current page and its neighbours, so long feeds do not retain players.
         let retained = Set(clips.indices.filter { abs($0 - currentIndex) <= 1 }.map { clips[$0].id })
+            .union(pager.indexPathsForVisibleItems.compactMap { clips.indices.contains($0.item) ? clips[$0.item].id : nil })
         for id in Array(pages.keys) where !retained.contains(id) {
             if let controller = pages.removeValue(forKey: id) { detach(controller) }
         }
@@ -378,9 +455,11 @@ private final class VideoPage: UIViewController {
     private var paused = false
     private var immersive = false
     private var album: PhotoAlbumController?
+    private let fitsAllMedia: Bool
 
-    init(clip: Clip) {
+    init(clip: Clip, fitsAllMedia: Bool = false) {
         self.clip = clip
+        self.fitsAllMedia = fitsAllMedia
         super.init(nibName: nil, bundle: nil)
     }
 
@@ -390,14 +469,14 @@ private final class VideoPage: UIViewController {
         super.viewDidLoad()
         view.backgroundColor = .black
         if clip.isPhoto {
-            let album = PhotoAlbumController(media: clip.media ?? [])
+            let album = PhotoAlbumController(media: clip.media ?? [], compact: fitsAllMedia)
             self.album = album
             album.setImmersive(immersive)
             embed(album, in: view)
             return
         }
         video.pin(to: view)
-        video.load(clip.url, adaptsLandscape: true)
+        video.load(clip.url, adaptsLandscape: true, fitsAllMedia: fitsAllMedia)
         tapArea.accessibilityIdentifier = "video.playbackArea"
         tapArea.isAccessibilityElement = true
         tapArea.accessibilityTraits = .button
@@ -515,6 +594,7 @@ final class VideoSurface: UIView {
     private var sizeObservation: NSKeyValueObservation?
     private var revision = 0
     private var landscape = false
+    private var fitsAllMedia = false
     private var aspectRatio: CGFloat = 1
     private var frameTransform: CGAffineTransform = .identity
 
@@ -547,7 +627,8 @@ final class VideoSurface: UIView {
         CATransaction.commit()
     }
 
-    func load(_ url: URL?, adaptsLandscape: Bool = false) {
+    func load(_ url: URL?, adaptsLandscape: Bool = false, fitsAllMedia: Bool = false) {
+        self.fitsAllMedia = fitsAllMedia
         revision += 1
         let loadRevision = revision
         metadata?.cancel()
@@ -624,7 +705,7 @@ final class VideoSurface: UIView {
         guard wide != landscape || ratio != aspectRatio else { return }
         landscape = wide
         aspectRatio = ratio
-        foreground.videoGravity = wide ? .resizeAspect : .resizeAspectFill
+        foreground.videoGravity = wide || fitsAllMedia ? .resizeAspect : .resizeAspectFill
         backdrop.isHidden = !wide
         setNeedsLayout()
         if wide { startBackdrop() }

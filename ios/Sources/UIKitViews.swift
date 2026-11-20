@@ -181,12 +181,16 @@ class GlassSectionPicker: UIView {
 
 final class FeedSectionPicker: GlassSectionPicker {
     var onSelection: ((FeedSection) -> Void)?
+    var onOverview: (() -> Void)?
     init() {
-        super.init(titles: ["Для тебе", "Підписки"])
-        onIndexSelection = { [weak self] index in self?.onSelection?(index == 1 ? .following : .recommended) }
+        super.init(titles: ["Для тебе", "Підписки", "Огляд"])
+        onIndexSelection = { [weak self] index in
+            if index == 2 { self?.onOverview?() }
+            else { self?.onSelection?(index == 1 ? .following : .recommended) }
+        }
     }
     required init?(coder: NSCoder) { fatalError("Use init()") }
-    func updateSelection(_ section: FeedSection) { selectIndex(section == .following ? 1 : 0) }
+    func updateSelection(_ section: FeedSection, overview: Bool = false) { selectIndex(overview ? 2 : (section == .following ? 1 : 0)) }
 }
 
 final class GradientView: UIView {

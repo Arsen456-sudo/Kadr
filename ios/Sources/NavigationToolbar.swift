@@ -28,7 +28,9 @@ final class KadrToolbarState: ObservableObject {
     var hasBanner: Bool { context.hasBanner }
     @Published var immersive = false
     @Published var feedSection = FeedSection.recommended
+    @Published var overview = false
     var onSection: ((FeedSection) -> Void)?
+    var onOverview: (() -> Void)?
     var onSearch: (() -> Void)?
     var onSignOut: (() -> Void)?
     var onChooseBanner: (() -> Void)?
@@ -72,7 +74,7 @@ struct KadrNavigationShell: View {
                     if state.screen == .feed {
                         ToolbarItem(placement: .principal) {
                             FeedPickerContent(state: state)
-                                .frame(width: 184, height: 44)
+                                .frame(width: 236, height: 44)
                         }
                         .sharedBackgroundVisibility(.hidden)
                         ToolbarItem(placement: .topBarLeading) {
@@ -146,13 +148,14 @@ private struct FeedPickerContent: UIViewRepresentable {
         let picker = FeedSectionPicker()
         picker.onSelection = { [weak picker] section in
             state.onSection?(section)
-            picker?.updateSelection(state.feedSection)
+            picker?.updateSelection(state.feedSection, overview: state.overview)
         }
+        picker.onOverview = { state.onOverview?() }
         return picker
     }
 
     func updateUIView(_ view: FeedSectionPicker, context: Context) {
         view.matchSearchHeight(44)
-        view.updateSelection(state.feedSection)
+        view.updateSelection(state.feedSection, overview: state.overview)
     }
 }

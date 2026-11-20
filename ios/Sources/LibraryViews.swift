@@ -74,11 +74,15 @@ final class SavedController: LibraryController {
 
 final class SearchController: UITableViewController, UISearchResultsUpdating {
     private let store: LocalStore
+    private let repository: any SocialRepository
+    private var searchTask: Task<Void, Never>?
+    var onAccount: (() -> Void)?
     private var matches: [Profile] = []
     var onChange: (() -> Void)?
     var onClip: ((Clip) -> Void)?
 
-    init(store: LocalStore) {
+    init(store: LocalStore, repository: any SocialRepository) {
+        self.repository = repository
         self.store = store
         super.init(style: .insetGrouped)
     }
@@ -102,15 +106,23 @@ final class SearchController: UITableViewController, UISearchResultsUpdating {
     func updateSearchResults(for searchController: UISearchController) {
         let term = (searchController.searchBar.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             .lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "@"))
-        matches = store.profiles.filter { term.isEmpty || $0.handle.hasPrefix(term) }.sorted { $0.handle < $1.handle }
-        if matches.isEmpty {
-            var empty = UIContentUnavailableConfiguration.search()
-            empty.text = "Немає профілів"
-            contentUnavailableConfiguration = empty
-        } else {
-            contentUnavailableConfiguration = nil
+        searchTask?.cancel()
+        searchTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await Task.sleep(for: .milliseconds(180))
+                let matches = try await self.repository.search(handle: term)
+                guard !Task.isCancelled else { return }
+                self.matches = matches
+                if matches.isEmpty {
+                    var empty = UIContentUnavailableConfiguration.search()
+                    empty.text = "Немає профілів"
+                    self.contentUnavailableConfiguration = empty
+                } else { self.contentUnavailableConfiguration = nil }
+                self.tableView.reloadData()
+            } catch is CancellationError { }
+            catch { self.showMessage(error.localizedDescription) }
         }
-        tableView.reloadData()
     }
 
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { matches.count }
@@ -133,8 +145,9 @@ final class SearchController: UITableViewController, UISearchResultsUpdating {
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        let profile = ProfileController(store: store, profileID: matches[indexPath.row].id)
+        let profile = ProfileController(store: store, profileID: matches[indexPath.row].id, repository: repository)
         profile.onClip = onClip
+        profile.onAccount = onAccount
         profile.onChange = onChange
         navigationController?.pushViewController(profile, animated: true)
     }

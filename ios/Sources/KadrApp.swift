@@ -43,7 +43,6 @@ extension UIColor {
 final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPresentationControllerDelegate {
     private let store = LocalStore()
     private lazy var feed = FeedController(store: store)
-    private lazy var saved = SavedController(store: store)
     private lazy var profile = ProfileController(store: store, profileID: nil)
     let toolbarState = KadrToolbarState()
     private var immersive = false
@@ -55,7 +54,8 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
     private let topEdge = UIScrollEdgeElementContainerInteraction()
     private let bottomEdge = UIScrollEdgeElementContainerInteraction()
     private let addTab = UIViewController()
-    private let inbox = InboxController()
+    private lazy var social = LocalSocialRepository(store: store)
+    private lazy var inbox = InboxController(store: store, repository: social)
     private var keepsFeedPlaying = false
     private weak var selectedScreen: UIViewController?
     private var welcomePresented = false
@@ -68,16 +68,13 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
         tabBar.tintColor = .kadrPeach
         feed.tabBarItem = UITabBarItem(title: "Стрічка", image: UIImage(systemName: "house"),
                                        selectedImage: UIImage(systemName: "house.fill"))
-        saved.tabBarItem = UITabBarItem(title: "Збережене", image: UIImage(systemName: "bookmark"),
-                                        selectedImage: UIImage(systemName: "bookmark.fill"))
         profile.tabBarItem = UITabBarItem(title: "Профіль", image: UIImage(systemName: "person.crop.circle"),
                                           selectedImage: UIImage(systemName: "person.crop.circle.fill"))
-        saved.additionalSafeAreaInsets.top = 60
         addTab.tabBarItem = UITabBarItem(title: "Додати", image: UIImage(systemName: "plus.circle.fill"), selectedImage: nil)
         inbox.tabBarItem = UITabBarItem(title: "Вхідні", image: UIImage(systemName: "tray"),
                                          selectedImage: UIImage(systemName: "tray.fill"))
         inbox.additionalSafeAreaInsets.top = 58
-        setViewControllers([feed, saved, addTab, inbox, profile], animated: false)
+        setViewControllers([feed, addTab, inbox, profile], animated: false)
         selectedScreen = feed
         configureActions()
         configureChrome()
@@ -102,8 +99,13 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
         feed.onReaction = { [weak self] clip, bookmark in self?.react(to: clip, bookmark: bookmark) }
         feed.onAuthor = { [weak self] id in self?.openAuthor(id) }
         feed.onComments = { [weak self] clip in self?.openComments(clip) }
-        saved.onClip = { [weak self] clip in self?.openClip(clip) }
-        saved.onAccount = { [weak self] in self?.openAccount() }
+        inbox.onSearch = { [weak self] in self?.openSearch() }
+        inbox.onAccount = { [weak self] in self?.openAccount() }
+        inbox.onChat = { [weak self] peer in self?.openChat(peer) }
+        feed.onDescription = { [weak self] clip in
+            guard let self else { return }
+            self.showSheet(PostDescriptionController(clip: clip, store: self.store), detents: [.medium(), .large()], continuePlayback: true)
+        }
         profile.onClip = { [weak self] clip in self?.openClip(clip) }
         profile.onAccount = { [weak self] in self?.openAccount() }
         profile.onChange = { [weak self] in self?.refresh() }
@@ -117,12 +119,19 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
             self.setImmersive(!self.immersive)
         }
 
+        toolbarState.onOverview = { [weak self] in
+            guard let self else { return }
+            self.toolbarState.overview = true
+            self.feed.setOverview(true)
+        }
         toolbarState.onSection = { [weak self] section in
             guard let self else { return }
             if section == .following && self.store.active == nil {
                 self.openAccount()
                 return
             }
+            self.toolbarState.overview = false
+            self.feed.setOverview(false)
             self.feed.selectSection(section)
             if self.toolbarState.feedSection != section { self.toolbarState.feedSection = section }
         }
@@ -201,7 +210,7 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
     }
 
     private func refresh(animated: Bool = true) {
-        saved.refresh()
+        inbox.refresh()
         profile.refresh()
         feed.refresh()
         updateChrome(for: selectedViewController, animated: animated)
@@ -219,7 +228,7 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
     private func updateEdgeEffects(for controller: UIViewController?) {
         let isFeed = controller === feed
         let scroll: UIScrollView? = isFeed ? feed.edgeScrollView
-            : controller === profile ? profile.edgeScrollView : controller === inbox ? inbox.scrollView : saved.tableView
+            : controller === profile ? profile.edgeScrollView : controller === inbox ? inbox.scrollView : nil
         // Keep the native bars attached to the selected screen's actual scroller,
         // including through the SwiftUI hosting controller's containment hierarchy.
         setContentScrollView(scroll, for: .all)
@@ -240,7 +249,6 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
         let screen: KadrToolbarState.Screen
         if controller === profile { screen = .profile }
         else if controller === inbox { screen = .inbox }
-        else if controller === saved { screen = .saved }
         else { screen = .feed }
         let canSignOut = screen == .profile && store.active != nil
         let context = KadrToolbarState.Context(screen: screen, canSignOut: canSignOut,
@@ -265,7 +273,8 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
     }
 
     private func openSearch() {
-        let search = SearchController(store: store)
+        let search = SearchController(store: store, repository: social)
+        search.onAccount = { [weak self] in self?.closeSheet { self?.openAccount() } }
         search.onChange = { [weak self] in self?.refresh() }
         search.onClip = { [weak self, weak search] clip in
             self?.openClip(clip, from: search?.navigationController)
@@ -339,7 +348,13 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
             self?.openClip(clip, from: author?.navigationController)
         }
         author.onChange = { [weak self] in self?.feed.refresh() }
+        author.onAccount = { [weak self] in self?.closeSheet { self?.openAccount() } }
         showSheet(author)
+    }
+
+    private func openChat(_ peer: Profile) {
+        guard store.active != nil else { openAccount(); return }
+        showSheet(ChatController(store: store, repository: social, peer: peer))
     }
 
     private func openClip(_ clip: Clip, from presenter: UIViewController? = nil) {
@@ -397,24 +412,3 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
     }
 }
 
-private final class InboxController: UIViewController {
-    let scrollView = UIScrollView()
-
-    override func viewDidLoad() {
-        super.viewDidLoad()
-        view.backgroundColor = .systemBackground
-        scrollView.pin(to: view)
-        let empty = EmptyStateView(title: "Вхідні порожні", message: "Тут з’являтимуться сповіщення.",
-                                   symbol: "tray")
-        empty.translatesAutoresizingMaskIntoConstraints = false
-        scrollView.addSubview(empty)
-        NSLayoutConstraint.activate([
-            empty.leadingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.leadingAnchor),
-            empty.trailingAnchor.constraint(equalTo: scrollView.contentLayoutGuide.trailingAnchor),
-            empty.topAnchor.constraint(equalTo: scrollView.contentLayoutGuide.topAnchor),
-            empty.bottomAnchor.constraint(equalTo: scrollView.contentLayoutGuide.bottomAnchor),
-            empty.widthAnchor.constraint(equalTo: scrollView.frameLayoutGuide.widthAnchor),
-            empty.heightAnchor.constraint(equalTo: scrollView.frameLayoutGuide.heightAnchor)
-        ])
-    }
-}

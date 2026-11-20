@@ -7,6 +7,8 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
                                PHPickerViewControllerDelegate {
     private let store: LocalStore
     private let profileID: UUID?
+    private let repository: any SocialRepository
+    private var followTask: Task<Void, Never>?
     private var selectedSection = ProfileSection.posts
     private let sectionIsland = ProfileSectionPicker()
     var sectionInsets = NSDirectionalEdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16) { didSet { updateSectionPosition() } }
@@ -49,7 +51,8 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
     var onAccount: (() -> Void)?
     var onChange: (() -> Void)?
 
-    init(store: LocalStore, profileID: UUID?) {
+    init(store: LocalStore, profileID: UUID?, repository: (any SocialRepository)? = nil) {
+        self.repository = repository ?? LocalSocialRepository(store: store)
         self.store = store
         self.profileID = profileID
         super.init(nibName: nil, bundle: nil)
@@ -168,7 +171,7 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
             grid.isHidden = false
             title = profileID == nil ? "Профіль" : "@\(profile.handle)"
             let newClips = posts(for: profile)
-            let state: Bool? = store.active != nil && store.active?.id != profile.id ? store.follows(profile) : nil
+            let state: Bool? = store.active?.id != profile.id ? store.follows(profile) : nil
             if resetScroll || changedBanner || changedAvatar || state != followState || clips.map(\.id) != newClips.map(\.id) {
                 clips = newClips
                 followState = state
@@ -237,12 +240,23 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
         guard let profile = visibleProfile else { return view }
         let follow = followState
         view.setCover(for: profile, width: collectionView.bounds.width, top: self.view.safeAreaInsets.top)
-        view.show(profile, hasPosts: !clips.isEmpty, following: follow, onAvatar: { [weak self] in self?.openAvatar() }) { [weak self] in
+        view.show(profile, hasPosts: !clips.isEmpty, following: follow, onAvatar: { [weak self] in self?.openAvatar() }, onMessage: { [weak self] in
             guard let self else { return }
-            self.store.toggleFollow(profile)
-            self.showStorageErrorIfNeeded()
-            self.refresh()
-            self.onChange?()
+            self.navigationController?.pushViewController(ChatController(store: self.store, repository: self.repository, peer: profile), animated: true)
+        }) { [weak self] in
+            guard let self else { return }
+            guard self.store.active != nil else { self.onAccount?(); return }
+            guard self.followTask == nil else { return }
+            let following = !self.store.follows(profile)
+            self.followTask = Task { [weak self] in
+                guard let self else { return }
+                defer { self.followTask = nil }
+                do {
+                    try await self.repository.setFollowing(following, profileID: profile.id)
+                    self.refresh()
+                    self.onChange?()
+                } catch { self.showMessage(error.localizedDescription) }
+            }
         }
         return view
     }
@@ -418,7 +432,9 @@ private final class ProfileHero: UICollectionReusableView {
         banner.backgroundColor = .clear
         identity.alignment = .center
         identity.spacing = Self.gap
-        followActions.axis = .vertical
+        followActions.axis = .horizontal
+        followActions.distribution = .fillEqually
+        followActions.spacing = 8
         let details = UIStackView(arrangedSubviews: [identity, followActions])
         details.axis = .vertical
         details.spacing = Self.verticalPadding
@@ -464,7 +480,7 @@ private final class ProfileHero: UICollectionReusableView {
         return ceil(coverSize(for: profile, width: width, top: top) + max(identityHeight, measured) + 2 * verticalPadding + 16 + actionHeight + footerHeight)
     }
 
-    func show(_ profile: Profile, hasPosts: Bool, following: Bool?, onAvatar: @escaping () -> Void, onFollow: @escaping () -> Void) {
+    func show(_ profile: Profile, hasPosts: Bool, following: Bool?, onAvatar: @escaping () -> Void, onMessage: @escaping () -> Void, onFollow: @escaping () -> Void) {
         identity.arrangedSubviews.forEach { $0.removeFromSuperview() }
         followActions.arrangedSubviews.forEach { $0.removeFromSuperview() }
 
@@ -492,6 +508,11 @@ private final class ProfileHero: UICollectionReusableView {
             let button = textButton(following ? "Відписатися" : "Підписатися", prominent: !following, action: onFollow)
             button.heightAnchor.constraint(equalToConstant: Self.followHeight).isActive = true
             followActions.addArrangedSubview(button)
+            if following {
+                let message = textButton("Повідомлення", symbol: "bubble.left", action: onMessage)
+                message.heightAnchor.constraint(equalToConstant: Self.followHeight).isActive = true
+                followActions.addArrangedSubview(message)
+            }
         }
         followActions.isHidden = following == nil
 

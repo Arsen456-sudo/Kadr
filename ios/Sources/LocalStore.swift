@@ -70,6 +70,7 @@ struct Comment: Codable, Identifiable {
 
 final class LocalStore {
     struct State: Codable {
+        var messages: [ChatMessage]? = nil
         var profiles: [Profile] = []
         var activeID: UUID?
         var clips: [Clip] = []
@@ -140,6 +141,46 @@ final class LocalStore {
             next.following[id, default: []].insert(profile.id)
         }
         _ = save(next)
+    }
+
+    func searchProfiles(_ handle: String) -> [Profile] {
+        let term = normalized(handle)
+        return profiles.filter { term.isEmpty || $0.handle.hasPrefix(term) }.sorted { $0.handle < $1.handle }
+    }
+
+    func messages(with peer: UUID) -> [ChatMessage] {
+        guard let me = state.activeID else { return [] }
+        return (state.messages ?? []).filter {
+            ($0.senderID == me && $0.recipientID == peer) || ($0.senderID == peer && $0.recipientID == me)
+        }.sorted { $0.createdAt < $1.createdAt }
+    }
+
+    func conversations() -> [ConversationSummary] {
+        guard let me = state.activeID else { return [] }
+        let mine = (state.messages ?? []).filter { $0.senderID == me || $0.recipientID == me }
+        let peers = Set(mine.map { $0.senderID == me ? $0.recipientID : $0.senderID })
+        return peers.compactMap { peer in
+            guard let profile = profile(peer), let last = messages(with: peer).last else { return nil }
+            return ConversationSummary(profile: profile, lastMessage: last)
+        }.sorted { $0.lastMessage.createdAt > $1.lastMessage.createdAt }
+    }
+
+    func sendMessage(_ text: String, to peer: UUID, id: UUID) throws -> ChatMessage {
+        guard let me = state.activeID else { throw SocialError.accountRequired }
+        guard let profile = profile(peer), peer != me else { throw SocialError.unavailable }
+        guard follows(profile) || !messages(with: peer).isEmpty else { throw SocialError.followRequired }
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty, text.count <= 4000 else { throw SocialError.invalidMessage }
+        if let existing = (state.messages ?? []).first(where: { $0.id == id }) {
+            guard existing.senderID == me, existing.recipientID == peer, existing.text == text else { throw SocialError.unavailable }
+            return existing
+        }
+        let message = ChatMessage(id: id, senderID: me, recipientID: peer, text: text, createdAt: Date())
+        var next = state
+        next.messages = (next.messages ?? []) + [message]
+        guard save(next) else { throw SocialError.unavailable }
+        NotificationCenter.default.post(name: .kadrMessagesDidChange, object: self)
+        return message
     }
 
     private func normalized(_ handle: String) -> String {
@@ -311,5 +352,6 @@ enum FeedSection: Equatable {
 
 
 extension Notification.Name {
+    static let kadrMessagesDidChange = Notification.Name("Kadr.messagesDidChange")
     static let kadrProfileDidChange = Notification.Name("Kadr.profileDidChange")
 }
