@@ -25,7 +25,6 @@ enum AppSymbol {
         if let cached = cache.object(forKey: key) { base = cached }
         else {
             let style = UIImage.SymbolConfiguration(weight: .semibold)
-                .applying(UIImage.SymbolConfiguration.preferringHierarchical())
             guard let image = UIImage(systemName: resolved, withConfiguration: style)
                 ?? UIImage(systemName: symbol, withConfiguration: style) else { return nil }
             cache.setObject(image, forKey: key)
