@@ -3,6 +3,7 @@ import UniformTypeIdentifiers
 
 final class SettingsController: ActionListController, UISearchResultsUpdating, UIDocumentPickerDelegate {
     private let store: LocalStore
+    var onRestore: (() -> Void)?
     private var query = ""
     private var backupTask: Task<Void, Never>?
     init(store: LocalStore) { self.store = store; super.init("Налаштування") }
@@ -73,7 +74,7 @@ final class SettingsController: ActionListController, UISearchResultsUpdating, U
                 let accessed = source.startAccessingSecurityScopedResource(); defer { if accessed { source.stopAccessingSecurityScopedResource() } }
                 let spinner = UIActivityIndicatorView(style: .medium); spinner.startAnimating(); self.navigationItem.rightBarButtonItem = UIBarButtonItem(customView: spinner)
                 defer { self.navigationItem.rightBarButtonItem = nil }
-                do { try await self.store.restoreBackup(source); self.reload() } catch { self.showMessage(error.localizedDescription) }
+                do { try await self.store.restoreBackup(source); self.reload(); self.onRestore?() } catch { self.showMessage(error.localizedDescription) }
             }
         })
         present(confirmation, animated: true)
@@ -108,7 +109,7 @@ extension LocalStore {
             return snapshot
         }.value
         isRestoringBackup = false
-        guard updateState({ $0 = snapshot }) else { throw CocoaError(.fileWriteUnknown) }
+        guard acceptRestoredState(snapshot) else { throw CocoaError(.fileWriteUnknown) }
         isRestoringBackup = true
         try await flush()
         NotificationCenter.default.post(name: .kadrMessagesDidChange, object: self)

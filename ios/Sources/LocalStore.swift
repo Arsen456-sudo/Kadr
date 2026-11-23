@@ -393,6 +393,12 @@ final class LocalStore {
         return save(next)
     }
 
+    @discardableResult
+    func acceptRestoredState(_ snapshot: State) -> Bool {
+        canSave = true
+        return updateState { $0 = snapshot }
+    }
+
     func cleanUnreferenced(_ candidates: Set<String>) {
         guard !candidates.isEmpty else { return }
         Task { @MainActor [weak self] in

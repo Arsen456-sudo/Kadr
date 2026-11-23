@@ -35,6 +35,11 @@ final class AccountController: FormController {
                 }
             })
         }
+        content.addArrangedSubview(textButton("Налаштування та відновлення", symbol: "gearshape") { [weak self] in
+            guard let self else { return }; let settings = SettingsController(store: self.store)
+            settings.onRestore = { [weak self] in self?.onAuthenticated?() }
+            self.navigationController?.pushViewController(settings, animated: true)
+        })
         content.addArrangedSubview(textButton("Дивитися без акаунта") { [weak self] in
             self?.onGuest?()
         })
