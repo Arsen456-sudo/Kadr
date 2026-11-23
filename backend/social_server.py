@@ -43,6 +43,14 @@ def b64(data):
     return base64.urlsafe_b64encode(data).rstrip(b"=")
 
 
+class ClosingConnection(sqlite3.Connection):
+    def __exit__(self, exc_type, exc_value, traceback):
+        try:
+            return super().__exit__(exc_type, exc_value, traceback)
+        finally:
+            self.close()
+
+
 class SocialService:
     def __init__(self, database, secret):
         self.database, self.secret = str(database), secret.encode()
@@ -81,7 +89,7 @@ class SocialService:
                 db.execute("ALTER TABLE messages ADD COLUMN metadata TEXT")
 
     def connect(self):
-        db = sqlite3.connect(self.database, timeout=10)
+        db = sqlite3.connect(self.database, timeout=10, factory=ClosingConnection)
         db.row_factory = sqlite3.Row
         db.execute("PRAGMA foreign_keys=ON")
         return db
@@ -146,6 +154,12 @@ class SocialService:
                         value["senderID"] = previous.get("senderID")
                         db.execute("DELETE FROM messages WHERE id=? COLLATE NOCASE AND sender=?", (key, user))
                     if not deleted:
+                        if kind in ("post", "draft"):
+                            canonical_id(key)
+                            collision = db.execute("SELECT owner FROM sync_records WHERE resource IN ('post','draft') AND entity=? COLLATE NOCASE AND owner!=?", (key, user)).fetchone()
+                            if collision: raise APIError(409, "Ідентифікатор публікації вже використано.")
+                        if kind == "preferences" and not isinstance(value.get("preferences", {}), dict):
+                            raise APIError(400, "Некоректні налаштування.")
                         if kind == "profile" and canonical_id(value.get("id")) != user:
                             raise APIError(403, "Невірний власник профілю.")
                         if kind in ("post", "draft") and (canonical_id(value.get("authorID")) != user or value.get("id") != key):
@@ -165,6 +179,7 @@ class SocialService:
                             if not post or post["owner"] != user: raise APIError(403, "Закріплювати може тільки автор публікації.")
                         if kind == "message":
                             recipient = canonical_id(value.get("recipientID"))
+                            self.assert_message_allowed(db, user, recipient)
                             text = value.get("text")
                             if not isinstance(text, str) or not 1 <= len(text.strip()) <= 4000: raise APIError(400, "Некоректний текст повідомлення.")
                             if canonical_id(value.get("senderID")) != user or value.get("id") != key or recipient == user:
@@ -253,6 +268,21 @@ class SocialService:
                 if record["resource"] == "message" and value.get("recipientID", "").lower() == user and value.get("attachmentFile") == name: return
             raise APIError(403, "Немає доступу до файлу.")
 
+    def assert_message_allowed(self, db, user, peer):
+        settings = db.execute("SELECT payload FROM sync_records WHERE owner=? AND resource='preferences'", (peer,)).fetchone()
+        preferences = json.loads(settings["payload"]).get("preferences", {}) if settings else {}
+        mine = db.execute("SELECT payload FROM sync_records WHERE owner=? AND resource='preferences'", (user,)).fetchone()
+        own_preferences = json.loads(mine["payload"]).get("preferences", {}) if mine else {}
+        if user in [str(item).lower() for item in preferences.get("blocked", [])] or peer in [str(item).lower() for item in own_preferences.get("blocked", [])]:
+            raise APIError(403, "Повідомлення заблоковано.")
+        prior = db.execute("SELECT 1 FROM messages WHERE (sender=? AND recipient=?) OR (sender=? AND recipient=?) LIMIT 1", (user, peer, peer, user)).fetchone()
+        if not prior:
+            prior = db.execute("SELECT 1 FROM sync_records WHERE resource='message' AND ((lower(json_extract(payload,'$.senderID'))=? AND lower(json_extract(payload,'$.recipientID'))=?) OR (lower(json_extract(payload,'$.senderID'))=? AND lower(json_extract(payload,'$.recipientID'))=?)) LIMIT 1", (user, peer, peer, user)).fetchone()
+        followed = db.execute("SELECT 1 FROM follows WHERE follower=? AND followed=?", (user, peer)).fetchone()
+        permission = preferences.get("messagePermission", "following")
+        if not prior and permission != "everyone" and (permission == "nobody" or not followed):
+            raise APIError(403, "Користувач не приймає нову розмову.")
+
     def route(self, user, method, path, query, body):
         parts = path.strip("/").split("/")
         with self.connect() as db:
@@ -317,6 +347,7 @@ class SocialService:
                     conversation = db.execute(f"SELECT 1 FROM messages WHERE {condition} LIMIT 1", pair).fetchone()
                     if not followed and not conversation:
                         raise APIError(403, "Підпишись на користувача, щоб почати чат.")
+                    self.assert_message_allowed(db, user, peer)
                     created = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
                     db.execute("INSERT INTO messages(id,sender,recipient,text,created) VALUES (?,?,?,?,?)", (message_id, user, peer, text, created))
                     return {"id": message_id, "senderID": user, "recipientID": peer, "text": text, "createdAt": created}

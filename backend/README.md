@@ -60,7 +60,13 @@ adapter so the existing local UI, drafts, and extended metadata remain available
 
 ## Verification status
 
-The backend has a syntax compilation check. It has not been deployed, load-tested,
-or exercised with a real Apple/Google session. The 70-item implementation register
+The backend passes syntax compilation and 11 isolated HTTP integration checks:
+identity rejection, literal username search, chat follow gating/idempotency,
+participant isolation, owner spoofing, private resource redaction, original asset
+bytes and permissions, comment moderation ownership, post-ID collisions, message
+blocking, and deletion visibility. Run them with `python -m unittest discover -s
+backend -p test_social_server.py -v` from the repository root. Tests create only
+temporary databases and loopback HTTP servers. The backend has not been deployed,
+load-tested, or exercised with a real Apple/Google session. The 70-item implementation register
 is [here](../ios/ROADMAP-0.5.0.md). A successful IPA build is a compilation result,
 not a claim that every interaction was exercised on an iPhone.
