@@ -15,6 +15,8 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
     private var atmosphere = false
     private var dashboard: [ProfileDashboardRow] = []
     private let ambientBackground = GradientView()
+    private var paletteColor = UIColor.black
+    var sectionControlVerticalOffset: CGFloat { sectionIsland.controlVerticalOffset }
     var sectionInsets = NSDirectionalEdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16) { didSet { updateSectionPosition() } }
     var sectionPinTop: CGFloat? { didSet { updateSectionPosition() } }
     var usesToolbarDock = false
@@ -65,7 +67,7 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
             group.interItemSpacing = .fixed(2)
         }
         let section = NSCollectionLayoutSection(group: group)
-        section.interGroupSpacing = modern ? (dashboard ? 0 : 8) : 2
+        section.interGroupSpacing = modern ? 8 : 2
         if modern && sectionIndex == 1 {
             section.contentInsets = .init(top: 12, leading: 16, bottom: 24, trailing: 16)
         }
@@ -180,9 +182,11 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
 
     private func setAmbientColor(_ color: UIColor) {
         guard atmosphere else { return }
+        paletteColor = color
         view.backgroundColor = color
         CATransaction.begin(); CATransaction.setDisableActions(true)
         ambientBackground.gradient.colors = [color.cgColor, color.cgColor]
+        for case let cell as ProfileDashboardCell in grid.visibleCells { cell.applyBackground(color) }
         CATransaction.commit()
     }
 
@@ -382,7 +386,7 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
     func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
         if atmosphere && selectedSection == .overview {
             let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "dashboard", for: indexPath) as! ProfileDashboardCell
-            cell.show(dashboard[indexPath.item], first: indexPath.item == 0, last: indexPath.item == dashboard.count - 1); return cell
+            cell.show(dashboard[indexPath.item], background: paletteColor); return cell
         }
         let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "clip", for: indexPath) as! ClipThumbnailCell
         cell.layer.cornerRadius = atmosphere ? 18 : 0; cell.layer.cornerCurve = .continuous

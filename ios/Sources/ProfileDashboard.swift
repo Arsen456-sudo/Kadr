@@ -74,14 +74,24 @@ final class ProfileDashboardCell: UICollectionViewCell {
         isAccessibilityElement = true; accessibilityTraits = .button
     }
     required init?(coder: NSCoder) { fatalError("Use init(frame:)") }
-    func show(_ row: ProfileDashboardRow, first: Bool, last: Bool) {
+    func show(_ row: ProfileDashboardRow, background: UIColor) {
         title.text = row.title; detail.text = row.detail; icon.image = AppSymbol.image(row.symbol)
         value.text = row.value; value.isHidden = row.value == nil; arrow.isHidden = false
-        var corners: CACornerMask = []
-        if first { corners.formUnion([.layerMinXMinYCorner, .layerMaxXMinYCorner]) }
-        if last { corners.formUnion([.layerMinXMaxYCorner, .layerMaxXMaxYCorner]) }
-        material.layer.maskedCorners = corners; material.layer.cornerRadius = 22
-        separator.isHidden = last
+        material.layer.maskedCorners = [.layerMinXMinYCorner, .layerMaxXMinYCorner, .layerMinXMaxYCorner, .layerMaxXMaxYCorner]
+        material.layer.cornerRadius = 20
+        separator.isHidden = true
+        applyBackground(background)
         accessibilityLabel = row.title + (row.value.map { ", " + $0 } ?? "") + ", " + row.detail
+    }
+
+    func applyBackground(_ color: UIColor) {
+        var red: CGFloat = 0, green: CGFloat = 0, blue: CGFloat = 0, alpha: CGFloat = 0
+        color.getRed(&red, green: &green, blue: &blue, alpha: &alpha)
+        let light = red * 0.2126 + green * 0.7152 + blue * 0.0722 > 0.55
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        material.backgroundColor = color
+        material.layer.borderWidth = 0.75
+        material.layer.borderColor = (light ? UIColor.black.withAlphaComponent(0.16) : UIColor.white.withAlphaComponent(0.12)).cgColor
+        CATransaction.commit()
     }
 }

@@ -201,7 +201,8 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
                 }
             }
             let barFrame = profile.view.convert(header.bounds, from: header)
-            let top = toolbarState.usesPortrait ? barFrame.midY - 22 : (profile.usesToolbarDock ? (glassFrame?.midY ?? barFrame.midY) - 22 : bottom + 2)
+            let buttonCenter = glassFrame?.midY ?? barFrame.midY
+            let top = toolbarState.usesPortrait ? buttonCenter - 22 - profile.sectionControlVerticalOffset : (profile.usesToolbarDock ? buttonCenter - 22 : bottom + 2)
             if profile.sectionPinTop != top { profile.sectionPinTop = top }
         }
     }

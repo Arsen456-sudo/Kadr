@@ -131,6 +131,12 @@ class GlassSectionPicker: UIView {
 
     override var intrinsicContentSize: CGSize { CGSize(width: 184, height: 44) }
 
+    var controlVerticalOffset: CGFloat {
+        layoutIfNeeded()
+        guard control.bounds.height > 0 else { return 0 }
+        return control.convert(control.bounds, to: self).midY - bounds.midY
+    }
+
     init(titles: [String], symbols: [String] = [], toolbarHosted: Bool = false) {
         self.titles = titles
         super.init(frame: .zero)
