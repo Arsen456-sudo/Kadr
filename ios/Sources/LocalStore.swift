@@ -2,8 +2,8 @@ import Foundation
 
 struct Profile: Codable, Identifiable {
     let id: UUID
-    let handle: String
-    let name: String
+    var handle: String
+    var name: String
     let bio: String
     var avatar: Data?
     var bannerFile: String? = nil
@@ -223,12 +223,12 @@ final class LocalStore {
         return handle
     }
 
-    func validate(handle: String) -> String? {
+    func validate(handle: String, excluding profileID: UUID? = nil) -> String? {
         let handle = normalized(handle)
         guard handle.range(of: #"^[a-z0-9_]{3,24}$"#, options: .regularExpression) != nil else {
             return "Нікнейм має містити 3–24 латинські літери, цифри або _."
         }
-        guard !state.profiles.contains(where: { $0.handle == handle }) else {
+        guard !state.profiles.contains(where: { $0.id != profileID && $0.handle == handle }) else {
             return "Цей @нікнейм уже зайнято. Зміни хоча б один символ."
         }
         return nil
@@ -244,6 +244,23 @@ final class LocalStore {
         next.profiles.append(profile)
         next.activeID = profile.id
         return save(next) ? nil : "Не вдалося зберегти профіль."
+    }
+
+    func updateIdentity(name: String? = nil, handle: String? = nil) -> String? {
+        guard let id = state.activeID, let index = state.profiles.firstIndex(where: { $0.id == id }) else { return "Спочатку увійди в акаунт." }
+        var next = state
+        if let name {
+            let value = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !value.isEmpty, value.count <= 200 else { return "Імʼя має містити від 1 до 200 символів." }
+            next.profiles[index].name = value
+        }
+        if let handle {
+            if let error = validate(handle: handle, excluding: id) { return error }
+            next.profiles[index].handle = normalized(handle)
+        }
+        guard save(next) else { return "Не вдалося зберегти профіль." }
+        NotificationCenter.default.post(name: .kadrProfileDidChange, object: self, userInfo: ["profileID": id])
+        return nil
     }
 
     func select(_ id: UUID?) {

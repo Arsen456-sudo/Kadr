@@ -128,6 +128,7 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
         profile.onAccount = { [weak self] in self?.openAccount() }
         profile.onCompact = { [weak self] title in self?.toolbarState.compactTitle = title }
         profile.onChange = { [weak self] in self?.refresh() }
+        profile.onSignOut = { [weak self] in self?.signOut() }
         profile.usesToolbarDock = true
         profile.onDocked = { [weak self] docked in
             guard let self, self.toolbarState.profileDocked != docked else { return }
@@ -200,7 +201,7 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
                 }
             }
             let barFrame = profile.view.convert(header.bounds, from: header)
-            let top = profile.usesToolbarDock ? (glassFrame?.midY ?? barFrame.midY) - 22 : bottom + 2
+            let top = toolbarState.usesPortrait ? barFrame.midY - 22 : (profile.usesToolbarDock ? (glassFrame?.midY ?? barFrame.midY) - 22 : bottom + 2)
             if profile.sectionPinTop != top { profile.sectionPinTop = top }
         }
     }
@@ -315,7 +316,9 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
         let changed = nativeHeaderContext != context || nativeHeaderItem !== item
         if changed {
             nativeHeaderContext = context; nativeHeaderItem = item
-            if context.canSignOut {
+            if context.canSignOut && context.usesPortrait {
+                nativeTrailing = UIBarButtonItem(image: AppSymbol.image("pencil"), menu: profile.profileEditMenu())
+            } else if context.canSignOut {
                 let action = UIAction { [weak self] _ in self?.toolbarState.onSignOut?() }
                 nativeTrailing = context.usesPortrait
                     ? UIBarButtonItem(image: AppSymbol.image("rectangle.portrait.and.arrow.right"), primaryAction: action)
@@ -323,12 +326,15 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
             } else {
                 nativeTrailing = UIBarButtonItem(image: AppSymbol.image("magnifyingglass"), primaryAction: UIAction { [weak self] _ in self?.toolbarState.onSearch?() })
             }
-            nativeTrailing?.accessibilityLabel = context.canSignOut ? "Вийти" : "Пошук"
+            nativeTrailing?.accessibilityLabel = context.canSignOut ? (context.usesPortrait ? "Редагувати профіль" : "Вийти") : "Пошук"
             nativeTrailing?.accessibilityIdentifier = "header.action"
             if context.screen == .feed {
                 nativeLeading = UIBarButtonItem(image: AppSymbol.image("arrow.up.left.and.arrow.down.right"), primaryAction: UIAction { [weak self] _ in self?.toolbarState.onImmersive?() })
                 nativeLeading?.accessibilityLabel = "Безкінечний екран"
                 nativeLeading?.accessibilityIdentifier = "feed.immersive"
+            } else if context.canSignOut && context.usesPortrait {
+                nativeLeading = UIBarButtonItem(image: AppSymbol.image("qrcode"), primaryAction: UIAction { [weak self] _ in self?.profile.openQRCode() })
+                nativeLeading?.accessibilityLabel = "QR-код профілю"
             } else if context.canSignOut {
                 var actions = [
                     UIAction(title: "Студія та налаштування", image: AppSymbol.image("slider.horizontal.3")) { [weak self] _ in self?.toolbarState.onStudio?() },

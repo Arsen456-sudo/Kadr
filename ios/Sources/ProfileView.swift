@@ -92,6 +92,7 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
     var onClip: ((Clip) -> Void)?
     var onAccount: (() -> Void)?
     var onChange: (() -> Void)?
+    var onSignOut: (() -> Void)?
     var onCompact: ((String?) -> Void)?
     private var compact = false
     private var displayedAppearance: CreatorAppearance?
@@ -223,8 +224,11 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
         let dockX = (view.bounds.width - dockWidth) / 2 - (atmosphere ? 0 : 14)
         let fraction = usesToolbarDock ? min(1, max(0, (pin + 96 - naturalY) / 96)) : 0
         let progress = fraction * fraction * (3 - 2 * fraction)
-        let floatingFrame = CGRect(x: atmosphere ? dockX : leading + (dockX - leading) * progress, y: max(pin, naturalY),
-                                   width: atmosphere ? dockWidth : fullWidth + (dockWidth - fullWidth) * progress, height: 44)
+        // The native toolbar carrier has 8pt of internal space at either side.
+        let restingInset = AtmosphereProfile.actionOuterInset(width: view.bounds.width) - 8
+        let restingWidth = view.bounds.width - 2 * restingInset
+        let floatingFrame = CGRect(x: atmosphere ? restingInset : leading + (dockX - leading) * progress, y: max(pin, naturalY),
+                                   width: atmosphere ? restingWidth : fullWidth + (dockWidth - fullWidth) * progress, height: 44)
         if atmosphere {
             installIslandOverlay()
             let parent: UIView = islandOverlay ?? view
@@ -232,8 +236,8 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
             var frame = parent.convert(floatingFrame, from: view)
             if let host = sectionToolbarHost, host.window != nil, parent !== view {
                 let dock = parent.convert(host.bounds, from: host)
-                frame.origin.x = dock.minX; frame.size.width = dock.width
-                frame.origin.y = max(frame.minY, dock.minY)
+                frame.origin.x += (dock.minX - frame.minX) * progress
+                frame.size.width += (dock.width - frame.width) * progress
             }
             if sectionIsland.frame != frame { sectionIsland.frame = frame }
             sectionIsland.isHidden = false
@@ -504,6 +508,43 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
         }
     }
 
+    func openQRCode() {
+        guard let profile = visibleProfile ?? store.active else { return }
+        showChild(ProfileQRController(profile: profile))
+    }
+
+    func profileEditMenu() -> UIMenu {
+        UIMenu(children: [
+            UIAction(title: "Змінити фото", image: AppSymbol.image("photo")) { [weak self] _ in self?.chooseBanner() },
+            UIAction(title: "Редагувати імʼя", image: AppSymbol.image("person")) { [weak self] _ in self?.editIdentity(handle: false) },
+            UIAction(title: "Редагувати імʼя користувача", image: AppSymbol.image("at")) { [weak self] _ in self?.editIdentity(handle: true) }
+        ])
+    }
+
+    private func editIdentity(handle: Bool) {
+        guard let profile = store.active, !preview, profileID == nil || profileID == profile.id else { return }
+        let alert = UIAlertController(title: handle ? "Імʼя користувача" : "Імʼя", message: handle ? "Унікальний @нікнейм: 3–24 латинські літери, цифри або _." : nil, preferredStyle: .alert)
+        alert.addTextField { field in
+            field.autocapitalizationType = handle ? .none : .words
+            field.autocorrectionType = handle ? .no : .default
+            field.text = handle ? "@" + profile.handle : profile.name
+        }
+        alert.addAction(UIAlertAction(title: "Скасувати", style: .cancel))
+        alert.addAction(UIAlertAction(title: "Зберегти", style: .default) { [weak self, weak alert] _ in
+            guard let self, self.store.active?.id == profile.id, let value = alert?.textFields?.first?.text else { return }
+            let error = self.store.updateIdentity(name: handle ? nil : value, handle: handle ? value : nil)
+            if let error { self.showMessage(error) }
+            else { self.refresh(); self.onChange?() }
+        })
+        present(alert, animated: true)
+    }
+
+    func signOutFromProfile() {
+        guard !preview, visibleProfile?.id == store.active?.id else { return }
+        if let onSignOut { onSignOut() }
+        else { store.select(nil); refresh(); onChange?() }
+    }
+
     private func configureBannerMenu() {
         guard !preview else { return }
         if let profileID, store.active?.id != profileID {
@@ -514,6 +555,12 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
         }
         guard let profileID, store.active?.id == profileID else { return }
         let portrait = store.studio.appearance.theme == "atmosphere"
+        if portrait {
+            navigationItem.leftBarButtonItem = UIBarButtonItem(image: AppSymbol.image("qrcode"), primaryAction: UIAction { [weak self] _ in self?.openQRCode() })
+            navigationItem.rightBarButtonItem = UIBarButtonItem(image: AppSymbol.image("pencil"), menu: profileEditMenu())
+            navigationItem.leftItemsSupplementBackButton = true
+            return
+        }
         var actions = [UIAction(title: portrait ? "Вибрати фото профілю" : "Вибрати фото або відео", image: AppSymbol.image( "photo.on.rectangle")) { [weak self] _ in
             self?.chooseBanner()
         }]

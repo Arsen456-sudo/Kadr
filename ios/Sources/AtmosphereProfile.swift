@@ -1,6 +1,11 @@
 import UIKit
 
 enum AtmosphereProfile {
+    static func actionOuterInset(width: CGFloat) -> CGFloat {
+        // Three equal columns, 24pt row margins, 10pt gaps and 56pt buttons.
+        let column = max(56, (width - 48 - 20) / 3)
+        return 24 + (column - 56) / 2
+    }
     static func photoHeight(_ profile: Profile, width: CGFloat, top: CGFloat) -> CGFloat {
         return max(top + 260, min(520, width * 1.10))
     }
@@ -54,7 +59,6 @@ enum AtmosphereProfile {
         stack.addArrangedSubview(metricInset)
 
         let actions = UIStackView(); actions.distribution = .fillEqually; actions.alignment = .top; actions.spacing = 10
-        if own { actions.addArrangedSubview(action("Фото", symbol: "person.crop.rectangle", onTap: onPhoto)) }
         if let following {
             actions.addArrangedSubview(action(following ? "Стежу" : "Стежити", symbol: following ? "person.badge.checkmark" : "person.badge.plus", onTap: onFollow))
             if following { actions.addArrangedSubview(action("Написати", symbol: "bubble.left.fill", onTap: onMessage)) }
@@ -63,13 +67,17 @@ enum AtmosphereProfile {
         actions.addArrangedSubview(action("Поділитися", symbol: "square.and.arrow.up", onTap: onShare))
         let more = action("Ще", symbol: "ellipsis", onTap: nil)
         if let button = more.arrangedSubviews.first as? UIButton {
-            var items = [UIAction(title: "QR-код профілю", image: AppSymbol.image("qrcode")) { [weak button] _ in
+            let items: [UIAction]
+            if own {
+                items = [UIAction(title: "Вийти з акаунта", image: AppSymbol.image("rectangle.portrait.and.arrow.right"), attributes: .destructive) { [weak button] _ in
+                    (presenter(from: button) as? ProfileController)?.signOutFromProfile()
+                }]
+            } else {
+                items = [UIAction(title: "Про автора", image: AppSymbol.image("person.text.rectangle")) { [weak button] _ in
                 guard let parent = presenter(from: button) else { return }
-                let qr = ProfileQRController(profile: profile)
-                qr.navigationItem.leftBarButtonItem = UIBarButtonItem(systemItem: .close, primaryAction: UIAction { [weak qr] _ in qr?.dismiss(animated: true) })
-                parent.present(UINavigationController(rootViewController: qr), animated: true)
-            }, UIAction(title: "Поділитися профілем", image: AppSymbol.image("square.and.arrow.up")) { _ in onShare() }]
-            if own { items.insert(UIAction(title: "Змінити фото", image: AppSymbol.image("photo")) { _ in onPhoto() }, at: 0) }
+                parent.showMessage(profile.bio.isEmpty ? "@" + profile.handle : profile.bio)
+                }]
+            }
             button.menu = UIMenu(children: items); button.showsMenuAsPrimaryAction = true
         }
         actions.addArrangedSubview(more)
@@ -79,8 +87,8 @@ enum AtmosphereProfile {
 
         if !appearance.introduction.isEmpty {
             let text = makeLabel(.body, text: appearance.introduction)
-            let card = glassIsland(style: .clear, interactive: false)
-            text.pin(to: card.contentView, insets: .init(top: 18, leading: 20, bottom: 18, trailing: 20))
+            let card = UIView()
+            text.pin(to: card, insets: .init(top: 18, leading: 20, bottom: 18, trailing: 20))
             let inset = UIView(); card.pin(to: inset, insets: .init(top: 0, leading: 16, bottom: 0, trailing: 16))
             stack.addArrangedSubview(inset)
         }

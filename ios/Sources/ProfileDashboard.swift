@@ -28,7 +28,7 @@ struct ProfileDashboardRow {
 }
 
 final class ProfileDashboardCell: UICollectionViewCell {
-    private let material = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterialDark))
+    private let material = UIView()
     private let title = makeLabel(.headline)
     private let detail = makeLabel(.subheadline, color: .secondaryLabel)
     private let icon = UIImageView()
@@ -38,13 +38,16 @@ final class ProfileDashboardCell: UICollectionViewCell {
     override init(frame: CGRect) {
         super.init(frame: frame)
         backgroundColor = .clear; contentView.backgroundColor = .clear
+        backgroundConfiguration = UIBackgroundConfiguration.clear()
+        automaticallyUpdatesBackgroundConfiguration = false
+        selectedBackgroundView = UIView()
         material.layer.cornerCurve = .continuous; material.clipsToBounds = true
-        material.contentView.backgroundColor = UIColor.white.withAlphaComponent(0.035)
+        material.backgroundColor = .clear
         material.isUserInteractionEnabled = false
         material.pin(to: contentView)
         icon.contentMode = .scaleAspectFit; icon.tintColor = .label
         icon.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 19, weight: .medium)
-        let iconBackground = UIView(); iconBackground.backgroundColor = UIColor.white.withAlphaComponent(0.055)
+        let iconBackground = UIView(); iconBackground.backgroundColor = .clear
         iconBackground.layer.cornerRadius = 12
         iconBackground.widthAnchor.constraint(equalToConstant: 40).isActive = true
         iconBackground.heightAnchor.constraint(equalToConstant: 40).isActive = true
@@ -80,8 +83,5 @@ final class ProfileDashboardCell: UICollectionViewCell {
         material.layer.maskedCorners = corners; material.layer.cornerRadius = 22
         separator.isHidden = last
         accessibilityLabel = row.title + (row.value.map { ", " + $0 } ?? "") + ", " + row.detail
-    }
-    override var isHighlighted: Bool {
-        didSet { material.contentView.backgroundColor = UIColor.white.withAlphaComponent(isHighlighted ? 0.08 : 0.035) }
     }
 }
