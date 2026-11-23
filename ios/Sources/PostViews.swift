@@ -35,6 +35,7 @@ final class CommentsController: UIViewController, UITableViewDataSource, UITable
             UIAction(title: "Популярні") { [weak self] _ in self?.sort = "popular"; self?.refreshComments() },
             UIAction(title: "Від автора") { [weak self] _ in self?.sort = "author"; self?.refreshComments() }
         ]))
+        table.rowHeight = UITableView.automaticDimension; table.estimatedRowHeight = 80
         table.keyboardDismissMode = .interactive
         table.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(table)

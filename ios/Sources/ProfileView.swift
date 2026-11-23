@@ -52,10 +52,11 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
     var onChange: (() -> Void)?
     var onCompact: ((String?) -> Void)?
     private var compact = false
+    private var appearanceFingerprint: Data?
 
     init(store: LocalStore, profileID: UUID?, repository: (any SocialRepository)? = nil, preview: Bool = false) {
         self.preview = preview
-        self.repository = repository ?? LocalSocialRepository(store: store)
+        self.repository = repository ?? store.services.social
         self.store = store
         self.profileID = profileID
         super.init(nibName: nil, bundle: nil)
@@ -175,12 +176,16 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
         cachedHeroHeight = nil
         configureBannerMenu()
         let profile = profileID.flatMap { store.profile($0) } ?? (profileID == nil ? store.active : nil)
+        let appearance = profile.flatMap { store.state.studio?.accounts[$0.id.uuidString]?.appearance } ?? CreatorAppearance()
+        let fingerprint = try? JSONEncoder().encode(appearance)
+        let changedAppearance = fingerprint != appearanceFingerprint
+        appearanceFingerprint = fingerprint
         let resetScroll = visibleProfile?.id != profile?.id
         let changedBanner = visibleProfile?.bannerFile != profile?.bannerFile
         let changedAvatar = visibleProfile?.avatar != profile?.avatar
         visibleProfile = profile
-        if resetScroll || changedBanner {
-            backdrop.show(profile)
+        if resetScroll || changedBanner || changedAppearance {
+            backdrop.show(profile, start: appearance.bannerStart)
             backdrop.setPlaying(visible)
         }
         if resetScroll { selectedSection = .posts }
@@ -195,7 +200,7 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
             title = profileID == nil ? "Профіль" : "@\(profile.handle)"
             let newClips = posts(for: profile)
             let state: Bool? = store.active?.id != profile.id ? store.follows(profile) : nil
-            if resetScroll || changedBanner || changedAvatar || state != followState || clips != newClips {
+            if resetScroll || changedBanner || changedAvatar || changedAppearance || state != followState || clips != newClips {
                 clips = newClips
                 followState = state
                 cachedHeroHeight = nil
@@ -293,6 +298,12 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
             }
         }
         return view
+    }
+
+    func scrollToPublications() {
+        guard let profile = visibleProfile else { return }
+        let pin = sectionPinTop ?? view.safeAreaInsets.top + 46
+        grid.setContentOffset(CGPoint(x: 0, y: max(0, heroHeight(for: profile) - 50 - pin)), animated: !UIAccessibility.isReduceMotionEnabled)
     }
 
     private func showChild(_ child: UIViewController) {
@@ -522,7 +533,10 @@ private final class ProfileHero: UICollectionReusableView {
             var style = appearance.theme == "vivid" ? UIButton.Configuration.prominentGlass() : .glass()
             style.title = String([counts.0,counts.1,counts.2][index]); style.subtitle = text; style.baseForegroundColor = .label; style.baseBackgroundColor = accent(appearance.accent)
             let button = UIButton(configuration: style); button.heightAnchor.constraint(greaterThanOrEqualToConstant: 56).isActive = true
-            button.addAction(UIAction { _ in if index > 0 { onPeople(index == 1) } }, for: .primaryActionTriggered)
+            button.addAction(UIAction { [weak button] _ in
+                if index > 0 { onPeople(index == 1) }
+                else { (button?.nearestController as? ProfileController)?.scrollToPublications() }
+            }, for: .primaryActionTriggered)
             stats.addArrangedSubview(button)
         }
         let statInset = UIView(); stats.pin(to: statInset, insets: .init(top: 0, leading: 16, bottom: 0, trailing: 16)); stack.addArrangedSubview(statInset)
@@ -565,6 +579,8 @@ private final class ProfileBackdrop: UIView {
     private var isVideo = false
     private var scrollOffset: CGFloat = 0
     private var mediaHeight: CGFloat = 260
+    private var artworkTask: Task<Void, Never>?
+    private var artworkRevision = UUID()
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -598,12 +614,20 @@ private final class ProfileBackdrop: UIView {
         shade.frame = CGRect(x: 0, y: -max(0, scrollOffset), width: bounds.width, height: height)
     }
 
-    func show(_ profile: Profile?) {
+    func show(_ profile: Profile?, start: Double = 0) {
+        artworkTask?.cancel(); artworkRevision = UUID(); let revision = artworkRevision
         let url = profile?.bannerURL
         isVideo = url.flatMap { UTType(filenameExtension: $0.pathExtension) }?.conforms(to: .movie) == true
-        artwork.image = isVideo ? nil : url.flatMap { UIImage(contentsOfFile: $0.path) }
+        artwork.image = nil
+        if !isVideo, let url {
+            artworkTask = Task { [weak self] in
+                let image = await PhotoLoader.image(url, maxPixel: 1920)
+                guard !Task.isCancelled, self?.artworkRevision == revision else { return }; self?.artwork.image = image
+            }
+        }
         video.isHidden = !isVideo
         video.load(isVideo ? url : nil)
+        if isVideo { video.seek(to: max(0, start)) }
     }
 
     func setPlaying(_ playing: Bool) { video.setPlaying(playing && isVideo, muted: true) }
@@ -650,7 +674,7 @@ private final class ClipThumbnailCell: UICollectionViewCell {
     func show(_ clip: Clip) {
         task?.cancel()
         representedID = clip.id
-        accessibilityLabel = clip.caption
+        accessibilityLabel = (clip.isPhoto ? "Фото. " : "Відео. ") + (clip.caption.isEmpty ? "Публікація" : clip.caption)
         image.image = nil
         play.image = AppSymbol.image( clip.isPhoto ? "square.on.square" : "play.fill")
         guard let url = clip.coverURL else { return }

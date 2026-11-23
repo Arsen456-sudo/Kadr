@@ -152,6 +152,7 @@ final class ChatController: UIViewController, UITableViewDataSource, UITableView
                 if account.pinnedChats.remove(self.peer.id) == nil { account.pinnedChats.insert(self.peer.id) }
             }
         })
+        table.rowHeight = UITableView.automaticDimension; table.estimatedRowHeight = 88
         table.separatorStyle = .none
         table.keyboardDismissMode = .interactive
         table.allowsSelection = true
@@ -247,6 +248,7 @@ final class ChatController: UIViewController, UITableViewDataSource, UITableView
             do {
                 _ = try await self.repository.send(text: text, to: self.peer.id, id: id)
                 try self.store.attachMessage(id, source: source, kind: kind, reply: reply, postID: post)
+                try await self.store.flush()
                 self.attachment = nil; self.attachmentKind = nil; self.sharedPost = nil; self.replyTo = nil
                 self.field.placeholder = "Повідомлення"
                 self.field.text = ""

@@ -1,7 +1,9 @@
 import UIKit
 import AVFoundation
+import ImageIO
 
 final class EditorToolsController: ActionListController {
+    private var collageTask: Task<Void, Never>?
     var extras: PostExtras
     private let media: [(URL, MediaKind)]
     var onChange: ((PostExtras) -> Void)?
@@ -51,29 +53,44 @@ final class EditorToolsController: ActionListController {
     private func changed() { onChange?(extras); reload() }
     private func collage(_ template: String) {
         guard media.count >= 2 else { showMessage("Для колажу потрібно щонайменше два фото."); return }
-        Task { [weak self] in
+        guard collageTask == nil else { return }
+        let urls = media.map { $0.0 }, gap = extras.collageGap ?? 3
+        tableView.isUserInteractionEnabled = false
+        collageTask = Task { [weak self] in
             guard let self else { return }
-            var images: [UIImage] = []
-            for item in self.media { if let image = await PhotoLoader.image(item.0, maxPixel: 1600) { images.append(image) } }
-            guard images.count == self.media.count else { self.showMessage("Не вдалося відкрити всі фотографії."); return }
-            let columns = template == "Вертикальна стрічка" ? 1 : template == "Мозаїка" ? 3 : 2
-            let rows = Int(ceil(Double(images.count) / Double(columns)))
-            let side: CGFloat = 512
-            let size = CGSize(width: side * CGFloat(columns), height: side * CGFloat(rows))
-            let format = UIGraphicsImageRendererFormat(); format.scale = 1; format.opaque = true
-            let gap = CGFloat(self.extras.collageGap ?? 3)
-            let result = UIGraphicsImageRenderer(size: size, format: format).image { context in
-                UIColor.black.setFill(); context.fill(CGRect(origin: .zero, size: size))
-                for (index, image) in images.enumerated() {
-                    let rect = CGRect(x: CGFloat(index % columns) * side + gap, y: CGFloat(index / columns) * side + gap, width: side - 2 * gap, height: side - 2 * gap)
-                    let ratio = min(rect.width / image.size.width, rect.height / image.size.height)
-                    let fit = CGSize(width: image.size.width * ratio, height: image.size.height * ratio)
-                    image.draw(in: CGRect(x: rect.midX - fit.width / 2, y: rect.midY - fit.height / 2, width: fit.width, height: fit.height))
-                }
-            }
-            let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension("jpg")
-            do { try result.jpegData(compressionQuality: 1)?.write(to: url); self.onCollage?(url); self.navigationController?.popViewController(animated: true) }
-            catch { self.showMessage(error.localizedDescription) }
+            defer { self.collageTask = nil; self.tableView.isUserInteractionEnabled = true }
+            do {
+                let url = try await Task.detached(priority: .userInitiated) { () throws -> URL in
+                    let columns = template == "Вертикальна стрічка" ? 1 : template == "Мозаїка" ? 3 : 2
+                    let rows = Int(ceil(Double(urls.count) / Double(columns)))
+                    let side = min(512, max(1, 4096 / max(columns, rows)))
+                    let width = columns * side, height = rows * side
+                    guard let context = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+                                                  space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { throw CocoaError(.fileWriteOutOfSpace) }
+                    context.setFillColor(CGColor(gray: 0, alpha: 1)); context.fill(CGRect(x: 0, y: 0, width: CGFloat(width), height: CGFloat(height))); context.interpolationQuality = .high
+                    for (index, url) in urls.enumerated() {
+                        try Task.checkCancellation()
+                        try autoreleasepool {
+                            guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+                                  let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [kCGImageSourceCreateThumbnailFromImageAlways: true,
+                                      kCGImageSourceCreateThumbnailWithTransform: true, kCGImageSourceThumbnailMaxPixelSize: side] as CFDictionary) else { throw CocoaError(.fileReadCorruptFile) }
+                            let inset = CGFloat(gap) * CGFloat(side) / 512
+                            let rect = CGRect(x: CGFloat(index % columns * side) + inset, y: CGFloat((rows - 1 - index / columns) * side) + inset,
+                                              width: CGFloat(side) - 2 * inset, height: CGFloat(side) - 2 * inset)
+                            let scale = min(rect.width / CGFloat(image.width), rect.height / CGFloat(image.height))
+                            let size = CGSize(width: CGFloat(image.width) * scale, height: CGFloat(image.height) * scale)
+                            context.draw(image, in: CGRect(x: rect.midX - size.width / 2, y: rect.midY - size.height / 2, width: size.width, height: size.height))
+                        }
+                    }
+                    let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension("jpg")
+                    guard let image = context.makeImage(), let destination = CGImageDestinationCreateWithURL(url as CFURL, "public.jpeg" as CFString, 1, nil) else { throw CocoaError(.fileWriteUnknown) }
+                    CGImageDestinationAddImage(destination, image, [kCGImageDestinationLossyCompressionQuality: 1] as CFDictionary)
+                    guard CGImageDestinationFinalize(destination) else { throw CocoaError(.fileWriteUnknown) }
+                    return url
+                }.value
+                guard !Task.isCancelled else { try? FileManager.default.removeItem(at: url); return }
+                self.onCollage?(url); self.navigationController?.popViewController(animated: true)
+            } catch { if !Task.isCancelled { self.showMessage(error.localizedDescription) } }
         }
     }
 }

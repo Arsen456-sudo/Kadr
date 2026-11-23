@@ -122,6 +122,7 @@ private final class PhotoPage: UIViewController, UIScrollViewDelegate {
         scroll.maximumZoomScale = 4
         scroll.contentInsetAdjustmentBehavior = .never
         image.contentMode = .scaleAspectFit
+        image.isAccessibilityElement = true; image.accessibilityLabel = "Фотографія \(index + 1)" + (captionText.isEmpty ? "" : ". " + captionText)
         scroll.addSubview(image)
         if !captionText.isEmpty {
             let text = makeLabel(.body, text: captionText)

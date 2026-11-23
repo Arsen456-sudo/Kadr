@@ -1,17 +1,24 @@
 import Foundation
 
 @MainActor
-final class AppServices {
-    let social: any SocialRepository
-    let sync: FeatureSyncEngine?
-    // Supply a verified server identity and refreshable access-token provider when
-    // enabling networking. Leaving the arguments unset is a fully offline app.
+final class AppServices: SocialRepository {
+    private let store: LocalStore
+    private var backend: any SocialRepository
+    private(set) var sync: FeatureSyncEngine?
+    var social: any SocialRepository { self }
     init(store: LocalStore, serverURL: URL? = nil, token: (@Sendable () async throws -> String)? = nil) {
-        if let serverURL, let token {
-            let engine = FeatureSyncEngine(store: store, transport: HTTPFeatureTransport(baseURL: serverURL, token: token))
-            sync = engine; social = SyncedSocialRepository(store: store, engine: engine)
-        } else { sync = nil; social = LocalSocialRepository(store: store) }
+        self.store = store; backend = LocalSocialRepository(store: store)
+        if let serverURL, let token { configure(serverURL: serverURL, token: token) }
     }
+    func configure(serverURL: URL, token: @escaping @Sendable () async throws -> String) {
+        let engine = FeatureSyncEngine(store: store, transport: HTTPFeatureTransport(baseURL: serverURL, token: token))
+        sync = engine; backend = SyncedSocialRepository(store: store, engine: engine)
+    }
+    func search(handle: String) async throws -> [Profile] { try await backend.search(handle: handle) }
+    func setFollowing(_ following: Bool, profileID: UUID) async throws { try await backend.setFollowing(following, profileID: profileID) }
+    func conversations() async throws -> [ConversationSummary] { try await backend.conversations() }
+    func messages(with profileID: UUID) async throws -> [ChatMessage] { try await backend.messages(with: profileID) }
+    func send(text: String, to profileID: UUID, id: UUID) async throws -> ChatMessage { try await backend.send(text: text, to: profileID, id: id) }
 }
 
 @MainActor

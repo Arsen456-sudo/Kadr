@@ -89,6 +89,11 @@ final class LocalStore {
 
     static let directory = URL.applicationSupportDirectory.appending(path: "Kadr", directoryHint: .isDirectory)
     private static let stateFile = directory.appending(path: "state.json")
+    private weak var serviceCache: AppServices?
+    @MainActor var services: AppServices {
+        if let serviceCache { return serviceCache }
+        let services = AppServices(store: self); serviceCache = services; return services
+    }
     private(set) var state: State
     private let writer = StateWriter(url: LocalStore.stateFile)
 

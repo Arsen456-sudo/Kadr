@@ -23,6 +23,14 @@ class ActionListController: UITableViewController {
         reload()
     }
     func reload() { if let reloadRows { rows = reloadRows() }; tableView.reloadData() }
+    override func didMove(toParent parent: UIViewController?) {
+        super.didMove(toParent: parent)
+        if parent == nil { rows = []; reloadRows = nil }
+    }
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        if isBeingDismissed || navigationController?.isBeingDismissed == true { rows = []; reloadRows = nil }
+    }
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { rows.count }
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let row = rows[indexPath.row]
@@ -158,7 +166,7 @@ final class StudioController: ActionListController {
         page?.options("Публікація", values: ["Переглянути", "До колекції", "Приватна нотатка", "Редагувати"]) { [weak self, weak page] value in
             guard let self, let page else { return }
             switch value {
-            case "Переглянути": page.push(ClipPreviewController(clip: clip))
+            case "Переглянути": page.push(ClipPreviewController(clip: clip, store: self.store))
             case "До колекції": self.chooseCollection(clip, from: page)
             case "Приватна нотатка": page.prompt("Нотатка", value: self.store.studio.notes[clip.id] ?? "") { value in self.store.changeStudio { $0.notes[clip.id] = value } }
             default:

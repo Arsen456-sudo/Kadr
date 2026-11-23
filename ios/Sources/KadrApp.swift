@@ -62,7 +62,7 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
     private weak var observedScroll: UIScrollView?
     private var observedImmersive = false
     private let addTab = UIViewController()
-    private lazy var services = AppServices(store: store)
+    private lazy var services = store.services
     private var social: any SocialRepository { services.social }
     private lazy var inbox = InboxController(store: store, repository: social)
     private var keepsFeedPlaying = false
@@ -398,7 +398,7 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
     }
 
     private func openClip(_ clip: Clip, from presenter: UIViewController? = nil) {
-        let player = ClipPreviewController(clip: clip)
+        let player = ClipPreviewController(clip: clip, store: store)
         if let presenter {
             player.navigationItem.leftBarButtonItem = UIBarButtonItem(systemItem: .close, primaryAction: UIAction { [weak player] _ in
                 player?.dismiss(animated: true)
