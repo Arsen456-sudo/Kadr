@@ -49,7 +49,7 @@ final class FeedController: UIViewController, UICollectionViewDataSource, UIColl
         min(view.bounds.width * 1.25, max(140, view.bounds.height - view.safeAreaInsets.top - view.safeAreaInsets.bottom - 180))
     }
     private var itemSize: CGSize {
-        CGSize(width: pager.bounds.width, height: overview ? overviewMediaHeight + 124 : pager.bounds.height)
+        CGSize(width: pager.bounds.width, height: overview ? overviewMediaHeight + OverviewMetrics.author + OverviewMetrics.actions + OverviewMetrics.caption : pager.bounds.height)
     }
     var onDescription: ((Clip) -> Void)?
 
@@ -115,6 +115,7 @@ final class FeedController: UIViewController, UICollectionViewDataSource, UIColl
         pager.register(FeedMediaCell.self, forCellWithReuseIdentifier: "page")
         pager.register(OverviewPostCell.self, forCellWithReuseIdentifier: "overview")
         pager.pin(to: view)
+        NotificationCenter.default.addObserver(self, selector: #selector(contentSizeChanged), name: UIContentSizeCategory.didChangeNotification, object: nil)
         empty.pin(to: view)
         author.numberOfLines = 1
         captionStack.axis = .vertical
@@ -206,6 +207,10 @@ final class FeedController: UIViewController, UICollectionViewDataSource, UIColl
             captionStack.bottomAnchor.constraint(equalTo: safe.bottomAnchor, constant: -14)
         ])
         refresh()
+    }
+
+    @objc private func contentSizeChanged() {
+        pagingLayout.invalidateLayout(); pager.reloadData()
     }
 
     override func viewDidLayoutSubviews() {
@@ -440,7 +445,7 @@ final class FeedController: UIViewController, UICollectionViewDataSource, UIColl
                         sizeForItemAt indexPath: IndexPath) -> CGSize {
         guard overview, clips.indices.contains(indexPath.item) else { return pager.bounds.size }
         let hasDescription = !clips[indexPath.item].caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        return CGSize(width: collectionView.bounds.width, height: overviewMediaHeight + 92 + (hasDescription ? 32 : 0))
+        return CGSize(width: collectionView.bounds.width, height: overviewMediaHeight + OverviewMetrics.author + OverviewMetrics.actions + (hasDescription ? OverviewMetrics.caption : 0))
     }
 
     private func releaseMedia(in cell: FeedMediaCell) {

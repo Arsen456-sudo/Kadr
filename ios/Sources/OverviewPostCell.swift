@@ -1,5 +1,11 @@
 import UIKit
 
+enum OverviewMetrics {
+    static var author: CGFloat { max(48, UIFont.preferredFont(forTextStyle: .body).lineHeight + 20) }
+    static var actions: CGFloat { max(44, UIFont.preferredFont(forTextStyle: .body).lineHeight + 16) }
+    static var caption: CGFloat { max(32, UIFont.preferredFont(forTextStyle: .subheadline).lineHeight + 10) }
+}
+
 final class OverviewPostCell: FeedMediaCell {
     let mediaContainer = UIView()
     override var mediaHost: UIView { mediaContainer }
@@ -18,6 +24,8 @@ final class OverviewPostCell: FeedMediaCell {
     var onSound: (() -> Void)?
     var onDescription: (() -> Void)?
     private var mediaHeight: NSLayoutConstraint!
+    private var authorHeight: NSLayoutConstraint!
+    private var actionsHeight: NSLayoutConstraint!
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -31,8 +39,8 @@ final class OverviewPostCell: FeedMediaCell {
         stack.pin(to: contentView)
         mediaHeight = mediaContainer.heightAnchor.constraint(equalToConstant: 300)
         mediaHeight.isActive = true
-        author.heightAnchor.constraint(equalToConstant: 48).isActive = true
-        actions.heightAnchor.constraint(equalToConstant: 44).isActive = true
+        authorHeight = author.heightAnchor.constraint(equalToConstant: OverviewMetrics.author); authorHeight.isActive = true
+        actionsHeight = actions.heightAnchor.constraint(equalToConstant: OverviewMetrics.actions); actionsHeight.isActive = true
         descriptionHeight = descriptionRow.heightAnchor.constraint(equalToConstant: 32)
         descriptionHeight.isActive = true
         author.contentHorizontalAlignment = .leading
@@ -47,6 +55,7 @@ final class OverviewPostCell: FeedMediaCell {
 
     func show(_ clip: Clip, store: LocalStore, mediaHeight height: CGFloat, muted: Bool) {
         mediaHeight.constant = height
+        authorHeight.constant = OverviewMetrics.author; actionsHeight.constant = OverviewMetrics.actions
         var heading = author.configuration!
         heading.title = store.profile(clip.authorID).map { "@\($0.handle)" } ?? clip.credit
         let profile = store.profile(clip.authorID)
@@ -77,7 +86,7 @@ final class OverviewPostCell: FeedMediaCell {
         sound.configuration?.image = AppSymbol.image( muted ? "speaker.slash" : "speaker.wave.2")
         sound.accessibilityLabel = muted ? "Увімкнути звук" : "Вимкнути звук"
         let hasDescription = !clip.caption.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-        descriptionHeight.constant = hasDescription ? 32 : 0
+        descriptionHeight.constant = hasDescription ? OverviewMetrics.caption : 0
         descriptionRow.show(clip.caption)
     }
 }

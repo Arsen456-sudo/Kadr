@@ -68,12 +68,15 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
     private var keepsFeedPlaying = false
     private weak var selectedScreen: UIViewController?
     private var welcomePresented = false
-    var sceneActive = false { didSet { updatePlayback() } }
+    private var syncTask: Task<Void, Never>?
+    private var syncRequested = false
+    var sceneActive = false { didSet { updatePlayback(); if sceneActive { synchronizeIfConfigured() } } }
 
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .black
         delegate = self
+        NotificationCenter.default.addObserver(self, selector: #selector(synchronizeIfConfigured), name: .kadrLocalDidChange, object: store)
         tabBar.tintColor = .kadrPeach
         feed.tabBarItem = UITabBarItem(title: "Стрічка", image: AppSymbol.image( "house"),
                                        selectedImage: AppSymbol.image( "house.fill"))
@@ -279,6 +282,25 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
         // re-laying out the complete UIKit controller tree inside a SwiftUI transaction.
         toolbarState.context = context
         view.setNeedsLayout()
+    }
+
+    @objc private func synchronizeIfConfigured() {
+        guard let engine = services.sync else { return }
+        syncRequested = true
+        guard syncTask == nil else { return }
+        syncRequested = false
+        syncTask = Task { [weak self] in
+            guard let self else { return }
+            defer {
+                self.syncTask = nil
+                if self.syncRequested { self.synchronizeIfConfigured() }
+            }
+            do {
+                try await Task.sleep(for: .milliseconds(600))
+                try await engine.synchronize()
+                self.refresh(animated: false)
+            } catch { /* The durable local state remains available while offline. */ }
+        }
     }
 
     private func updatePlayback() {

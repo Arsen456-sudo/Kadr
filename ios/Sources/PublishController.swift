@@ -111,8 +111,8 @@ final class PublishController: UITableViewController, PHPickerViewControllerDele
     }
     override func tableView(_ tableView: UITableView, heightForRowAt indexPath: IndexPath) -> CGFloat {
         if indexPath.section == 1 { return 92 }
-        if indexPath.section == 2 && indexPath.row == 0 { return 140 }
-        return 56
+        if indexPath.section == 2 && indexPath.row == 0 { return max(140, UIFont.preferredFont(forTextStyle: .body).lineHeight * 4 + 28) }
+        return max(56, UIFont.preferredFont(forTextStyle: .body).lineHeight + 24)
     }
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         if indexPath.section == 1 {

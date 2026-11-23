@@ -76,12 +76,18 @@ struct CommentPinResource: Codable { var postID: String; var commentID: UUID? }
 final class FeatureSyncEngine {
     private let store: LocalStore
     private let transport: any FeatureSyncTransport
-    private var syncing = false
+    private var activeSync: Task<Void, Error>?
     private var capturedRevision = 0
     init(store: LocalStore, transport: any FeatureSyncTransport) { self.store = store; self.transport = transport }
     func synchronize() async throws {
-        guard !syncing, let owner = store.active?.id else { return }
-        syncing = true; defer { syncing = false }
+        if let activeSync { try await activeSync.value; return }
+        let task = Task { try await self.performSync() }
+        activeSync = task
+        defer { activeSync = nil }
+        try await task.value
+    }
+    private func performSync() async throws {
+        guard let owner = store.active?.id else { return }
         try await store.flush()
         let snapshot = store.state
         capturedRevision = store.localRevision
@@ -114,7 +120,9 @@ final class FeatureSyncEngine {
             if page.cursor <= cursor { break }
             cursor = page.cursor
         }
+        store.isApplyingRemote = true
         store.updateState { state in state.studio?.outbox.removeAll { $0.owner == owner && $0.createdAt <= (snapshot.studio?.outbox.map(\.createdAt).max() ?? .distantPast) } }
+        store.isApplyingRemote = false
         try await store.flush()
     }
     nonisolated private static func records(_ state: LocalStore.State, owner: UUID) throws -> [ResourceRecord] {

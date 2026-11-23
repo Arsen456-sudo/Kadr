@@ -429,6 +429,7 @@ final class LocalStore {
             self?.errorMessage = "Не вдалося зберегти локальні дані. Звільни місце та спробуй ще раз."
         }
         writer.submit(next)
+        if !isApplyingRemote { NotificationCenter.default.post(name: .kadrLocalDidChange, object: self) }
         return true
     }
 
@@ -440,6 +441,7 @@ enum FeedSection: Equatable {
 
 
 extension Notification.Name {
+    static let kadrLocalDidChange = Notification.Name("Kadr.localDidChange")
     static let kadrMessagesDidChange = Notification.Name("Kadr.messagesDidChange")
     static let kadrProfileDidChange = Notification.Name("Kadr.profileDidChange")
 }

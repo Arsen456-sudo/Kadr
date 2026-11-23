@@ -75,6 +75,7 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
         grid.topEdgeEffect.style = .soft
         grid.topEdgeEffect.isHidden = false
         grid.accessibilityIdentifier = "profile.screen"
+        NotificationCenter.default.addObserver(self, selector: #selector(contentSizeChanged), name: UIContentSizeCategory.didChangeNotification, object: nil)
         grid.dataSource = self
         grid.delegate = self
         grid.register(ClipThumbnailCell.self, forCellWithReuseIdentifier: "clip")
@@ -85,6 +86,10 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
         sectionIsland.onSelection = { [weak self] section in self?.select(section) }
         view.addSubview(sectionIsland)
         refresh()
+    }
+
+    @objc private func contentSizeChanged() {
+        cachedHeroHeight = nil; layout.invalidateLayout(); view.setNeedsLayout()
     }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
@@ -173,16 +178,17 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
 
     func refresh() {
         guard isViewLoaded else { return }
-        cachedHeroHeight = nil
         configureBannerMenu()
         let profile = profileID.flatMap { store.profile($0) } ?? (profileID == nil ? store.active : nil)
         let appearance = profile.flatMap { store.state.studio?.accounts[$0.id.uuidString]?.appearance } ?? CreatorAppearance()
         let fingerprint = try? JSONEncoder().encode(appearance)
         let changedAppearance = fingerprint != appearanceFingerprint
         appearanceFingerprint = fingerprint
+        let changedText = visibleProfile?.name != profile?.name || visibleProfile?.bio != profile?.bio || visibleProfile?.handle != profile?.handle
         let resetScroll = visibleProfile?.id != profile?.id
         let changedBanner = visibleProfile?.bannerFile != profile?.bannerFile
         let changedAvatar = visibleProfile?.avatar != profile?.avatar
+        if resetScroll || changedAppearance || changedText || changedBanner || changedAvatar { cachedHeroHeight = nil }
         visibleProfile = profile
         if resetScroll || changedBanner || changedAppearance {
             backdrop.show(profile, start: appearance.bannerStart)
@@ -200,7 +206,7 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
             title = profileID == nil ? "Профіль" : "@\(profile.handle)"
             let newClips = posts(for: profile)
             let state: Bool? = store.active?.id != profile.id ? store.follows(profile) : nil
-            if resetScroll || changedBanner || changedAvatar || changedAppearance || state != followState || clips != newClips {
+            if resetScroll || changedBanner || changedAvatar || changedAppearance || changedText || state != followState || clips != newClips {
                 clips = newClips
                 followState = state
                 cachedHeroHeight = nil
