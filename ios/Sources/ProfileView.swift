@@ -14,6 +14,9 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
     private let sectionIsland = ProfileSectionPicker()
     var sectionInsets = NSDirectionalEdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16) { didSet { updateSectionPosition() } }
     var sectionPinTop: CGFloat? { didSet { updateSectionPosition() } }
+    var usesToolbarDock = false
+    var onDocked: ((Bool) -> Void)?
+    var onSectionChange: ((ProfileSection) -> Void)?
     private enum PhotoDestination { case banner, avatar, portrait }
     private var pickerDestination = PhotoDestination.banner
     private lazy var layout = UICollectionViewCompositionalLayout { [weak self] _, environment in
@@ -143,22 +146,33 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
     private func updateSectionPosition() {
         guard isViewLoaded, let profile = visibleProfile else {
             sectionIsland.isHidden = true
+            if compact {
+                compact = false
+                if usesToolbarDock { onDocked?(false) }
+                onCompact?(nil)
+            }
             return
         }
-        sectionIsland.isHidden = false
         let headerHeight = heroHeight(for: profile)
         let naturalY = headerHeight - 50 - grid.contentOffset.y
         let pin = sectionPinTop ?? (navigationController == nil ? view.safeAreaInsets.top + 46 : view.safeAreaInsets.top + 2)
         let nowCompact = naturalY <= pin
         if compact != nowCompact {
             compact = nowCompact
+            if usesToolbarDock { onDocked?(compact) }
             onCompact?(compact ? "@" + profile.handle : nil)
             if navigationController?.presentingViewController != nil { navigationItem.title = compact ? "@" + profile.handle : "Профіль" }
         }
         let leading = max(view.safeAreaInsets.left, sectionInsets.leading)
         let trailing = max(view.safeAreaInsets.right, sectionInsets.trailing)
-        sectionIsland.frame = CGRect(x: leading, y: max(pin, naturalY),
-                                     width: max(0, view.bounds.width - leading - trailing), height: 44)
+        let fullWidth = max(0, view.bounds.width - leading - trailing)
+        let dockWidth = min(216, max(132, view.bounds.width - 172))
+        let dockX = (view.bounds.width - dockWidth) / 2 - 14
+        let fraction = usesToolbarDock ? min(1, max(0, (pin + 96 - naturalY) / 96)) : 0
+        let progress = fraction * fraction * (3 - 2 * fraction)
+        sectionIsland.frame = CGRect(x: leading + (dockX - leading) * progress, y: max(pin, naturalY),
+                                     width: fullWidth + (dockWidth - fullWidth) * progress, height: 44)
+        sectionIsland.isHidden = usesToolbarDock && nowCompact
         if view.subviews.last !== sectionIsland { view.bringSubviewToFront(sectionIsland) }
     }
 
@@ -210,7 +224,7 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
             backdrop.show(profile, start: appearance.bannerStart, theme: appearance.theme)
             backdrop.setPlaying(visible)
         }
-        if resetScroll { selectedSection = .posts }
+        if resetScroll { selectedSection = .posts; onSectionChange?(.posts) }
         updateBackdropPosition()
         backdrop.isHidden = profile == nil
         sectionIsland.select(selectedSection)
@@ -283,9 +297,10 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
         }
     }
 
-    private func select(_ section: ProfileSection) {
+    func select(_ section: ProfileSection) {
         guard section != selectedSection, let profile = visibleProfile else { return }
         selectedSection = section
+        onSectionChange?(section)
         clips = posts(for: profile)
         sectionIsland.select(section)
         grid.reloadSections(IndexSet(integer: 0))
@@ -630,6 +645,8 @@ private extension UIView {
 
 private final class ProfileBackdrop: UIView {
     private let artwork = UIImageView()
+    private let blurredBackdrop = UIImageView()
+    private let blurMask = CAGradientLayer()
     private let video = VideoSurface(frame: .zero)
     private let shade = GradientView()
     private var isVideo = false
@@ -646,6 +663,11 @@ private final class ProfileBackdrop: UIView {
         artwork.clipsToBounds = true
         addSubview(artwork)
         addSubview(video)
+        blurredBackdrop.contentMode = .scaleAspectFill; blurredBackdrop.clipsToBounds = true
+        blurMask.colors = [UIColor.clear.cgColor, UIColor.clear.cgColor,
+                           UIColor.black.withAlphaComponent(0.25).cgColor, UIColor.black.cgColor, UIColor.black.cgColor]
+        blurMask.locations = [0, 0.56, 0.67, 0.80, 1]
+        blurredBackdrop.layer.mask = blurMask; addSubview(blurredBackdrop)
         let background = UIColor.systemBackground.resolvedColor(with: UITraitCollection(userInterfaceStyle: .dark))
         let alphas: [CGFloat] = [0, 0, 0.03, 0.10, 0.22, 0.38, 0.56, 0.73, 0.87, 0.96, 1]
         shade.gradient.colors = alphas.map { background.withAlphaComponent($0).cgColor }
@@ -667,7 +689,12 @@ private final class ProfileBackdrop: UIView {
         let height = mediaHeight + stretch
         artwork.frame = CGRect(x: 0, y: 0, width: bounds.width, height: height)
         video.frame = artwork.frame
-        shade.frame = CGRect(x: 0, y: -max(0, scrollOffset), width: bounds.width, height: height)
+        let backdropY = -max(0, scrollOffset)
+        blurredBackdrop.frame = artwork.frame
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        blurMask.frame = CGRect(x: 0, y: backdropY, width: bounds.width, height: height)
+        CATransaction.commit()
+        shade.frame = CGRect(x: 0, y: backdropY, width: bounds.width, height: height)
     }
 
     func show(_ profile: Profile?, start: Double = 0, theme: String = "minimal") {
@@ -676,10 +703,11 @@ private final class ProfileBackdrop: UIView {
         let url = portrait ? profile?.portraitFile.map { LocalStore.directory.appendingPathComponent($0) } : profile?.bannerURL
         isVideo = !portrait && url.flatMap { UTType(filenameExtension: $0.pathExtension) }?.conforms(to: .movie) == true
         artwork.image = nil
+        blurredBackdrop.image = nil; blurredBackdrop.isHidden = !portrait
         let background = UIColor.systemBackground.resolvedColor(with: UITraitCollection(userInterfaceStyle: .dark))
-        let alphas: [CGFloat] = portrait ? [0, 0, 0.08, 0.30, 0.70, 1] : [0, 0, 0.03, 0.10, 0.22, 0.38, 0.56, 0.73, 0.87, 0.96, 1]
+        let alphas: [CGFloat] = portrait ? [0, 0, 0.015, 0.06, 0.16, 0.32, 0.52, 0.72, 0.88, 0.97, 1] : [0, 0, 0.03, 0.10, 0.22, 0.38, 0.56, 0.73, 0.87, 0.96, 1]
         shade.gradient.colors = alphas.map { background.withAlphaComponent($0).cgColor }
-        shade.gradient.locations = portrait ? [0, 0.42, 0.58, 0.72, 0.90, 1] : [0, 0.33, 0.43, 0.51, 0.59, 0.67, 0.74, 0.81, 0.88, 0.94, 1]
+        shade.gradient.locations = portrait ? [0, 0.46, 0.54, 0.60, 0.66, 0.72, 0.78, 0.84, 0.90, 0.96, 1] : [0, 0.33, 0.43, 0.51, 0.59, 0.67, 0.74, 0.81, 0.88, 0.94, 1]
         if !isVideo {
             let fallback = portrait ? profile?.avatar : nil
             artworkTask = Task { [weak self] in
@@ -696,7 +724,7 @@ private final class ProfileBackdrop: UIView {
                 if portrait, let image {
                     ProfilePhotoRenderer.render(image) { [weak self] rendered in
                         guard let self, self.artworkRevision == revision else { return }
-                        if let rendered { self.artwork.image = rendered }
+                        if let rendered { self.blurredBackdrop.image = rendered }
                     }
                 }
             }

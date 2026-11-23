@@ -26,10 +26,6 @@ final class ProfileSectionPicker: GlassSectionPicker {
     var onSelection: ((ProfileSection) -> Void)?
     init() {
         super.init(titles: ProfileSection.allCases.map(\.title), symbols: ProfileSection.allCases.map(\.symbol))
-        let glass = glassIsland(style: .clear, interactive: false)
-        glass.isUserInteractionEnabled = false
-        glass.pin(to: self)
-        sendSubviewToBack(glass)
         matchSearchHeight(44)
         onIndexSelection = { [weak self] index in
             guard let section = ProfileSection(rawValue: index) else { return }

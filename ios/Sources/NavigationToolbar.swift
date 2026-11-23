@@ -32,6 +32,8 @@ final class KadrToolbarState: ObservableObject {
     @Published var feedSection = FeedSection.recommended
     @Published var overview = false
     @Published var compactTitle: String?
+    @Published var profileDocked = false
+    @Published var profileSection = ProfileSection.posts
     var onSection: ((FeedSection) -> Void)?
     var onOverview: (() -> Void)?
     var onStudio: (() -> Void)?
@@ -40,6 +42,7 @@ final class KadrToolbarState: ObservableObject {
     var onChooseBanner: (() -> Void)?
     var onRemoveBanner: (() -> Void)?
     var onImmersive: (() -> Void)?
+    var onProfileSection: ((ProfileSection) -> Void)?
 }
 
 struct KadrNavigationShell: View {
@@ -54,7 +57,7 @@ struct KadrNavigationShell: View {
                 .navigationTitle(state.screen == .profile ? (state.compactTitle ?? state.screen.title) : state.screen.title)
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    ToolbarItem(placement: .topBarTrailing) {
+                    ToolbarItem(id: "header.action", placement: .topBarTrailing) {
                         Button {
                             if state.canSignOut { state.onSignOut?() } else { state.onSearch?() }
                         } label: {
@@ -70,11 +73,17 @@ struct KadrNavigationShell: View {
                                 .frame(width: 236, height: 44)
                         }
                         .sharedBackgroundVisibility(.hidden)
-                        ToolbarItem(placement: .topBarLeading) {
-                            immersiveButton
+                    } else if state.screen == .profile && state.profileDocked {
+                        ToolbarItem(placement: .principal) {
+                            ProfilePickerContent(state: state)
+                                .frame(width: min(216, max(132, tabs.view.bounds.width - 172)), height: 44)
                         }
-                    } else if state.canSignOut {
-                        ToolbarItem(placement: .topBarLeading) {
+                        .sharedBackgroundVisibility(.hidden)
+                    }
+                    ToolbarItem(id: "header.leading", placement: .topBarLeading) {
+                        if state.screen == .feed {
+                            immersiveButton
+                        } else if state.canSignOut {
                             Menu {
                                 Button { state.onStudio?() } label: { Label("Студія та налаштування", systemImage: "slider.horizontal.3") }
                                 Button {
@@ -153,5 +162,17 @@ private struct FeedPickerContent: UIViewRepresentable {
     func updateUIView(_ view: FeedSectionPicker, context: Context) {
         view.matchSearchHeight(44)
         view.updateSelection(state.feedSection, overview: state.overview)
+    }
+}
+
+private struct ProfilePickerContent: UIViewRepresentable {
+    @ObservedObject var state: KadrToolbarState
+    func makeUIView(context: Context) -> ProfileSectionPicker {
+        let picker = ProfileSectionPicker()
+        picker.onSelection = { section in state.onProfileSection?(section) }
+        return picker
+    }
+    func updateUIView(_ view: ProfileSectionPicker, context: Context) {
+        view.select(state.profileSection)
     }
 }

@@ -124,6 +124,13 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
         profile.onAccount = { [weak self] in self?.openAccount() }
         profile.onCompact = { [weak self] title in self?.toolbarState.compactTitle = title }
         profile.onChange = { [weak self] in self?.refresh() }
+        profile.usesToolbarDock = true
+        profile.onDocked = { [weak self] docked in
+            guard let self, self.toolbarState.profileDocked != docked else { return }
+            self.toolbarState.profileDocked = docked
+        }
+        profile.onSectionChange = { [weak self] section in self?.toolbarState.profileSection = section }
+        toolbarState.onProfileSection = { [weak self] section in self?.profile.select(section) }
 
         toolbarState.onStudio = { [weak self] in
             guard let self else { return }; self.showSheet(StudioController(store: self.store))
@@ -184,7 +191,8 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
                     profile.sectionInsets = .init(top: 0, leading: leading, bottom: 0, trailing: trailing)
                 }
             }
-            let top = bottom + 2
+            let barFrame = profile.view.convert(header.bounds, from: header)
+            let top = profile.usesToolbarDock ? (glassFrame?.midY ?? barFrame.midY) - 22 : bottom + 2
             if profile.sectionPinTop != top { profile.sectionPinTop = top }
         }
     }
@@ -279,9 +287,11 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
                                                hasBanner: canSignOut && store.active?.bannerURL != nil,
                                                usesPortrait: canSignOut && store.studio.appearance.theme == "atmosphere")
         guard toolbarState.context != context else { return }
-        // Let the system bars animate their own content, without animating or
-        // re-laying out the complete UIKit controller tree inside a SwiftUI transaction.
-        toolbarState.context = context
+        // Only publish the toolbar context in the transaction. The UIKit content
+        // representable has a no-op update, so video and grid layout do not animate.
+        if animated && !UIAccessibility.isReduceMotionEnabled {
+            withAnimation(.smooth(duration: 0.28)) { toolbarState.context = context }
+        } else { toolbarState.context = context }
         view.setNeedsLayout()
     }
 

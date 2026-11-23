@@ -29,10 +29,16 @@ enum AtmosphereProfile {
         identity.pin(to: identityInset, insets: .init(top: 0, leading: 24, bottom: 0, trailing: 24))
         stack.addArrangedSubview(identityInset)
 
-        let metrics = UIStackView(); metrics.distribution = .fillEqually; metrics.spacing = 8
+        let metrics = UIStackView(); metrics.distribution = .fillEqually; metrics.spacing = 12
         for (index, title) in ["Публікації", "Підписники", "Підписки"].enumerated() {
-            var style = UIButton.Configuration.glass()
-            style.cornerStyle = .capsule; style.baseBackgroundColor = .clear
+            var style = UIButton.Configuration.plain()
+            style.titleAlignment = .center
+            style.titleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
+                var result = attributes; result.font = .preferredFont(forTextStyle: .title3).withTraits(.traitBold); return result
+            }
+            style.subtitleTextAttributesTransformer = UIConfigurationTextAttributesTransformer { attributes in
+                var result = attributes; result.font = .preferredFont(forTextStyle: .caption1); result.foregroundColor = UIColor.secondaryLabel; return result
+            }
             style.title = String([counts.0, counts.1, counts.2][index]); style.subtitle = title
             style.baseForegroundColor = .label
             let button = UIButton(configuration: style)
@@ -89,7 +95,7 @@ enum AtmosphereProfile {
 
     private static func action(_ title: String, symbol: String, onTap: (() -> Void)?) -> UIStackView {
         var style = UIButton.Configuration.glass()
-        style.cornerStyle = .capsule; style.baseForegroundColor = .label; style.baseBackgroundColor = .clear
+        style.cornerStyle = .capsule; style.baseForegroundColor = .label
         style.image = AppSymbol.image(symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 23, weight: .semibold))
         let button = UIButton(configuration: style)
         button.accessibilityLabel = title; button.isPointerInteractionEnabled = true
