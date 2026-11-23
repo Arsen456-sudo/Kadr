@@ -562,7 +562,6 @@ private final class VideoPage: UIViewController {
         video.pin(to: view)
         video.load(clip.url, adaptsLandscape: true, fitsAllMedia: fitsAllMedia, extras: clip.extras)
         if let watch = store.studio.watches[clip.id], !watch.completed { video.seek(to: watch.seconds) }
-        installTimeline()
         tapArea.accessibilityIdentifier = "video.playbackArea"
         tapArea.isAccessibilityElement = true
         tapArea.accessibilityTraits = .button
@@ -582,6 +581,8 @@ private final class VideoPage: UIViewController {
             playbackButton.centerXAnchor.constraint(equalTo: view.centerXAnchor),
             playbackButton.centerYAnchor.constraint(equalTo: view.centerYAnchor)
         ])
+        // Install after the full-surface tap button so it remains touchable.
+        installTimeline()
     }
 
     private func installTimeline() {

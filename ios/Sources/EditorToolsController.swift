@@ -4,6 +4,7 @@ import ImageIO
 
 final class EditorToolsController: ActionListController {
     private var collageTask: Task<Void, Never>?
+    private var renderTask: Task<URL, Error>?
     var extras: PostExtras
     private let media: [(URL, MediaKind)]
     var onChange: ((PostExtras) -> Void)?
@@ -50,6 +51,10 @@ final class EditorToolsController: ActionListController {
             return rows
         }
     }
+    override func didMove(toParent parent: UIViewController?) {
+        super.didMove(toParent: parent)
+        if parent == nil { collageTask?.cancel(); renderTask?.cancel() }
+    }
     private func changed() { onChange?(extras); reload() }
     private func collage(_ template: String) {
         guard media.count >= 2 else { showMessage("Для колажу потрібно щонайменше два фото."); return }
@@ -60,7 +65,7 @@ final class EditorToolsController: ActionListController {
             guard let self else { return }
             defer { self.collageTask = nil; self.tableView.isUserInteractionEnabled = true }
             do {
-                let url = try await Task.detached(priority: .userInitiated) { () throws -> URL in
+                let worker = Task.detached(priority: .userInitiated) { () throws -> URL in
                     let columns = template == "Вертикальна стрічка" ? 1 : template == "Мозаїка" ? 3 : 2
                     let rows = Int(ceil(Double(urls.count) / Double(columns)))
                     let side = min(512, max(1, 4096 / max(columns, rows)))
@@ -87,7 +92,10 @@ final class EditorToolsController: ActionListController {
                     CGImageDestinationAddImage(destination, image, [kCGImageDestinationLossyCompressionQuality: 1] as CFDictionary)
                     guard CGImageDestinationFinalize(destination) else { throw CocoaError(.fileWriteUnknown) }
                     return url
-                }.value
+                }
+                self.renderTask = worker
+                let url = try await worker.value
+                self.renderTask = nil
                 guard !Task.isCancelled else { try? FileManager.default.removeItem(at: url); return }
                 self.onCollage?(url); self.navigationController?.popViewController(animated: true)
             } catch { if !Task.isCancelled { self.showMessage(error.localizedDescription) } }
