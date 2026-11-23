@@ -32,8 +32,10 @@ final class PhotoAlbumController: UIPageViewController, UIPageViewControllerData
     private var index = 0
     private var immersive = false
     private let compact: Bool
+    private let extras: PostExtras
 
-    init(media: [PostMedia], index: Int = 0, compact: Bool = false) {
+    init(media: [PostMedia], index: Int = 0, compact: Bool = false, extras: PostExtras = PostExtras()) {
+        self.extras = extras
         self.compact = compact
         self.media = media
         self.index = min(max(0, index), max(0, media.count - 1))
@@ -70,7 +72,7 @@ final class PhotoAlbumController: UIPageViewController, UIPageViewControllerData
         counter.isHidden = enabled || media.count < 2
     }
 
-    private func page(_ index: Int) -> PhotoPage { PhotoPage(url: media[index].url, index: index) }
+    private func page(_ index: Int) -> PhotoPage { PhotoPage(url: media[index].url, index: index, caption: extras.photoCaptions[String(index)] ?? "", layout: extras.albumLayout) }
     private func updateCounter() {
         counter.text = "  \(index + 1) / \(media.count)  "
         counter.isHidden = media.count < 2 || immersive
@@ -95,11 +97,14 @@ final class PhotoAlbumController: UIPageViewController, UIPageViewControllerData
 private final class PhotoPage: UIViewController, UIScrollViewDelegate {
     let index: Int
     private let url: URL
+    private let captionText: String
+    private let layoutStyle: String
     private let scroll = UIScrollView()
     private let image = UIImageView()
     private let backdrop = UIImageView()
     private var task: Task<Void, Never>?
-    init(url: URL, index: Int) {
+    init(url: URL, index: Int, caption: String, layout: String) {
+        captionText = caption; layoutStyle = layout
         self.url = url
         self.index = index
         super.init(nibName: nil, bundle: nil)
@@ -118,6 +123,12 @@ private final class PhotoPage: UIViewController, UIScrollViewDelegate {
         scroll.contentInsetAdjustmentBehavior = .never
         image.contentMode = .scaleAspectFit
         scroll.addSubview(image)
+        if !captionText.isEmpty {
+            let text = makeLabel(.body, text: captionText)
+            text.textAlignment = .center; text.translatesAutoresizingMaskIntoConstraints = false
+            view.addSubview(text)
+            NSLayoutConstraint.activate([text.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 16), text.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -16), text.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -42)])
+        }
         task = Task { [weak self, url] in
             let result = await PhotoLoader.image(url)
             guard !Task.isCancelled else { return }
@@ -135,7 +146,14 @@ private final class PhotoPage: UIViewController, UIScrollViewDelegate {
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
         if scroll.zoomScale == 1 {
-            image.frame = scroll.bounds
+            if layoutStyle == "fit" { image.frame = scroll.bounds }
+            else {
+                let ratio: CGFloat = layoutStyle == "square" ? 1 : 1.25
+                let width = min(scroll.bounds.width, scroll.bounds.height / ratio)
+                let height = width * ratio
+                image.frame = CGRect(x: scroll.bounds.midX - width / 2, y: scroll.bounds.midY - height / 2, width: width, height: height)
+                image.contentMode = .scaleAspectFill; image.clipsToBounds = true
+            }
             scroll.contentSize = scroll.bounds.size
         }
     }

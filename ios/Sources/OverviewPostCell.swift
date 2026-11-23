@@ -63,7 +63,7 @@ final class OverviewPostCell: FeedMediaCell {
         author.imageView?.clipsToBounds = true
         author.isEnabled = clip.authorID != nil
         like.configuration?.image = AppSymbol.image( store.liked(clip) ? "heart.fill" : "heart")
-        like.configuration?.title = String(store.likes(clip))
+        like.configuration?.title = clip.extras?.hideLikes == true ? nil : String(store.likes(clip))
         like.configuration?.baseForegroundColor = store.liked(clip) ? .kadrPeach : .label
         like.accessibilityLabel = "Подобається"
         like.accessibilityValue = String(store.likes(clip))
@@ -94,12 +94,20 @@ final class PostDescriptionController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         title = "Опис публікації"
+        navigationItem.rightBarButtonItem = UIBarButtonItem(image: AppSymbol.image("ellipsis"), menu: postMenu(clip, store: store))
         view.backgroundColor = .systemBackground
         let scroll = UIScrollView()
         scroll.pin(to: view)
         let author = makeLabel(.headline, text: store.profile(clip.authorID).map { "@\($0.handle)" } ?? clip.credit)
         let text = makeLabel(.body, text: clip.caption.isEmpty ? "Без опису" : clip.caption)
-        let tags = makeLabel(.subheadline, text: clip.settings.tags, color: .kadrPeach)
+        let tags = UIStackView(); tags.axis = .vertical; tags.spacing = 6
+        for tag in clip.settings.tags.split(whereSeparator: { $0.isWhitespace || $0 == "#" }).map(String.init) {
+            tags.addArrangedSubview(textButton("#" + tag, symbol: "number") { [weak self] in
+                guard let self else { return }; let page = ActionListController("#" + tag)
+                page.rows = self.store.allClips.filter { $0.settings.tags.localizedCaseInsensitiveContains(tag) }.map { post in StudioRow(title: post.caption, icon: "play.rectangle", action: { [weak page] in page?.push(ClipPreviewController(clip: post, store: self.store)) }) }
+                self.navigationController?.pushViewController(page, animated: true)
+            })
+        }
         let location = makeLabel(.subheadline, text: clip.settings.location, color: .secondaryLabel)
         let stack = UIStackView(arrangedSubviews: [author, text, tags, location])
         stack.axis = .vertical

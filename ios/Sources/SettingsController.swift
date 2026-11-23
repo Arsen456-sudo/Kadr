@@ -47,6 +47,7 @@ final class SettingsController: ActionListController, UISearchResultsUpdating, U
     func updateSearchResults(for searchController: UISearchController) { query = searchController.searchBar.text ?? ""; reload() }
     private func backup() {
         do {
+            store.flushForBackground()
             let folder = FileManager.default.temporaryDirectory.appendingPathComponent("Kadr-Backup-" + UUID().uuidString)
             try FileManager.default.copyItem(at: LocalStore.directory, to: folder)
             present(UIDocumentPickerViewController(forExporting: [folder], asCopy: true), animated: true)
@@ -81,6 +82,7 @@ extension LocalStore {
             try data.write(to: Self.directory.appendingPathComponent(file), options: .atomic)
         }
         guard updateState({ $0 = snapshot }) else { throw CocoaError(.fileWriteUnknown) }
+        flushForBackground()
         NotificationCenter.default.post(name: .kadrMessagesDidChange, object: self)
         NotificationCenter.default.post(name: .kadrProfileDidChange, object: self)
     }

@@ -61,7 +61,9 @@ final class LocalSocialRepository: SocialRepository {
         return store.messages(with: profileID)
     }
     func send(text: String, to profileID: UUID, id: UUID) async throws -> ChatMessage {
-        try store.sendMessage(text, to: profileID, id: id)
+        let message = try store.sendMessage(text, to: profileID, id: id)
+        try await store.flush()
+        return message
     }
 }
 

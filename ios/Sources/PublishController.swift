@@ -4,12 +4,16 @@ import PhotosUI
 import UIKit
 import UniformTypeIdentifiers
 
-final class PublishController: UITableViewController, PHPickerViewControllerDelegate {
+final class PublishController: UITableViewController, PHPickerViewControllerDelegate, UITextViewDelegate {
     private let store: LocalStore
     private let editingDraft: Clip?
     private let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     private var media: [(URL, MediaKind)] = []
     private var options = PostOptions()
+    private var extras = PostExtras()
+    private var draftID: String?
+    private var autosaveTask: Task<Void, Never>?
+    private var loading = true
     private let caption = UITextView()
     private let tags = UITextField()
     private let location = UITextField()
@@ -34,6 +38,7 @@ final class PublishController: UITableViewController, PHPickerViewControllerDele
         tableView.keyboardDismissMode = .interactive
         tableView.register(MediaEditCell.self, forCellReuseIdentifier: "media")
         tableView.allowsSelectionDuringEditing = true
+        caption.delegate = self
         caption.font = .preferredFont(forTextStyle: .body)
         caption.backgroundColor = .clear
         caption.accessibilityLabel = "Опис публікації"
@@ -49,6 +54,8 @@ final class PublishController: UITableViewController, PHPickerViewControllerDele
         if let draft = editingDraft ?? store.draft {
             media = (draft.media ?? []).map { ($0.url, $0.kind) }
             options = draft.settings
+            extras = draft.extras ?? PostExtras()
+            draftID = draft.id
             caption.text = draft.caption
             tags.text = options.tags
             location.text = options.location
@@ -57,8 +64,23 @@ final class PublishController: UITableViewController, PHPickerViewControllerDele
         }
         isModalInPresentation = !media.isEmpty
         navigationController?.isModalInPresentation = isModalInPresentation
+        for field in [tags, location] { field.addAction(UIAction { [weak self] _ in self?.scheduleAutosave() }, for: .editingChanged) }
+        for toggle in [comments, privacy] { toggle.addAction(UIAction { [weak self] _ in self?.scheduleAutosave() }, for: .valueChanged) }
+        NotificationCenter.default.addObserver(self, selector: #selector(saveOnBackground), name: UIApplication.willResignActiveNotification, object: nil)
+        loading = false
         reloadEditor()
     }
+
+    func textViewDidChange(_ textView: UITextView) { scheduleAutosave() }
+    private func scheduleAutosave() {
+        guard !loading, !importing, !media.isEmpty else { return }
+        autosaveTask?.cancel()
+        autosaveTask = Task { [weak self] in
+            do { try await Task.sleep(for: .milliseconds(900)) } catch { return }
+            self?.save(draft: true, silently: true)
+        }
+    }
+    @objc private func saveOnBackground() { autosaveTask?.cancel(); save(draft: true, silently: true) }
 
     override func numberOfSections(in tableView: UITableView) -> Int { 5 }
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
@@ -66,7 +88,7 @@ final class PublishController: UITableViewController, PHPickerViewControllerDele
         case 0: return 2
         case 1: return media.count
         case 2: return 3
-        case 3: return 2
+        case 3: return 3
         default: return 2
         }
     }
@@ -113,6 +135,10 @@ final class PublishController: UITableViewController, PHPickerViewControllerDele
             if indexPath.row == 0 && caption.text.isEmpty { caption.accessibilityHint = "Додай опис своєї публікації" }
             return cell
         case 3:
+            if indexPath.row == 2 {
+                content.text = "Інструменти, підписи та оформлення"; content.image = AppSymbol.image("slider.horizontal.3")
+                cell.contentConfiguration = content; cell.accessoryType = .disclosureIndicator; return cell
+            }
             content.text = indexPath.row == 0 ? "Дозволити коментарі" : "Бачу тільки я"
             content.image = AppSymbol.image( indexPath.row == 0 ? "bubble.left" : "lock")
             cell.accessoryView = indexPath.row == 0 ? comments : privacy
@@ -131,12 +157,20 @@ final class PublishController: UITableViewController, PHPickerViewControllerDele
         switch indexPath.section {
         case 0: pick(photos: indexPath.row == 0)
         case 1: preview(indexPath.row)
+        case 3:
+            if indexPath.row == 2 {
+                let tools = EditorToolsController(media: media, extras: extras)
+                tools.onChange = { [weak self] extras in self?.extras = extras; self?.reloadEditor() }
+                tools.onCollage = { [weak self] url in self?.media.insert((url, .photo), at: 0); self?.reloadEditor() }
+                navigationController?.pushViewController(tools, animated: true)
+            }
         case 4: save(draft: indexPath.row == 1)
         default: break
         }
     }
 
     private func reloadEditor() {
+        scheduleAutosave()
         coverTask?.cancel()
         let container = UIView(frame: CGRect(x: 0, y: 0, width: tableView.bounds.width, height: 248))
         let artwork = UIImageView()
@@ -163,7 +197,7 @@ final class PublishController: UITableViewController, PHPickerViewControllerDele
             coverTask = Task { [weak artwork] in
                 let image: UIImage?
                 if item.1 == .photo { image = await PhotoLoader.image(item.0, maxPixel: 1200) }
-                else { image = await VideoPoster.image(for: item.0).map { UIImage(cgImage: $0) } }
+                else { image = await VideoPoster.image(for: item.0, at: extras.coverTime).map { UIImage(cgImage: $0) } }
                 guard !Task.isCancelled else { return }
                 artwork?.image = image
             }
@@ -297,7 +331,7 @@ final class PublishController: UITableViewController, PHPickerViewControllerDele
         reloadEditor()
     }
 
-    private func save(draft: Bool) {
+    private func save(draft: Bool, silently: Bool = false) {
         guard !media.isEmpty, !importing else { return }
         let text = caption.text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard text.count <= 2200 else { showMessage("Опис може містити до 2200 символів."); return }
@@ -305,12 +339,16 @@ final class PublishController: UITableViewController, PHPickerViewControllerDele
         options.location = location.text?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         options.allowsComments = comments.isOn
         options.onlyMe = privacy.isOn
-        guard let post = store.savePost(sources: media, caption: text, options: options, asDraft: draft) else {
+        guard let post = store.savePost(sources: media, caption: text, options: options, asDraft: draft, extras: extras, draftID: draftID) else {
             showMessage(store.errorMessage ?? "Не вдалося зберегти публікацію.")
             store.errorMessage = nil
             return
         }
-        UINotificationFeedbackGenerator().notificationOccurred(.success)
+        media = (post.media ?? []).map { ($0.url, $0.kind) }
+        draftID = post.id
+        if silently { return }
+        autosaveTask?.cancel()
+        if store.studio.preferences.haptics { UINotificationFeedbackGenerator().notificationOccurred(.success) }
         if draft { onClose?() } else { onPublish?(post) }
     }
     private func close() {
@@ -324,6 +362,7 @@ final class PublishController: UITableViewController, PHPickerViewControllerDele
         present(alert, animated: true)
     }
     deinit {
+        autosaveTask?.cancel()
         coverTask?.cancel()
         importTask?.cancel()
         try? FileManager.default.removeItem(at: directory)

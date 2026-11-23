@@ -110,7 +110,7 @@ final class CommentsController: UIViewController, UITableViewDataSource, UITable
         refreshComments()
         table.scrollToRow(at: IndexPath(row: comments.count - 1, section: 0), at: .bottom,
                           animated: !UIAccessibility.isReduceMotionEnabled)
-        UISelectionFeedbackGenerator().selectionChanged()
+        if store.studio.preferences.haptics { UISelectionFeedbackGenerator().selectionChanged() }
         onComment?()
     }
 
@@ -230,11 +230,13 @@ final class ClipPreviewController: UIViewController {
         title = clip.caption
         view.backgroundColor = .black
         if clip.isPhoto {
-            embed(PhotoAlbumController(media: clip.media ?? []), in: view)
+            embed(PhotoAlbumController(media: clip.media ?? [], extras: clip.extras ?? PostExtras()), in: view)
             return
         }
         video.pin(to: view)
-        video.load(clip.url, adaptsLandscape: true)
+        video.load(clip.url, adaptsLandscape: true, extras: clip.extras)
+        if let watch = store?.studio.watches[clip.id], !watch.completed { video.seek(to: watch.seconds) }
+        video.preferredRate = store?.studio.preferences.playbackRate ?? 1
         tapArea.accessibilityIdentifier = "video.playbackArea"
         tapArea.accessibilityLabel = "Призупинити відео"
         tapArea.pin(to: view)
@@ -270,6 +272,8 @@ final class ClipPreviewController: UIViewController {
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
+        let progress = video.progress
+        store?.recordWatch(clip, seconds: clip.isPhoto ? 1 : progress.seconds, duration: clip.isPhoto ? 1 : progress.duration)
         video.setPlaying(false)
         playbackButton.hideAfterContextChange()
     }

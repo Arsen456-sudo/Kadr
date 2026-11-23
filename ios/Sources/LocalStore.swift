@@ -90,6 +90,7 @@ final class LocalStore {
     static let directory = URL.applicationSupportDirectory.appending(path: "Kadr", directoryHint: .isDirectory)
     private static let stateFile = directory.appending(path: "state.json")
     private(set) var state: State
+    private let writer = StateWriter(url: LocalStore.stateFile)
 
     init() {
         if FileManager.default.fileExists(atPath: Self.stateFile.path) {
@@ -104,6 +105,9 @@ final class LocalStore {
             state = State()
         }
     }
+
+    func flush() async throws { try await writer.flush() }
+    func flushForBackground() { try? writer.flushSync() }
 
     var errorMessage: String?
     private var canSave = true
@@ -136,7 +140,11 @@ final class LocalStore {
             let preferred = allClips.filter { $0.authorID.map(followed.contains) ?? false }
             let others = allClips.filter { $0.authorID != nil && !($0.authorID.map(followed.contains) ?? false) }
             let samples = id.uuid.0.isMultiple(of: 2) ? Clip.samples : Array(Clip.samples.reversed())
-            return preferred + others + samples
+            let interests = studio.preferences.preferredTags.union(studio.appearance.interests)
+            let ranked = others.sorted { a, b in
+                interests.filter { a.settings.tags.localizedCaseInsensitiveContains($0) }.count > interests.filter { b.settings.tags.localizedCaseInsensitiveContains($0) }.count
+            }
+            return preferred + ranked + samples
         }
     }
 
@@ -313,7 +321,7 @@ final class LocalStore {
         savePost(sources: [(movie, .video)], caption: caption, options: PostOptions(), asDraft: false)
     }
 
-    func savePost(sources: [(URL, MediaKind)], caption: String, options: PostOptions, asDraft: Bool) -> Clip? {
+    func savePost(sources: [(URL, MediaKind)], caption: String, options: PostOptions, asDraft: Bool, extras: PostExtras? = nil, draftID: String? = nil) -> Clip? {
         guard let authorID = state.activeID, !sources.isEmpty else { return nil }
         guard sources.allSatisfy({ $0.1 == sources[0].1 }),
               sources[0].1 != .video || sources.count == 1 else {
@@ -324,6 +332,9 @@ final class LocalStore {
         do {
             try FileManager.default.createDirectory(at: Self.directory, withIntermediateDirectories: true)
             let media = try sources.map { source, kind -> PostMedia in
+                if source.deletingLastPathComponent().standardizedFileURL == Self.directory.standardizedFileURL {
+                    return PostMedia(id: UUID(), kind: kind, file: source.lastPathComponent)
+                }
                 let id = UUID()
                 let file = id.uuidString + "." + source.pathExtension
                 let destination = Self.directory.appending(path: file)
@@ -331,10 +342,10 @@ final class LocalStore {
                 copied.append(destination)
                 return PostMedia(id: id, kind: kind, file: file)
             }
-            let previousDraft = draft
-            let post = Clip(id: UUID().uuidString, authorID: authorID, caption: caption,
+            let previousDraft = draftID.flatMap { id in state.clips.first { $0.id == id && $0.authorID == authorID && $0.isDraft == true } }
+            let post = Clip(id: draftID ?? UUID().uuidString, authorID: authorID, caption: caption,
                             file: media[0].file, credit: "", media: media, options: options,
-                            createdAt: Date(), isDraft: asDraft)
+                            createdAt: Date(), isDraft: asDraft, extras: extras)
             var next = state
             if let previousDraft { next.clips.removeAll { $0.id == previousDraft.id } }
             next.clips.insert(post, at: 0)
@@ -342,7 +353,7 @@ final class LocalStore {
                 for url in copied { try? FileManager.default.removeItem(at: url) }
                 return nil
             }
-            for item in previousDraft?.media ?? [] {
+            for item in previousDraft?.media ?? [] where !media.contains(where: { $0.file == item.file }) {
                 try? FileManager.default.removeItem(at: Self.directory.appending(path: item.file))
             }
             return post
@@ -361,20 +372,15 @@ final class LocalStore {
     }
 
     private func save(_ next: State) -> Bool {
-        guard canSave else {
-            errorMessage = "Локальні дані недоступні для запису."
-            return false
+        guard canSave else { errorMessage = "Локальні дані недоступні для запису."; return false }
+        state = next
+        writer.onFailure = { [weak self] in
+            self?.errorMessage = "Не вдалося зберегти локальні дані. Звільни місце та спробуй ще раз."
         }
-        do {
-            try FileManager.default.createDirectory(at: Self.directory, withIntermediateDirectories: true)
-            try JSONEncoder().encode(next).write(to: Self.stateFile, options: .atomic)
-            state = next
-            return true
-        } catch {
-            errorMessage = "Не вдалося зберегти зміни."
-            return false
-        }
+        writer.submit(next)
+        return true
     }
+
 }
 
 enum FeedSection: Equatable {

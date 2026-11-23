@@ -25,6 +25,11 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         window.rootViewController = UIHostingController(rootView: KadrNavigationShell(tabs: tabs, state: tabs.toolbarState))
         self.window = window
         window.makeKeyAndVisible()
+        if let url = options.urlContexts.first?.url { DispatchQueue.main.async { tabs.open(link: url) } }
+    }
+
+    func scene(_ scene: UIScene, openURLContexts URLContexts: Set<UIOpenURLContext>) {
+        if let url = URLContexts.first?.url { tabs?.open(link: url) }
     }
 
     func sceneDidBecomeActive(_ scene: UIScene) {
@@ -33,6 +38,7 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 
     func sceneWillResignActive(_ scene: UIScene) {
         tabs?.sceneActive = false
+        tabs?.saveForBackground()
     }
 }
 
@@ -278,11 +284,25 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
         feed.playbackEnabled = sceneActive && selectedViewController === feed && (presentedViewController == nil || keepsFeedPlaying)
     }
 
+    func saveForBackground() { store.flushForBackground() }
+
     private func signOut() {
         store.select(nil)
         if store.active == nil { feed.selectSection(.recommended) }
         refresh()
         showStoreError()
+    }
+
+    func open(link: URL) {
+        guard link.scheme == "kadr" else { return }
+        let key = link.lastPathComponent
+        let action: () -> Void = { [weak self] in
+            guard let self else { return }
+            if link.host == "profile", let profile = self.store.profiles.first(where: { $0.handle == key }) { self.openAuthor(profile.id) }
+            else if link.host == "post", let clip = self.store.allClips.first(where: { $0.id == key }) { self.openClip(clip) }
+            else { self.showMessage("Цей матеріал ще недоступний локально.") }
+        }
+        if presentedViewController != nil { closeSheet(completion: action) } else { action() }
     }
 
     private func openSearch() {
@@ -302,7 +322,7 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
         if showStoreError() { return }
         let selected = bookmark ? store.bookmarked(clip) : store.liked(clip)
         if selected != previous {
-            UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+            if store.studio.preferences.haptics { UIImpactFeedbackGenerator(style: .soft).impactOccurred() }
             feed.updateReactions(bounce: bookmark ? .bookmark : .like)
         }
     }

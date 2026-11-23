@@ -73,6 +73,15 @@ final class StudioController: ActionListController, UIDocumentPickerDelegate, UI
          StudioRow(title: "Продовжити перегляд", icon: "play.circle", action: { [weak self] in self?.history(true) }),
          StudioRow(title: "Моя статистика", icon: "chart.bar", action: { [weak self] in self?.statistics() }),
          StudioRow(title: "Мій QR-код", icon: "qrcode", action: { [weak self] in self?.qr() }),
+         StudioRow(title: "Сканувати QR-код", icon: "qrcode.viewfinder", action: { [weak self] in
+             guard let self else { return }; let scanner = ProfileScannerController()
+             scanner.onCode = { [weak self, weak scanner] text in
+                 guard let self, let url = URL(string: text), let handle = url.pathComponents.last,
+                       let profile = self.store.profiles.first(where: { $0.handle == handle }) else { scanner?.showMessage("Цей профіль ще недоступний локально."); return }
+                 scanner?.navigationController?.popViewController(animated: false)
+                 self.push(ProfileController(store: self.store, profileID: profile.id))
+             }; self.push(scanner)
+         }),
          StudioRow(title: "Мої інтереси", icon: "sparkles", action: { [weak self] in self?.interests() }),
          StudioRow(title: "Попередній перегляд профілю", icon: "eye", action: { [weak self] in
              guard let self, let me = self.store.active else { return }
@@ -120,7 +129,7 @@ final class StudioController: ActionListController, UIDocumentPickerDelegate, UI
     func postList(_ title: String, clips: [Clip], select: ((Clip) -> Void)? = nil) {
         let page = ActionListController(title)
         page.rows = clips.map { clip in StudioRow(title: clip.caption.isEmpty ? "Публікація" : clip.caption, detail: clip.isPhoto ? "Фото" : "Відео", icon: clip.isPhoto ? "photo" : "play.rectangle", action: { [weak self, weak page] in
-            if let select { select(clip); page?.navigationController?.popViewController(animated: true) }
+            if let select { page?.navigationController?.popViewController(animated: false); select(clip) }
             else { self?.postActions(clip, from: page) }
         }) }
         push(page)

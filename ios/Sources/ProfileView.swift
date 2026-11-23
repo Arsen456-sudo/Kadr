@@ -92,7 +92,7 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
     private func heroHeight(for profile: Profile) -> CGFloat {
         if let height = cachedHeroHeight { return height }
         let height = ProfileHero.height(for: profile, width: view.bounds.width, top: view.safeAreaInsets.top,
-                                        showsFollow: followState != nil)
+                                        showsFollow: followState != nil, appearance: store.state.studio?.accounts[profile.id.uuidString]?.appearance ?? CreatorAppearance(), own: profile.id == store.active?.id && !preview)
         cachedHeroHeight = height
         return height
     }
@@ -226,7 +226,8 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
 
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         collectionView.deselectItem(at: indexPath, animated: true)
-        onClip?(clips[indexPath.item])
+        if let onClip { onClip(clips[indexPath.item]) }
+        else { navigationController?.pushViewController(ClipPreviewController(clip: clips[indexPath.item], store: store), animated: true) }
     }
 
     private func posts(for profile: Profile) -> [Clip] {
@@ -261,7 +262,11 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
         guard let profile = visibleProfile else { return view }
         let follow = followState
         view.setCover(for: profile, width: collectionView.bounds.width, top: self.view.safeAreaInsets.top)
-        view.show(profile, hasPosts: !clips.isEmpty, following: follow, onAvatar: { [weak self] in self?.openAvatar() }, onMessage: { [weak self] in
+        view.show(profile, store: store, own: profile.id == store.active?.id && !preview, following: follow, onPeople: { [weak self] followers in
+            guard let self else { return }; self.navigationController?.pushViewController(PeopleListController(store: self.store, profile: profile, followers: followers), animated: true)
+        }, onStudio: { [weak self] in
+            guard let self else { return }; self.navigationController?.pushViewController(StudioController(store: self.store), animated: true)
+        }, onAvatar: { [weak self] in self?.openAvatar() }, onMessage: { [weak self] in
             guard let self else { return }
             self.navigationController?.pushViewController(ChatController(store: self.store, repository: self.repository, peer: profile), animated: true)
         }) { [weak self] in
@@ -435,134 +440,100 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
 }
 
 private final class ProfileHero: UICollectionReusableView {
-    private var coverHeight: NSLayoutConstraint!
-    private static let avatarSide: CGFloat = 96
-    private static let identityHeight: CGFloat = 64
-    private static let margin: CGFloat = 20
-    private static let gap: CGFloat = 14
-    private static let verticalPadding: CGFloat = 16
-    private static let followHeight: CGFloat = 44
-    private static let footerHeight: CGFloat = 60
-
-    private let banner = UIView()
-    private let identity = UIStackView()
-    private let followActions = UIStackView()
-
+    private let content = UIStackView()
+    private var cover: NSLayoutConstraint?
+    private var appearance = CreatorAppearance()
+    private var width: CGFloat = 390
+    private var top: CGFloat = 0
     override init(frame: CGRect) {
         super.init(frame: frame)
-        backgroundColor = .clear
-        banner.backgroundColor = .clear
-        identity.alignment = .center
-        identity.spacing = Self.gap
-        followActions.axis = .horizontal
-        followActions.distribution = .fillEqually
-        followActions.spacing = 8
-        let details = UIStackView(arrangedSubviews: [identity, followActions])
-        details.axis = .vertical
-        details.spacing = Self.verticalPadding
-        let insetDetails = UIView()
-        details.pin(to: insetDetails, insets: .init(top: Self.verticalPadding - 4, leading: Self.margin,
-                                                   bottom: Self.verticalPadding + 16, trailing: Self.margin))
-
-        let footerContainer = UIView()
-        footerContainer.heightAnchor.constraint(equalToConstant: Self.footerHeight).isActive = true
-
-        banner.isUserInteractionEnabled = false
-        banner.translatesAutoresizingMaskIntoConstraints = false
-        let contentStack = UIStackView(arrangedSubviews: [banner, insetDetails, footerContainer])
-        contentStack.axis = .vertical
-        contentStack.pin(to: self)
-        coverHeight = banner.heightAnchor.constraint(equalToConstant: 0)
-        coverHeight.isActive = true
+        content.axis = .vertical; content.spacing = 12
+        content.pin(to: self)
     }
-
     required init?(coder: NSCoder) { fatalError("Use init(frame:)") }
-
     static func coverSize(for profile: Profile, width: CGFloat, top: CGFloat) -> CGFloat {
-        let navigationBottom = top + 50
-        guard profile.bannerURL != nil else { return navigationBottom }
-        return bannerSize(width: width, top: top)
+        profile.bannerURL == nil ? top + 90 : max(top + 140, min(270, width * 0.62))
     }
-
-    static func bannerSize(width: CGFloat, top: CGFloat) -> CGFloat {
-        max(top + 78, min(180, width * 0.40))
-    }
-
+    static func bannerSize(width: CGFloat, top: CGFloat) -> CGFloat { max(top + 140, min(270, width * 0.62)) }
     func setCover(for profile: Profile, width: CGFloat, top: CGFloat) {
-        coverHeight.constant = Self.coverSize(for: profile, width: width, top: top)
-
+        self.width = width; self.top = top
+        cover?.constant = max(0, Self.coverSize(for: profile, width: width, top: top) - 56)
     }
-
-    static func height(for profile: Profile, width: CGFloat, top: CGFloat, showsFollow: Bool) -> CGFloat {
-        let textWidth = max(1, width - 2 * margin - avatarSide - gap)
-        let labels = makeDetails(profile)
-        let measured = labels.systemLayoutSizeFitting(CGSize(width: textWidth, height: 0),
-            withHorizontalFittingPriority: .required, verticalFittingPriority: .fittingSizeLevel).height
-        let actionHeight = showsFollow ? followHeight + verticalPadding : 0
-        return ceil(coverSize(for: profile, width: width, top: top) + max(identityHeight, measured) + 2 * verticalPadding + 12 + actionHeight + footerHeight)
+    static func height(for profile: Profile, width: CGFloat, top: CGFloat, showsFollow: Bool, appearance: CreatorAppearance = CreatorAppearance(), own: Bool = false) -> CGFloat {
+        let stack = makeContent(profile, width: width, top: top, appearance: appearance, own: own, following: showsFollow ? false : nil,
+                                counts: (0,0,0), onAvatar: {}, onPeople: { _ in }, onStudio: {}, onMessage: {}, onFollow: {}, onShare: {})
+        return ceil(stack.systemLayoutSizeFitting(CGSize(width: width, height: 0), withHorizontalFittingPriority: .required, verticalFittingPriority: .fittingSizeLevel).height)
     }
-
-    func show(_ profile: Profile, hasPosts: Bool, following: Bool?, onAvatar: @escaping () -> Void, onMessage: @escaping () -> Void, onFollow: @escaping () -> Void) {
-        identity.arrangedSubviews.forEach { $0.removeFromSuperview() }
-        followActions.arrangedSubviews.forEach { $0.removeFromSuperview() }
-
-        let avatar = avatarView(profile.avatar)
-        avatar.layer.cornerRadius = Self.avatarSide / 2
-        avatar.backgroundColor = .systemBackground
-        avatar.widthAnchor.constraint(equalToConstant: Self.avatarSide).isActive = true
-        avatar.heightAnchor.constraint(equalToConstant: Self.avatarSide).isActive = true
-        let avatarContainer = UIButton(type: .custom)
-        avatarContainer.accessibilityLabel = "Фото профілю"
-        avatarContainer.addAction(UIAction { _ in onAvatar() }, for: .primaryActionTriggered)
-        avatarContainer.translatesAutoresizingMaskIntoConstraints = false
-        avatarContainer.addSubview(avatar)
-        avatar.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            avatarContainer.widthAnchor.constraint(equalToConstant: Self.avatarSide),
-            avatarContainer.heightAnchor.constraint(equalToConstant: Self.identityHeight),
-            avatar.centerXAnchor.constraint(equalTo: avatarContainer.centerXAnchor),
-            avatar.centerYAnchor.constraint(equalTo: avatarContainer.centerYAnchor)
-        ])
-        let labels = Self.makeDetails(profile)
-        labels.transform = CGAffineTransform(translationX: 0, y: -2)
-        identity.addArrangedSubview(labels)
-        identity.addArrangedSubview(avatarContainer)
-
+    func show(_ profile: Profile, store: LocalStore, own: Bool, following: Bool?, onPeople: @escaping (Bool) -> Void, onStudio: @escaping () -> Void,
+              onAvatar: @escaping () -> Void, onMessage: @escaping () -> Void, onFollow: @escaping () -> Void) {
+        appearance = store.state.studio?.accounts[profile.id.uuidString]?.appearance ?? CreatorAppearance()
+        content.arrangedSubviews.forEach { $0.removeFromSuperview() }
+        let counts = (store.allClips.filter { $0.authorID == profile.id }.count, store.people(followersOf: profile.id).count, store.people(followedBy: profile.id).count)
+        let stack = Self.makeContent(profile, width: width, top: top, appearance: appearance, own: own, following: following, counts: counts,
+            onAvatar: onAvatar, onPeople: onPeople, onStudio: onStudio, onMessage: onMessage, onFollow: onFollow, onShare: {
+                guard let controller = self.nearestController else { return }
+                controller.present(UIActivityViewController(activityItems: [URL(string: "kadr://profile/" + profile.handle)!], applicationActivities: nil), animated: true)
+            })
+        for child in Array(stack.arrangedSubviews) { child.removeFromSuperview(); content.addArrangedSubview(child) }
+        cover = content.arrangedSubviews.first?.constraints.first { $0.firstAttribute == .height }
+    }
+    private static func makeContent(_ profile: Profile, width: CGFloat, top: CGFloat, appearance: CreatorAppearance, own: Bool, following: Bool?, counts: (Int,Int,Int),
+                                    onAvatar: @escaping () -> Void, onPeople: @escaping (Bool) -> Void, onStudio: @escaping () -> Void,
+                                    onMessage: @escaping () -> Void, onFollow: @escaping () -> Void, onShare: @escaping () -> Void) -> UIStackView {
+        let stack = UIStackView(); stack.axis = .vertical; stack.spacing = 12
+        let spacer = UIView(); spacer.heightAnchor.constraint(equalToConstant: max(0, coverSize(for: profile, width: width, top: top) - 56)).isActive = true
+        stack.addArrangedSubview(spacer)
+        let identity = UIStackView(); identity.axis = .vertical; identity.alignment = .center; identity.spacing = 8
+        let avatar = avatarView(profile.avatar); avatar.layer.cornerRadius = 56; avatar.clipsToBounds = true
+        avatar.widthAnchor.constraint(equalToConstant: 112).isActive = true; avatar.heightAnchor.constraint(equalToConstant: 112).isActive = true
+        let avatarButton = UIButton(type: .custom); avatar.pin(to: avatarButton)
+        avatarButton.accessibilityLabel = "Фото @" + profile.handle; avatarButton.addAction(UIAction { _ in onAvatar() }, for: .primaryActionTriggered)
+        identity.addArrangedSubview(avatarButton)
+        let name = makeLabel(appearance.theme == "cinema" ? .largeTitle : .title1, text: profile.name)
+        name.font = name.font.withTraits(.traitBold); name.textAlignment = .center
+        let handle = makeLabel(.headline, text: "@" + profile.handle, color: accent(appearance.accent)); handle.textAlignment = .center
+        identity.addArrangedSubview(name); identity.addArrangedSubview(handle)
+        if !profile.bio.isEmpty { let bio = makeLabel(.body, text: profile.bio, color: .secondaryLabel); bio.textAlignment = .center; identity.addArrangedSubview(bio) }
+        let inset = UIView(); identity.pin(to: inset, insets: .init(top: 0, leading: 20, bottom: 0, trailing: 20)); stack.addArrangedSubview(inset)
+        let stats = UIStackView(); stats.distribution = .fillEqually; stats.spacing = 8
+        for (index, text) in ["Публікації", "Підписники", "Підписки"].enumerated() {
+            var style = appearance.theme == "vivid" ? UIButton.Configuration.prominentGlass() : .glass()
+            style.title = String([counts.0,counts.1,counts.2][index]); style.subtitle = text; style.baseForegroundColor = .label; style.baseBackgroundColor = accent(appearance.accent)
+            let button = UIButton(configuration: style); button.heightAnchor.constraint(greaterThanOrEqualToConstant: 56).isActive = true
+            button.addAction(UIAction { _ in if index > 0 { onPeople(index == 1) } }, for: .primaryActionTriggered)
+            stats.addArrangedSubview(button)
+        }
+        let statInset = UIView(); stats.pin(to: statInset, insets: .init(top: 0, leading: 16, bottom: 0, trailing: 16)); stack.addArrangedSubview(statInset)
+        if !appearance.introduction.isEmpty {
+            let card = glassIsland(style: .clear, interactive: false); let text = makeLabel(.body, text: appearance.introduction)
+            text.pin(to: card.contentView, insets: .init(top: 16, leading: 20, bottom: 16, trailing: 20)); stack.addArrangedSubview(card)
+        }
+        for link in appearance.links {
+            let button = textButton(link, symbol: "link") { if let url = URL(string: link), url.scheme == "https" { UIApplication.shared.open(url) } }
+            stack.addArrangedSubview(button)
+        }
+        let actions = UIStackView(); actions.distribution = .fillEqually; actions.spacing = 8
         if let following {
-            let button = textButton(following ? "Відписатися" : "Підписатися", prominent: !following, action: onFollow)
-            button.heightAnchor.constraint(equalToConstant: Self.followHeight).isActive = true
-            followActions.addArrangedSubview(button)
-            if following {
-                let message = textButton("Повідомлення", symbol: "bubble.left", action: onMessage)
-                message.heightAnchor.constraint(equalToConstant: Self.followHeight).isActive = true
-                followActions.addArrangedSubview(message)
-            }
+            actions.addArrangedSubview(textButton(following ? "Відписатися" : "Підписатися", prominent: !following, action: onFollow))
+            if following { actions.addArrangedSubview(textButton("Повідомлення", symbol: "bubble.left", action: onMessage)) }
         }
-        followActions.isHidden = following == nil
-
-
-
+        if own { actions.addArrangedSubview(textButton("Студія", symbol: "slider.horizontal.3", action: onStudio)) }
+        actions.addArrangedSubview(textButton("Поділитися", symbol: "square.and.arrow.up", action: onShare))
+        let actionInset = UIView(); actions.pin(to: actionInset, insets: .init(top: 0, leading: 16, bottom: 0, trailing: 16)); stack.addArrangedSubview(actionInset)
+        let footer = UIView(); footer.heightAnchor.constraint(equalToConstant: 48).isActive = true; stack.addArrangedSubview(footer)
+        return stack
     }
-
-    private static func makeDetails(_ profile: Profile) -> UIStackView {
-        let name = makeLabel(.title2, text: profile.name)
-        name.font = name.font.withTraits(.traitBold)
-        let handle = makeLabel(.body, text: "@\(profile.handle)", color: .secondaryLabel)
-        handle.font = UIFontMetrics(forTextStyle: .body).scaledFont(for: .systemFont(ofSize: 19, weight: .semibold))
-        let details = UIStackView(arrangedSubviews: [name, handle])
-        details.axis = .vertical
-        details.spacing = 3
-        name.textAlignment = .left
-        handle.textAlignment = .left
-        if !profile.bio.isEmpty {
-            details.setCustomSpacing(7, after: handle)
-            let bio = makeLabel(.subheadline, text: profile.bio, color: .secondaryLabel)
-            bio.textAlignment = .left
-            details.addArrangedSubview(bio)
-        }
-        return details
+    private static func accent(_ value: String) -> UIColor {
+        switch value { case "mint": return .systemMint; case "violet": return .systemPurple; case "blue": return .systemBlue; case "rose": return .systemPink; default: return .kadrPeach }
     }
+}
 
+private extension UIView {
+    var nearestController: UIViewController? {
+        var candidate: UIResponder? = self
+        while let next = candidate?.next { if let controller = next as? UIViewController { return controller }; candidate = next }
+        return nil
+    }
 }
 
 private final class ProfileBackdrop: UIView {
@@ -670,7 +641,7 @@ private final class ClipThumbnailCell: UICollectionViewCell {
             return
         }
         task = Task { [weak self] in
-            guard let poster = await VideoPoster.image(for: url), !Task.isCancelled,
+            guard let poster = await VideoPoster.image(for: url, at: clip.extras?.coverTime ?? 0.5), !Task.isCancelled,
                   let self, self.representedID == clip.id else { return }
             self.image.image = UIImage(cgImage: poster)
         }

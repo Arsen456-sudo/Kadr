@@ -55,6 +55,7 @@ final class FeedController: UIViewController, UICollectionViewDataSource, UIColl
 
     func setOverview(_ enabled: Bool) {
         guard overview != enabled else { return }
+        rememberPosition()
         overview = enabled
         guard isViewLoaded else { return }
         playingPage?.setPlaying(false, muted: muted)
@@ -247,11 +248,13 @@ final class FeedController: UIViewController, UICollectionViewDataSource, UIColl
 
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
+        muted = !store.studio.preferences.autoSound
         syncPlayback()
     }
 
     func selectSection(_ section: FeedSection, preferredID: String? = nil) {
         let changed = self.section != section
+        if changed { rememberPosition() }
         self.section = section
         guard isViewLoaded else { return }
         refresh(preferredID: preferredID, reset: changed)
@@ -261,7 +264,8 @@ final class FeedController: UIViewController, UICollectionViewDataSource, UIColl
         guard isViewLoaded else { return }
         let current = page?.clip.id
         let updated = store.feed(section)
-        let target = preferredID ?? (reset ? nil : current)
+        let key = (overview ? "overview" : "feed") + (section == .following ? ".following" : ".recommended")
+        let target = preferredID ?? (reset ? store.studio.feedPositions[key] : current)
         let nextIndex = updated.firstIndex { $0.id == target } ?? 0
         let changed = clips.map(\.id) != updated.map(\.id)
         if changed {
@@ -352,7 +356,7 @@ final class FeedController: UIViewController, UICollectionViewDataSource, UIColl
         let liked = store.liked(clip)
         let saved = store.bookmarked(clip)
         like.update(symbol: liked ? "heart.fill" : "heart", label: liked ? "Прибрати лайк" : "Подобається",
-                    color: liked ? .kadrPeach : .label, count: store.likes(clip), animated: bounce == .like, selected: liked)
+                    color: liked ? .kadrPeach : .label, count: clip.extras?.hideLikes == true ? nil : store.likes(clip), animated: bounce == .like, selected: liked)
         comments.update(symbol: "bubble", label: "Коментарі", count: store.comments(clip).count, animated: false)
         bookmark.update(symbol: saved ? "bookmark.fill" : "bookmark", label: saved ? "Прибрати зі збереженого" : "Зберегти",
                         color: saved ? .kadrPeach : .label, animated: bounce == .bookmark, selected: saved)
@@ -371,7 +375,7 @@ final class FeedController: UIViewController, UICollectionViewDataSource, UIColl
     private func controller(at index: Int) -> VideoPage {
         let clip = clips[index]
         if let existing = pages[clip.id] { return existing }
-        let controller = VideoPage(clip: clip, fitsAllMedia: overview)
+        let controller = VideoPage(clip: clip, fitsAllMedia: overview, store: store)
         pages[clip.id] = controller
         return controller
     }
@@ -461,6 +465,24 @@ final class FeedController: UIViewController, UICollectionViewDataSource, UIColl
         if !decelerate { finishPaging() }
     }
 
+    private func rememberPosition() {
+        guard clips.indices.contains(currentIndex) else { return }
+        let id = clips[currentIndex].id
+        let key = (overview ? "overview" : "feed") + (section == .following ? ".following" : ".recommended")
+        store.changeStudio { $0.feedPositions[key] = id }
+    }
+    func collectionView(_ collectionView: UICollectionView, contextMenuConfigurationForItemAt indexPath: IndexPath, point: CGPoint) -> UIContextMenuConfiguration? {
+        guard clips.indices.contains(indexPath.item) else { return nil }
+        let clip = clips[indexPath.item]
+        return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self] _ in
+            guard let self else { return nil }
+            return self.postMenu(clip, store: self.store, onChange: { [weak self] in self?.refresh() }, previous: { [weak self] in
+                guard let self, self.currentIndex > 0 else { return }; self.currentIndex -= 1
+                self.pager.scrollToItem(at: IndexPath(item: self.currentIndex, section: 0), at: .top, animated: !UIAccessibility.isReduceMotionEnabled)
+                self.updateCurrent()
+            })
+        }
+    }
     private func finishPaging() {
         guard !clips.isEmpty, pager.bounds.height > 0 else { return }
         if overview {
@@ -472,6 +494,7 @@ final class FeedController: UIViewController, UICollectionViewDataSource, UIColl
             currentIndex = min(clips.count - 1, max(0, Int((pager.contentOffset.y / pager.bounds.height).rounded())))
         }
         _ = controller(at: currentIndex)
+        rememberPosition()
         updateCurrent()
         // Keep only the current page and its neighbours, so long feeds do not retain players.
         let retained = Set(clips.indices.filter { abs($0 - currentIndex) <= 1 }.map { clips[$0].id })
@@ -492,8 +515,12 @@ private final class VideoPage: UIViewController {
     private var immersive = false
     private var album: PhotoAlbumController?
     private let fitsAllMedia: Bool
+    private let store: LocalStore
+    private let timeline = UISlider()
+    private var controlsTask: Task<Void, Never>?
 
-    init(clip: Clip, fitsAllMedia: Bool = false) {
+    init(clip: Clip, fitsAllMedia: Bool = false, store: LocalStore) {
+        self.store = store
         self.clip = clip
         self.fitsAllMedia = fitsAllMedia
         super.init(nibName: nil, bundle: nil)
@@ -505,14 +532,16 @@ private final class VideoPage: UIViewController {
         super.viewDidLoad()
         view.backgroundColor = .black
         if clip.isPhoto {
-            let album = PhotoAlbumController(media: clip.media ?? [], compact: fitsAllMedia)
+            let album = PhotoAlbumController(media: clip.media ?? [], compact: fitsAllMedia, extras: clip.extras ?? PostExtras())
             self.album = album
             album.setImmersive(immersive)
             embed(album, in: view)
             return
         }
         video.pin(to: view)
-        video.load(clip.url, adaptsLandscape: true, fitsAllMedia: fitsAllMedia)
+        video.load(clip.url, adaptsLandscape: true, fitsAllMedia: fitsAllMedia, extras: clip.extras)
+        if let watch = store.studio.watches[clip.id], !watch.completed { video.seek(to: watch.seconds) }
+        installTimeline()
         tapArea.accessibilityIdentifier = "video.playbackArea"
         tapArea.isAccessibilityElement = true
         tapArea.accessibilityTraits = .button
@@ -534,17 +563,54 @@ private final class VideoPage: UIViewController {
         ])
     }
 
+    private func installTimeline() {
+        timeline.translatesAutoresizingMaskIntoConstraints = false; timeline.isHidden = true
+        timeline.isContinuous = false; timeline.accessibilityLabel = "Позиція відтворення"
+        view.addSubview(timeline)
+        NSLayoutConstraint.activate([timeline.leadingAnchor.constraint(equalTo: view.leadingAnchor, constant: 18), timeline.trailingAnchor.constraint(equalTo: view.trailingAnchor, constant: -18), timeline.bottomAnchor.constraint(equalTo: view.safeAreaLayoutGuide.bottomAnchor, constant: -4)])
+        timeline.addAction(UIAction { [weak self] _ in
+            guard let self else { return }; self.video.seek(to: Double(self.timeline.value)); self.showControls()
+        }, for: .valueChanged)
+        video.onProgress = { [weak self] seconds, duration in
+            guard let self, !self.timeline.isHidden, !self.timeline.isTracking else { return }
+            self.timeline.maximumValue = Float(max(1, duration)); self.timeline.setValue(Float(seconds), animated: !UIAccessibility.isReduceMotionEnabled)
+            self.timeline.accessibilityValue = "\(Int(seconds)) з \(Int(duration)) секунд"
+        }
+        let single = UITapGestureRecognizer(target: self, action: #selector(surfaceTapped))
+        let double = UITapGestureRecognizer(target: self, action: #selector(seekDoubleTapped(_:))); double.numberOfTapsRequired = 2
+        single.require(toFail: double); tapArea.addGestureRecognizer(single); tapArea.addGestureRecognizer(double)
+    }
+    @objc private func surfaceTapped() { setPaused(!paused) }
+    @objc private func seekDoubleTapped(_ gesture: UITapGestureRecognizer) {
+        let seconds = video.progress.seconds + (gesture.location(in: tapArea).x < tapArea.bounds.midX ? -10 : 10)
+        video.seek(to: max(0, seconds)); showControls()
+    }
+    private func showControls() {
+        guard !immersive else { return }
+        playbackButton.showForInteraction(); timeline.isHidden = false
+        controlsTask?.cancel()
+        controlsTask = Task { [weak self] in
+            do { try await Task.sleep(for: .seconds(3)) } catch { return }
+            self?.timeline.isHidden = true
+        }
+    }
+
     func setImmersive(_ enabled: Bool) {
         immersive = enabled
-        if enabled { playbackButton.hideAfterContextChange() }
+        if enabled { playbackButton.hideAfterContextChange(); timeline.isHidden = true; controlsTask?.cancel() }
         album?.setImmersive(enabled)
     }
 
     func setPlaying(_ enabled: Bool, muted: Bool) {
         guard enabled || isViewLoaded else { self.enabled = false; return }
         loadViewIfNeeded()
+        if self.enabled && !enabled {
+            let progress = video.progress
+            store.recordWatch(clip, seconds: clip.isPhoto ? 1 : progress.seconds, duration: clip.isPhoto ? 1 : progress.duration)
+        }
         self.enabled = enabled
-        if !enabled { playbackButton.hideAfterContextChange() }
+        video.preferredRate = store.studio.preferences.playbackRate
+        if !enabled { playbackButton.hideAfterContextChange(); timeline.isHidden = true; controlsTask?.cancel() }
         video.setPlaying(enabled && !paused, muted: muted)
     }
 
@@ -553,7 +619,7 @@ private final class VideoPage: UIViewController {
         playbackButton.isSelected = value
         tapArea.accessibilityLabel = value ? "Відтворити відео" : "Призупинити відео"
         video.setPlaying(enabled && !value)
-        if !immersive { playbackButton.showForInteraction() }
+        if !immersive { showControls() }
     }
 }
 
@@ -620,6 +686,20 @@ final class VideoSurface: UIView {
     private let foreground = AVPlayerLayer()
     private let backdrop = UIImageView()
     private var player: AVQueuePlayer?
+    private var trimStart: Double = 0
+    private var trimEnd: Double?
+    var preferredRate: Float = 1 { didSet { if playing { player?.rate = preferredRate } } }
+    var onProgress: ((Double, Double) -> Void)?
+    private var progressObserver: Any?
+    var progress: (seconds: Double, duration: Double) {
+        let seconds = player?.currentTime().seconds ?? 0, duration = player?.currentItem?.duration.seconds ?? 0
+        let end = trimEnd ?? duration
+        return (seconds.isFinite ? max(0, seconds - trimStart) : 0, end.isFinite ? max(0, end - trimStart) : 0)
+    }
+    func seek(to seconds: Double) {
+        guard seconds.isFinite, seconds >= 0 else { return }
+        player?.seek(to: CMTime(seconds: min(seconds + trimStart, trimEnd ?? .greatestFiniteMagnitude), preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+    }
     private var looper: AVPlayerLooper?
     private var backdropLink: CADisplayLink?
     private var renderingBackdrop = false
@@ -665,8 +745,10 @@ final class VideoSurface: UIView {
         CATransaction.commit()
     }
 
-    func load(_ url: URL?, adaptsLandscape: Bool = false, fitsAllMedia: Bool = false) {
+    func load(_ url: URL?, adaptsLandscape: Bool = false, fitsAllMedia: Bool = false, extras: PostExtras? = nil) {
+        if let progressObserver { player?.removeTimeObserver(progressObserver); self.progressObserver = nil }
         self.fitsAllMedia = fitsAllMedia
+        trimStart = extras?.trimStart ?? 0; trimEnd = extras?.trimEnd
         revision += 1
         let loadRevision = revision
         metadata?.cancel()
@@ -690,9 +772,17 @@ final class VideoSurface: UIView {
         let asset = AVURLAsset(url: url)
         let queue = AVQueuePlayer()
         queue.isMuted = true
-        looper = AVPlayerLooper(player: queue, templateItem: AVPlayerItem(asset: asset))
+        let range: CMTimeRange
+        if let end = extras?.trimEnd, end.isFinite, let start = extras?.trimStart, start.isFinite, end > start {
+            range = CMTimeRange(start: CMTime(seconds: start, preferredTimescale: 600), duration: CMTime(seconds: end - start, preferredTimescale: 600))
+        } else { range = .invalid }
+        looper = AVPlayerLooper(player: queue, templateItem: AVPlayerItem(asset: asset), timeRange: range)
         player = queue
         foreground.player = queue
+        progressObserver = queue.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.5, preferredTimescale: 600), queue: .main) { [weak self] _ in
+            guard let self else { return }; let progress = self.progress
+            self.onProgress?(progress.seconds, progress.duration)
+        }
 
         guard adaptsLandscape else { return }
         itemObservation = queue.observe(\.currentItem, options: [.initial, .new]) { [weak self] player, _ in
@@ -754,7 +844,7 @@ final class VideoSurface: UIView {
         if let muted, player?.isMuted != muted { player?.isMuted = muted }
         guard self.playing != playing else { updateBackdropClock(); return }
         self.playing = playing
-        if playing { player?.play() }
+        if playing { player?.playImmediately(atRate: preferredRate) }
         else { player?.pause() }
         updateBackdropClock()
     }
@@ -815,6 +905,7 @@ final class VideoSurface: UIView {
     }
 
     deinit {
+        if let progressObserver { player?.removeTimeObserver(progressObserver) }
         metadata?.cancel()
         backdropLink?.invalidate()
     }
@@ -860,23 +951,24 @@ enum VideoPoster {
     static func clearCache() { cache.removeAllObjects() }
     private static var requests: [URL: Task<CGImage?, Never>] = [:]
 
-    static func image(for url: URL) async -> CGImage? {
-        if let cached = cache.object(forKey: url as NSURL) { return cached.cgImage }
-        if let request = requests[url] { return await request.value }
-        let request = Task { await generate(for: url) }
-        requests[url] = request
-        defer { requests.removeValue(forKey: url) }
+    static func image(for url: URL, at seconds: Double = 0.5) async -> CGImage? {
+        let key = URL(string: url.absoluteString + "#frame=" + String(seconds)) ?? url
+        if let cached = cache.object(forKey: key as NSURL) { return cached.cgImage }
+        if let request = requests[key] { return await request.value }
+        let request = Task { await generate(for: url, at: seconds, key: key) }
+        requests[key] = request
+        defer { requests.removeValue(forKey: key) }
         return await request.value
     }
 
-    private static func generate(for url: URL) async -> CGImage? {
+    private static func generate(for url: URL, at seconds: Double, key: URL) async -> CGImage? {
         let generator = AVAssetImageGenerator(asset: AVURLAsset(url: url))
         generator.appliesPreferredTrackTransform = true
         generator.maximumSize = CGSize(width: 480, height: 640)
-        var poster = try? await generator.image(at: CMTime(seconds: 0.5, preferredTimescale: 600))
+        var poster = try? await generator.image(at: CMTime(seconds: max(0, seconds), preferredTimescale: 600))
         if poster == nil { poster = try? await generator.image(at: .zero) }
         guard let result = poster else { return nil }
-        cache.setObject(UIImage(cgImage: result.image), forKey: url as NSURL,
+        cache.setObject(UIImage(cgImage: result.image), forKey: key as NSURL,
                         cost: result.image.width * result.image.height * 4)
         return result.image
     }
