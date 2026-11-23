@@ -9,7 +9,7 @@ on:
         description: macOS runner pool
         type: choice
         default: macos-26
-        options: [macos-26, macos-15]
+        options: [macos-26, macos-15, macos-15-intel]
 
 concurrency:
   group: ios-device-${{ github.ref }}
@@ -28,7 +28,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Select compatible fallback Xcode
-        if: inputs.runner == 'macos-15'
+        if: startsWith(inputs.runner, 'macos-15')
         run: sudo xcode-select -s /Applications/Xcode_26.3.app/Contents/Developer
       - name: Generate Xcode project
         run: |
