@@ -51,7 +51,7 @@ final class PublishController: UITableViewController, PHPickerViewControllerDele
         }
         comments.isOn = true
         navigationItem.leftBarButtonItem = UIBarButtonItem(systemItem: .close, primaryAction: UIAction { [weak self] _ in self?.close() })
-        navigationItem.rightBarButtonItem = editButtonItem
+        navigationItem.rightBarButtonItems = [editButtonItem, UIBarButtonItem(title: "Чернетки", primaryAction: UIAction { [weak self] _ in self?.chooseDraft() })]
         if let draft = editingDraft ?? store.draft {
             media = (draft.media ?? []).map { ($0.url, $0.kind) }
             options = draft.settings
@@ -177,6 +177,29 @@ final class PublishController: UITableViewController, PHPickerViewControllerDele
         case 4: save(draft: indexPath.row == 1)
         default: break
         }
+    }
+
+    private func chooseDraft() {
+        guard !importing else { return }
+        autosaveTask?.cancel()
+        if !media.isEmpty { save(draft: true, silently: true) }
+        let menu = UIAlertController(title: "Чернетки", message: nil, preferredStyle: .actionSheet)
+        menu.addAction(UIAlertAction(title: "Нова публікація", style: .default) { [weak self] _ in
+            guard let self else { return }
+            self.media = []; self.options = PostOptions(); self.extras = PostExtras(); self.draftID = nil
+            self.caption.text = ""; self.tags.text = ""; self.location.text = ""; self.comments.isOn = true; self.privacy.isOn = false
+            self.reloadEditor()
+        })
+        for draft in store.drafts {
+            menu.addAction(UIAlertAction(title: draft.caption.isEmpty ? "Чернетка · " + String(draft.id.prefix(6)) : String(draft.caption.prefix(50)), style: .default) { [weak self] _ in
+                guard let self else { return }; self.media = (draft.media ?? []).map { ($0.url, $0.kind) }; self.options = draft.settings
+                self.extras = draft.extras ?? PostExtras(); self.draftID = draft.id; self.caption.text = draft.caption
+                self.tags.text = draft.settings.tags; self.location.text = draft.settings.location; self.comments.isOn = draft.settings.allowsComments; self.privacy.isOn = draft.settings.onlyMe
+                self.reloadEditor()
+            })
+        }
+        menu.addAction(UIAlertAction(title: "Скасувати", style: .cancel)); menu.popoverPresentationController?.barButtonItem = navigationItem.rightBarButtonItems?.last
+        present(menu, animated: true)
     }
 
     private func reloadEditor() {

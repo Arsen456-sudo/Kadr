@@ -364,7 +364,7 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
 
     private func openAvatar() {
         guard let profile = visibleProfile else { return }
-        let menu = AvatarMenuController(data: profile.avatar, editable: store.active?.id == profile.id)
+        let menu = AvatarMenuController(data: profile.avatar, editable: !preview && store.active?.id == profile.id)
         menu.onChoose = { [weak self] in
             guard let self, self.store.active?.id == profile.id else { return }
             self.pickerOwner = profile.id

@@ -50,8 +50,8 @@ struct HTTPFeatureTransport: FeatureSyncTransport {
     }
     func upload(file: URL) async throws {
         let head = try await request("assets/" + file.lastPathComponent, method: "HEAD")
-        let (_, response) = try await session.data(for: head)
-        if let response = response as? HTTPURLResponse, response.statusCode == 200,
+        let (_, headResponse) = try await session.data(for: head)
+        if let response = headResponse as? HTTPURLResponse, response.statusCode == 200,
            let size = try? file.resourceValues(forKeys: [.fileSizeKey]).fileSize, response.expectedContentLength == Int64(size) { return }
         let request = try await request("assets/" + file.lastPathComponent, method: "PUT")
         let (_, response) = try await session.upload(for: request, fromFile: file); try validate(response)
@@ -77,12 +77,14 @@ final class FeatureSyncEngine {
     private let store: LocalStore
     private let transport: any FeatureSyncTransport
     private var syncing = false
+    private var capturedRevision = 0
     init(store: LocalStore, transport: any FeatureSyncTransport) { self.store = store; self.transport = transport }
     func synchronize() async throws {
         guard !syncing, let owner = store.active?.id else { return }
         syncing = true; defer { syncing = false }
         try await store.flush()
         let snapshot = store.state
+        capturedRevision = store.localRevision
         let records = try await Task.detached(priority: .utility) { try Self.records(snapshot, owner: owner) }.value
         let files = Set(snapshot.clips.filter { $0.authorID == owner }.flatMap { ($0.media ?? []).map(\.file) })
             .union(snapshot.profiles.filter { $0.id == owner }.compactMap(\.bannerFile))
@@ -153,6 +155,9 @@ final class FeatureSyncEngine {
         return result
     }
     private func apply(_ record: ResourceRecord, owner: UUID) {
+        guard !store.isRestoringBackup else { return }
+        if record.owner == owner, store.localRevision != capturedRevision { return }
+        store.isApplyingRemote = true; defer { store.isApplyingRemote = false }
         let decoder = JSONDecoder()
         if let object = try? JSONSerialization.jsonObject(with: record.payload) as? [String: Any], object["deleted"] as? Bool == true {
             store.updateState { state in

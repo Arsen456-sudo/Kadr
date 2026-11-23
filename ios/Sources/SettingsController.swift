@@ -4,6 +4,7 @@ import UniformTypeIdentifiers
 final class SettingsController: ActionListController, UISearchResultsUpdating, UIDocumentPickerDelegate {
     private let store: LocalStore
     private var query = ""
+    private var backupTask: Task<Void, Never>?
     init(store: LocalStore) { self.store = store; super.init("Налаштування") }
     required init?(coder: NSCoder) { fatalError("Use init(store:)") }
     override func viewDidLoad() {
@@ -46,12 +47,20 @@ final class SettingsController: ActionListController, UISearchResultsUpdating, U
     }
     func updateSearchResults(for searchController: UISearchController) { query = searchController.searchBar.text ?? ""; reload() }
     private func backup() {
-        do {
-            store.flushForBackground()
-            let folder = FileManager.default.temporaryDirectory.appendingPathComponent("Kadr-Backup-" + UUID().uuidString)
-            try FileManager.default.copyItem(at: LocalStore.directory, to: folder)
-            present(UIDocumentPickerViewController(forExporting: [folder], asCopy: true), animated: true)
-        } catch { showMessage(error.localizedDescription) }
+        guard backupTask == nil else { return }
+        let spinner = UIActivityIndicatorView(style: .medium); spinner.startAnimating()
+        navigationItem.rightBarButtonItem = UIBarButtonItem(customView: spinner)
+        backupTask = Task { [weak self] in
+            guard let self else { return }
+            defer { self.backupTask = nil; self.navigationItem.rightBarButtonItem = nil }
+            do {
+                try await self.store.flush()
+                let folder = FileManager.default.temporaryDirectory.appendingPathComponent("Kadr-Backup-" + UUID().uuidString)
+                try await Task.detached(priority: .utility) { try FileManager.default.copyItem(at: LocalStore.directory, to: folder) }.value
+                guard self.view.window != nil else { return }
+                self.present(UIDocumentPickerViewController(forExporting: [folder], asCopy: true), animated: true)
+            } catch { self.showMessage(error.localizedDescription) }
+        }
     }
     func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) {
         guard let source = urls.first else { return }
@@ -59,33 +68,53 @@ final class SettingsController: ActionListController, UISearchResultsUpdating, U
         confirmation.addAction(UIAlertAction(title: "Скасувати", style: .cancel))
         confirmation.addAction(UIAlertAction(title: "Відновити", style: .destructive) { [weak self] _ in
             guard let self else { return }
-            let accessed = source.startAccessingSecurityScopedResource(); defer { if accessed { source.stopAccessingSecurityScopedResource() } }
-            do { try self.store.restoreBackup(source); self.reload() } catch { self.showMessage(error.localizedDescription) }
+            Task { [weak self] in
+                guard let self else { return }
+                let accessed = source.startAccessingSecurityScopedResource(); defer { if accessed { source.stopAccessingSecurityScopedResource() } }
+                let spinner = UIActivityIndicatorView(style: .medium); spinner.startAnimating(); self.navigationItem.rightBarButtonItem = UIBarButtonItem(customView: spinner)
+                defer { self.navigationItem.rightBarButtonItem = nil }
+                do { try await self.store.restoreBackup(source); self.reload() } catch { self.showMessage(error.localizedDescription) }
+            }
         })
         present(confirmation, animated: true)
     }
 }
 
 extension LocalStore {
-    func restoreBackup(_ source: URL) throws {
-        let snapshot = try JSONDecoder().decode(State.self, from: Data(contentsOf: source.appendingPathComponent("state.json")))
-        var files = Set(snapshot.clips.flatMap { ($0.media ?? []).map(\.file) })
-        snapshot.profiles.compactMap(\.bannerFile).forEach { files.insert($0) }
-        snapshot.clips.compactMap { $0.extras?.coverFile }.forEach { files.insert($0) }
-        snapshot.messages?.compactMap(\.attachmentFile).forEach { files.insert($0) }
-        guard files.allSatisfy({ !$0.isEmpty && URL(fileURLWithPath: $0).lastPathComponent == $0 && !$0.contains("..") }) else { throw CocoaError(.fileReadCorruptFile) }
-        // Validate the entire archive before copying or replacing any current state.
-        for file in files { guard FileManager.default.fileExists(atPath: source.appendingPathComponent(file).path) else { throw CocoaError(.fileNoSuchFile) } }
-        try FileManager.default.createDirectory(at: Self.directory, withIntermediateDirectories: true)
-        for file in files {
-            let data = try Data(contentsOf: source.appendingPathComponent(file))
-            try data.write(to: Self.directory.appendingPathComponent(file), options: .atomic)
-        }
+    @MainActor func restoreBackup(_ source: URL) async throws {
+        guard !isRestoringBackup else { throw CocoaError(.fileWriteFileExists) }
+        isRestoringBackup = true; defer { isRestoringBackup = false }
+        await cleanupTask?.value
+        try await flush()
+        let snapshot = try await Task.detached(priority: .utility) { () throws -> State in
+            let snapshot = try JSONDecoder().decode(State.self, from: Data(contentsOf: source.appendingPathComponent("state.json")))
+            var files = Set(snapshot.clips.flatMap { ($0.media ?? []).map(\.file) })
+            snapshot.profiles.compactMap(\.bannerFile).forEach { files.insert($0) }
+            snapshot.clips.compactMap { $0.extras?.coverFile }.forEach { files.insert($0) }
+            snapshot.messages?.compactMap(\.attachmentFile).forEach { files.insert($0) }
+            guard files.allSatisfy({ !$0.isEmpty && URL(fileURLWithPath: $0).lastPathComponent == $0 && !$0.contains("..") }) else { throw CocoaError(.fileReadCorruptFile) }
+            for file in files {
+                let url = source.appendingPathComponent(file)
+                guard FileManager.default.fileExists(atPath: url.path), try url.resourceValues(forKeys: [.isSymbolicLinkKey]).isSymbolicLink != true else { throw CocoaError(.fileReadCorruptFile) }
+            }
+            try FileManager.default.createDirectory(at: Self.directory, withIntermediateDirectories: true)
+            for file in files {
+                let destination = Self.directory.appendingPathComponent(file)
+                let temporary = Self.directory.appendingPathComponent("restore-" + UUID().uuidString)
+                try FileManager.default.copyItem(at: source.appendingPathComponent(file), to: temporary)
+                if FileManager.default.fileExists(atPath: destination.path) { _ = try FileManager.default.replaceItemAt(destination, withItemAt: temporary) }
+                else { try FileManager.default.moveItem(at: temporary, to: destination) }
+            }
+            return snapshot
+        }.value
+        isRestoringBackup = false
         guard updateState({ $0 = snapshot }) else { throw CocoaError(.fileWriteUnknown) }
-        flushForBackground()
+        isRestoringBackup = true
+        try await flush()
         NotificationCenter.default.post(name: .kadrMessagesDidChange, object: self)
         NotificationCenter.default.post(name: .kadrProfileDidChange, object: self)
     }
+
 }
 
 final class PostEditController: ActionListController {

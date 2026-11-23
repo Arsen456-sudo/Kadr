@@ -229,7 +229,9 @@ class SocialService:
                     if kind in ("comment", "reaction", "commentReaction", "commentPin") and row["owner"] != user:
                         post_id = value.get("postID")
                         post = db.execute("SELECT owner,payload FROM sync_records WHERE resource='post' AND entity=?", (post_id,)).fetchone()
-                        if post and post["owner"] != user and json.loads(post["payload"]).get("options", {}).get("onlyMe") is True:
+                        if not post: continue
+                        post_value = json.loads(post["payload"])
+                        if post_value.get("deleted") is True or (post["owner"] != user and post_value.get("options", {}).get("onlyMe") is True):
                             continue
                     if kind == "reaction" and row["owner"] != user:
                         value["bookmarked"] = False
@@ -403,6 +405,7 @@ def main():
     parser.add_argument("--database", default=str(Path(__file__).with_name("social.sqlite3")))
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8080)
+    parser.add_argument("--user-id", help="Optional UUID to preserve an existing local developer account")
     parser.add_argument("--create-user", nargs=2, metavar=("HANDLE", "NAME"))
     args = parser.parse_args()
     secret = os.environ.get("KADR_AUTH_SECRET", "")
@@ -414,7 +417,8 @@ def main():
         handle = handle.lower().lstrip("@")
         if not re.fullmatch(r"[a-z0-9_]{3,24}", handle) or not name.strip():
             parser.error("Use a valid handle (3–24 a-z, 0-9, _) and a nonempty name.")
-        user = str(uuid.uuid4())
+        try: user = canonical_id(args.user_id) if args.user_id else str(uuid.uuid4())
+        except APIError: parser.error("Invalid --user-id UUID")
         with service.connect() as db:
             db.execute("INSERT INTO profiles(id,handle,name) VALUES (?,?,?)", (user, handle, name.strip()))
         print(json.dumps({"id": user, "handle": handle, "token": service.issue_session(user)}))

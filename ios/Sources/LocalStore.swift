@@ -116,6 +116,10 @@ final class LocalStore {
 
     var errorMessage: String?
     private var canSave = true
+    var isRestoringBackup = false
+    var isApplyingRemote = false
+    private(set) var localRevision = 0
+    var cleanupTask: Task<Void, Never>?
     var profiles: [Profile] { state.profiles }
     var active: Profile? { profile(state.activeID) }
     var allClips: [Clip] {
@@ -372,7 +376,7 @@ final class LocalStore {
     func updateState(_ update: (inout State) -> Void) -> Bool {
         var next = state
         update(&next)
-        if let owner = state.activeID, next.activeID == owner {
+        if !isApplyingRemote, let owner = state.activeID, next.activeID == owner {
             var studio = next.studio ?? StudioState()
             func tombstone(_ kind: String, _ key: String) {
                 studio.outbox.removeAll { $0.owner == owner && $0.resource == kind && $0.entityID == key }
@@ -394,20 +398,27 @@ final class LocalStore {
         Task { @MainActor [weak self] in
             guard let self else { return }
             do { try await self.flush() } catch { return }
+            guard !self.isRestoringBackup else { return }
             let referenced = Set(self.state.clips.flatMap { ($0.media ?? []).map(\.file) })
                 .union(self.state.profiles.compactMap(\.bannerFile))
                 .union(self.state.messages?.compactMap(\.attachmentFile) ?? [])
                 .union(self.state.clips.compactMap { $0.extras?.coverFile })
             let removable = candidates.subtracting(referenced).filter { !$0.isEmpty && URL(fileURLWithPath: $0).lastPathComponent == $0 && !$0.contains("..") }
-            await Task.detached(priority: .utility) {
+            let previous = self.cleanupTask
+            let task = Task.detached(priority: .utility) {
+                await previous?.value
                 for file in removable { try? FileManager.default.removeItem(at: Self.directory.appendingPathComponent(file)) }
-            }.value
+            }
+            self.cleanupTask = task
+            await task.value
         }
     }
 
     private func save(_ next: State) -> Bool {
+        guard !isRestoringBackup else { errorMessage = "Дочекайся завершення відновлення копії."; return false }
         guard canSave else { errorMessage = "Локальні дані недоступні для запису."; return false }
         state = next
+        if !isApplyingRemote { localRevision += 1 }
         writer.onFailure = { [weak self] in
             self?.errorMessage = "Не вдалося зберегти локальні дані. Звільни місце та спробуй ще раз."
         }
