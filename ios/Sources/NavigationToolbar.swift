@@ -43,6 +43,7 @@ final class KadrToolbarState: ObservableObject {
     var onRemoveBanner: (() -> Void)?
     var onImmersive: (() -> Void)?
     var onProfileSection: ((ProfileSection) -> Void)?
+    var onProfileSectionHost: ((UIView, Bool) -> Void)?
 }
 
 struct KadrNavigationShell: View {
@@ -166,7 +167,9 @@ private struct AtmosphereToolbarTitle: View {
                 .offset(y: state.profileDocked ? -100 : 0)
                 .opacity(state.profileDocked ? 0 : 1)
                 .accessibilityHidden(state.profileDocked)
-            if state.profileDocked { ProfilePickerContent(state: state) }
+            ProfileToolbarHost(state: state)
+                .opacity(state.profileDocked ? 1 : 0)
+                .allowsHitTesting(state.profileDocked)
         }
         .frame(width: min(260, max(160, availableWidth - 128)), height: 44)
         .animation(transitionAnimation, value: state.profileDocked)
@@ -213,4 +216,25 @@ private struct ProfilePickerContent: UIViewRepresentable {
     func updateUIView(_ view: ProfileSectionPicker, context: Context) {
         view.select(state.profileSection)
     }
+}
+
+// A placeholder for the profile's existing picker, never a second picker.
+private struct ProfileToolbarHost: UIViewRepresentable {
+    @ObservedObject var state: KadrToolbarState
+    func makeUIView(context: Context) -> ProfileToolbarHostView {
+        let host = ProfileToolbarHostView()
+        host.onLayout = { view in state.onProfileSectionHost?(view, false) }
+        host.onDetach = { view in state.onProfileSectionHost?(view, true) }
+        return host
+    }
+    func updateUIView(_ view: ProfileToolbarHostView, context: Context) {
+        state.onProfileSectionHost?(view, false)
+    }
+    static func dismantleUIView(_ view: ProfileToolbarHostView, coordinator: ()) { view.onDetach?(view) }
+}
+
+private final class ProfileToolbarHostView: UIView {
+    var onLayout: ((UIView) -> Void)?
+    var onDetach: ((UIView) -> Void)?
+    override func layoutSubviews() { super.layoutSubviews(); onLayout?(self) }
 }

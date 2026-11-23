@@ -164,7 +164,7 @@ class GlassSectionPicker: UIView {
             toolbarWidth = control.widthAnchor.constraint(equalToConstant: 244)
             NSLayoutConstraint.activate([controlHeight, toolbarWidth!])
             let item = UIBarButtonItem(customView: control)
-            item.hidesSharedBackground = false
+            item.hidesSharedBackground = true
             bar.setItems([item], animated: false)
         } else {
             addSubview(control)

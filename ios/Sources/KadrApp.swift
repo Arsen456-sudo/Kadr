@@ -131,6 +131,9 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
         }
         profile.onSectionChange = { [weak self] section in self?.toolbarState.profileSection = section }
         toolbarState.onProfileSection = { [weak self] section in self?.profile.select(section) }
+        toolbarState.onProfileSectionHost = { [weak self] host, removing in
+            self?.profile.setSectionToolbarHost(host, removing: removing)
+        }
 
         toolbarState.onStudio = { [weak self] in
             guard let self else { return }; self.showSheet(StudioController(store: self.store))

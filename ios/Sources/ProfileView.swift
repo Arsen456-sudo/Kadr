@@ -21,6 +21,15 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
     var usesToolbarDock = false
     var onDocked: ((Bool) -> Void)?
     var onSectionChange: ((ProfileSection) -> Void)?
+    private weak var sectionToolbarHost: UIView?
+
+    func setSectionToolbarHost(_ host: UIView, removing: Bool) {
+        if removing {
+            guard sectionToolbarHost === host else { return }
+            sectionToolbarHost = nil
+        } else { sectionToolbarHost = host }
+        updateSectionPosition()
+    }
     private enum PhotoDestination { case banner, avatar, portrait }
     private var pickerDestination = PhotoDestination.banner
     private lazy var layout = UICollectionViewCompositionalLayout { [weak self] _, environment in
@@ -212,10 +221,21 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
         let dockX = (view.bounds.width - dockWidth) / 2 - (atmosphere ? 0 : 14)
         let fraction = usesToolbarDock ? min(1, max(0, (pin + 96 - naturalY) / 96)) : 0
         let progress = fraction * fraction * (3 - 2 * fraction)
-        sectionIsland.frame = CGRect(x: atmosphere ? dockX : leading + (dockX - leading) * progress, y: max(pin, naturalY),
-                                     width: atmosphere ? dockWidth : fullWidth + (dockWidth - fullWidth) * progress, height: 44)
-        sectionIsland.isHidden = usesToolbarDock && nowCompact
-        if view.subviews.last !== sectionIsland { view.bringSubviewToFront(sectionIsland) }
+        let floatingFrame = CGRect(x: atmosphere ? dockX : leading + (dockX - leading) * progress, y: max(pin, naturalY),
+                                   width: atmosphere ? dockWidth : fullWidth + (dockWidth - fullWidth) * progress, height: 44)
+        if atmosphere {
+            let parent: UIView = nowCompact && usesToolbarDock ? (sectionToolbarHost ?? view) : view
+            if sectionIsland.superview !== parent { sectionIsland.removeFromSuperview(); parent.addSubview(sectionIsland) }
+            let frame = parent === view ? floatingFrame : parent.bounds
+            if sectionIsland.frame != frame { sectionIsland.frame = frame }
+            sectionIsland.isHidden = false
+            if parent === view, view.subviews.last !== sectionIsland { view.bringSubviewToFront(sectionIsland) }
+        } else {
+            if sectionIsland.superview !== view { sectionIsland.removeFromSuperview(); view.addSubview(sectionIsland) }
+            sectionIsland.frame = floatingFrame
+            sectionIsland.isHidden = usesToolbarDock && nowCompact
+            if view.subviews.last !== sectionIsland { view.bringSubviewToFront(sectionIsland) }
+        }
     }
 
     override func viewDidLayoutSubviews() {
@@ -760,6 +780,7 @@ private final class ProfileBackdrop: UIView {
     private let artwork = UIImageView()
     private let blurredBackdrop = UIImageView()
     private let blurMask = CAGradientLayer()
+    private let edgeMask = CAGradientLayer()
     private let video = VideoSurface(frame: .zero)
     private let shade = GradientView()
     private var isVideo = false
@@ -773,6 +794,8 @@ private final class ProfileBackdrop: UIView {
         super.init(frame: frame)
         isUserInteractionEnabled = false
         clipsToBounds = true
+        edgeMask.colors = [1, 1, 0.98, 0.88, 0.62, 0.22, 0].map { UIColor.black.withAlphaComponent(CGFloat($0)).cgColor }
+        edgeMask.locations = [0, 0.56, 0.66, 0.76, 0.85, 0.94, 1]
         artwork.contentMode = .scaleAspectFill
         artwork.clipsToBounds = true
         addSubview(artwork)
@@ -807,6 +830,7 @@ private final class ProfileBackdrop: UIView {
         blurredBackdrop.frame = artwork.frame
         CATransaction.begin(); CATransaction.setDisableActions(true)
         blurMask.frame = CGRect(x: 0, y: backdropY - (portrait ? 3 : 0), width: bounds.width, height: height)
+        edgeMask.frame = CGRect(x: 0, y: backdropY, width: bounds.width, height: height)
         CATransaction.commit()
         shade.frame = CGRect(x: 0, y: backdropY, width: bounds.width, height: height)
     }
@@ -815,6 +839,7 @@ private final class ProfileBackdrop: UIView {
         artworkTask?.cancel(); artworkRevision = UUID(); let revision = artworkRevision
         let portrait = theme == "atmosphere"
         self.portrait = portrait
+        layer.mask = portrait ? edgeMask : nil
         let url = portrait ? profile?.portraitFile.map { LocalStore.directory.appendingPathComponent($0) } : profile?.bannerURL
         isVideo = !portrait && url.flatMap { UTType(filenameExtension: $0.pathExtension) }?.conforms(to: .movie) == true
         artwork.image = nil
