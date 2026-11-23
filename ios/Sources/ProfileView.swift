@@ -22,6 +22,18 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
     var onDocked: ((Bool) -> Void)?
     var onSectionChange: ((ProfileSection) -> Void)?
     private weak var sectionToolbarHost: UIView?
+    private var islandOverlay: ProfileIslandOverlay?
+
+    private func installIslandOverlay() {
+        guard atmosphere, usesToolbarDock, let parent = navigationController?.view else { return }
+        if islandOverlay?.superview !== parent {
+            islandOverlay?.removeFromSuperview()
+            let overlay = ProfileIslandOverlay(frame: parent.bounds)
+            overlay.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+            parent.addSubview(overlay); islandOverlay = overlay
+        }
+        islandOverlay?.isHidden = !visible
+    }
 
     func setSectionToolbarHost(_ host: UIView, removing: Bool) {
         if removing {
@@ -32,26 +44,27 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
     }
     private enum PhotoDestination { case banner, avatar, portrait }
     private var pickerDestination = PhotoDestination.banner
-    private lazy var layout = UICollectionViewCompositionalLayout { [weak self] _, environment in
+    private lazy var layout = UICollectionViewCompositionalLayout { [weak self] sectionIndex, environment in
         let width = environment.container.effectiveContentSize.width
         let dashboard = self?.atmosphere == true && self?.selectedSection == .overview
         let modern = self?.atmosphere == true
+        let metrics = dashboard && sectionIndex == 1
         let side = modern ? (width - 40) / 2 : (width - 4) / 3
         let size = dashboard
-            ? NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .estimated(98))
+            ? NSCollectionLayoutSize(widthDimension: metrics ? .absolute(side) : .fractionalWidth(1), heightDimension: .estimated(metrics ? 160 : 92))
             : NSCollectionLayoutSize(widthDimension: .absolute(side), heightDimension: .absolute(side * (modern ? 1.38 : 1.27)))
         let item = NSCollectionLayoutItem(layoutSize: size)
         let group = NSCollectionLayoutGroup.horizontal(
-            layoutSize: NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: dashboard ? .estimated(98) : .absolute(side * (modern ? 1.38 : 1.27))),
-            subitems: dashboard ? [item] : (modern ? [item, item] : [item, item, item]))
+            layoutSize: NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: dashboard ? .estimated(metrics ? 160 : 92) : .absolute(side * (modern ? 1.38 : 1.27))),
+            subitems: dashboard ? (metrics ? [item, item] : [item]) : (modern ? [item, item] : [item, item, item]))
         group.interItemSpacing = .fixed(modern ? 8 : 2)
         let section = NSCollectionLayoutSection(group: group)
         section.interGroupSpacing = modern ? 12 : 2
-        if modern {
+        if modern && sectionIndex > 0 {
             section.contentInsets = .init(top: 8, leading: 0, bottom: 24, trailing: 0)
             group.contentInsets = .init(top: 0, leading: 16, bottom: 0, trailing: 16)
         }
-        if let self, let profile = self.visibleProfile {
+        if sectionIndex == 0, let self, let profile = self.visibleProfile {
             let height = self.heroHeight(for: profile)
             section.boundarySupplementaryItems = [NSCollectionLayoutBoundarySupplementaryItem(
                 layoutSize: NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .absolute(height)),
@@ -208,6 +221,8 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
         let naturalY = headerHeight - 50 - grid.contentOffset.y
         let pin = sectionPinTop ?? (navigationController == nil ? view.safeAreaInsets.top + 46 : view.safeAreaInsets.top + 2)
         let nowCompact = naturalY <= pin
+        let titleProgress = min(1, max(0, (pin + 88 - naturalY) / 88))
+        (sectionToolbarHost as? ProfileScrollTitle)?.setScrollProgress(titleProgress)
         if compact != nowCompact {
             compact = nowCompact
             if usesToolbarDock { onDocked?(compact) }
@@ -224,13 +239,20 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
         let floatingFrame = CGRect(x: atmosphere ? dockX : leading + (dockX - leading) * progress, y: max(pin, naturalY),
                                    width: atmosphere ? dockWidth : fullWidth + (dockWidth - fullWidth) * progress, height: 44)
         if atmosphere {
-            let parent: UIView = nowCompact && usesToolbarDock ? (sectionToolbarHost ?? view) : view
+            installIslandOverlay()
+            let parent: UIView = islandOverlay ?? view
             if sectionIsland.superview !== parent { sectionIsland.removeFromSuperview(); parent.addSubview(sectionIsland) }
-            let frame = parent === view ? floatingFrame : parent.bounds
+            var frame = parent.convert(floatingFrame, from: view)
+            if let host = sectionToolbarHost, host.window != nil, parent !== view {
+                let dock = parent.convert(host.bounds, from: host)
+                frame.origin.x = dock.minX; frame.size.width = dock.width
+                frame.origin.y = max(frame.minY, dock.minY)
+            }
             if sectionIsland.frame != frame { sectionIsland.frame = frame }
             sectionIsland.isHidden = false
             if parent === view, view.subviews.last !== sectionIsland { view.bringSubviewToFront(sectionIsland) }
         } else {
+            islandOverlay?.isHidden = true
             if sectionIsland.superview !== view { sectionIsland.removeFromSuperview(); view.addSubview(sectionIsland) }
             sectionIsland.frame = floatingFrame
             sectionIsland.isHidden = usesToolbarDock && nowCompact
@@ -265,12 +287,15 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
     override func viewDidAppear(_ animated: Bool) {
         super.viewDidAppear(animated)
         visible = true
+        islandOverlay?.isHidden = !atmosphere
+        updateSectionPosition()
         backdrop.setPlaying(true)
     }
 
     override func viewWillDisappear(_ animated: Bool) {
         super.viewWillDisappear(animated)
         visible = false
+        islandOverlay?.isHidden = true
         backdrop.setPlaying(false)
     }
 
@@ -352,14 +377,21 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
                                at: IndexPath(item: 0, section: 0)) as? ProfileHero
     }
 
+    func numberOfSections(in collectionView: UICollectionView) -> Int { atmosphere ? 3 : 1 }
+
     func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
-        atmosphere && selectedSection == .overview ? dashboard.count : clips.count
+        if atmosphere {
+            if section == 0 { return 0 }
+            if selectedSection == .overview { return section == 1 ? min(2, dashboard.count) : max(0, dashboard.count - 2) }
+            return section == 1 ? clips.count : 0
+        }
+        return clips.count
     }
 
     func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
         if atmosphere && selectedSection == .overview {
             let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "dashboard", for: indexPath) as! ProfileDashboardCell
-            cell.show(dashboard[indexPath.item]); return cell
+            cell.show(dashboard[indexPath.item + (indexPath.section == 2 ? 2 : 0)]); return cell
         }
         let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "clip", for: indexPath) as! ClipThumbnailCell
         cell.layer.cornerRadius = atmosphere ? 18 : 0; cell.layer.cornerCurve = .continuous
@@ -370,7 +402,7 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         collectionView.deselectItem(at: indexPath, animated: true)
         if atmosphere && selectedSection == .overview {
-            openDashboard(dashboard[indexPath.item].destination); return
+            openDashboard(dashboard[indexPath.item + (indexPath.section == 2 ? 2 : 0)].destination); return
         }
         if let onClip { onClip(clips[indexPath.item]) }
         else { navigationController?.pushViewController(ClipPreviewController(clip: clips[indexPath.item], store: store), animated: true) }
@@ -402,7 +434,7 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
         clips = posts(for: profile)
         sectionIsland.select(section)
         layout.invalidateLayout()
-        grid.reloadSections(IndexSet(integer: 0))
+        grid.reloadSections(atmosphere ? IndexSet([1, 2]) : IndexSet(integer: 0))
         updateSectionPosition()
     }
 
@@ -803,7 +835,7 @@ private final class ProfileBackdrop: UIView {
         blurredBackdrop.contentMode = .scaleAspectFill; blurredBackdrop.clipsToBounds = true
         blurMask.colors = [UIColor.clear.cgColor, UIColor.clear.cgColor,
                            UIColor.black.withAlphaComponent(0.25).cgColor, UIColor.black.cgColor, UIColor.black.cgColor]
-        blurMask.locations = [0, 0.56, 0.67, 0.80, 1]
+        blurMask.locations = [0, 0.50, 0.59, 0.72, 1]
         blurredBackdrop.layer.mask = blurMask; addSubview(blurredBackdrop)
         let background = UIColor.systemBackground.resolvedColor(with: UITraitCollection(userInterfaceStyle: .dark))
         let alphas: [CGFloat] = [0, 0, 0.03, 0.10, 0.22, 0.38, 0.56, 0.73, 0.87, 0.96, 1]

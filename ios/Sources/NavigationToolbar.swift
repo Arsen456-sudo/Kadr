@@ -73,44 +73,10 @@ struct KadrNavigationShell: View {
     }
 
     @ToolbarContentBuilder private var navigationItems: some ToolbarContent {
-        ToolbarItem(id: "header.action", placement: .topBarTrailing) { headerAction }
         ToolbarItem(id: "header.principal", placement: .principal) {
             KadrPrincipalContent(state: state, availableWidth: tabs.view.bounds.width, fallbackTitle: navigationTitle)
         }
         .sharedBackgroundVisibility(.hidden)
-        ToolbarItem(id: "header.leading", placement: .topBarLeading) { leadingAction }
-    }
-
-    private var headerAction: some View {
-        Button {
-            if state.canSignOut { state.onSignOut?() } else { state.onSearch?() }
-        } label: { headerActionLabel }
-        .accessibilityLabel(state.canSignOut ? "Вийти" : "Пошук")
-        .accessibilityIdentifier("header.action")
-    }
-
-    @ViewBuilder private var headerActionLabel: some View {
-        if state.canSignOut && state.usesPortrait { Image(systemName: "rectangle.portrait.and.arrow.right") }
-        else if state.canSignOut { Text("Вийти") }
-        else { Image(systemName: "magnifyingglass") }
-    }
-
-    @ViewBuilder private var leadingAction: some View {
-        if state.screen == .feed { immersiveButton }
-        else if state.canSignOut { profileMenu }
-    }
-
-    private var profileMenu: some View {
-        Menu {
-            Button { state.onStudio?() } label: { Label("Студія та налаштування", systemImage: "slider.horizontal.3") }
-            Button { state.onChooseBanner?() } label: {
-                Label(state.usesPortrait ? "Вибрати фото профілю" : "Вибрати фото або відео", systemImage: AppSymbol.name("photo.on.rectangle"))
-            }
-            if state.hasBanner && !state.usesPortrait {
-                Button(role: .destructive) { state.onRemoveBanner?() } label: { Label("Прибрати банер", systemImage: "trash") }
-            }
-        } label: { Image(systemName: AppSymbol.name("photo.on.rectangle")) }
-        .accessibilityLabel(state.usesPortrait ? "Змінити фото профілю" : "Змінити банер")
     }
 
     @ViewBuilder private var immersiveOverlay: some View {
@@ -155,24 +121,16 @@ private struct KadrPrincipalContent: View {
     }
 }
 
+protocol ProfileScrollTitle: AnyObject {
+    func setScrollProgress(_ progress: CGFloat)
+}
+
 private struct AtmosphereToolbarTitle: View {
     @ObservedObject var state: KadrToolbarState
     let availableWidth: CGFloat
-    private var transitionAnimation: Animation? {
-        UIAccessibility.isReduceMotionEnabled ? nil : .smooth(duration: 0.22)
-    }
     var body: some View {
-        ZStack {
-            Text("Профіль").font(.headline)
-                .offset(y: state.profileDocked ? -100 : 0)
-                .opacity(state.profileDocked ? 0 : 1)
-                .accessibilityHidden(state.profileDocked)
-            ProfileToolbarHost(state: state)
-                .opacity(state.profileDocked ? 1 : 0)
-                .allowsHitTesting(state.profileDocked)
-        }
+        ProfileToolbarHost(state: state)
         .frame(width: min(260, max(160, availableWidth - 128)), height: 44)
-        .animation(transitionAnimation, value: state.profileDocked)
     }
 }
 
@@ -233,8 +191,22 @@ private struct ProfileToolbarHost: UIViewRepresentable {
     static func dismantleUIView(_ view: ProfileToolbarHostView, coordinator: ()) { view.onDetach?(view) }
 }
 
-private final class ProfileToolbarHostView: UIView {
+private final class ProfileToolbarHostView: UIView, ProfileScrollTitle {
+    private let title = UILabel()
     var onLayout: ((UIView) -> Void)?
     var onDetach: ((UIView) -> Void)?
-    override func layoutSubviews() { super.layoutSubviews(); onLayout?(self) }
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isUserInteractionEnabled = false
+        title.text = "Профіль"; title.font = .preferredFont(forTextStyle: .headline)
+        title.textAlignment = .center; title.textColor = .label
+        addSubview(title)
+    }
+    required init?(coder: NSCoder) { fatalError("Use init(frame:)") }
+    override func layoutSubviews() { super.layoutSubviews(); title.bounds = bounds; title.center = CGPoint(x: bounds.midX, y: bounds.midY); onLayout?(self) }
+    func setScrollProgress(_ progress: CGFloat) {
+        title.transform = CGAffineTransform(translationX: 0, y: UIAccessibility.isReduceMotionEnabled ? 0 : -88 * progress)
+        title.alpha = (1 - progress) * (1 - progress)
+        title.accessibilityElementsHidden = progress > 0.95
+    }
 }

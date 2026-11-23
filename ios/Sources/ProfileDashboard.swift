@@ -6,12 +6,13 @@ struct ProfileDashboardRow {
     let detail: String
     let symbol: String
     let destination: Destination
+    var value: String? = nil
 
     @MainActor static func rows(profile: Profile, store: LocalStore, own: Bool) -> [ProfileDashboardRow] {
         let posts = store.allClips.filter { $0.authorID == profile.id && (own || !$0.settings.onlyMe) }
         var rows = [
-            ProfileDashboardRow(title: "Статистика публікацій", detail: "\(posts.count) публікацій · \(posts.reduce(0) { $0 + store.likes($1) }) уподобань", symbol: "chart.bar.xaxis", destination: .statistics),
-            ProfileDashboardRow(title: "Спільнота", detail: "\(store.people(followersOf: profile.id).count) підписників · \(store.people(followedBy: profile.id).count) підписок", symbol: "person.2", destination: .community)
+            ProfileDashboardRow(title: own ? "Твоя творчість" : "Творчість", detail: "\(posts.reduce(0) { $0 + store.likes($1) }) уподобань публікацій", symbol: "chart.bar.xaxis", destination: .statistics, value: "\(posts.count)"),
+            ProfileDashboardRow(title: "Спільнота", detail: "\(store.people(followedBy: profile.id).count) підписок", symbol: "person.2", destination: .community, value: "\(store.people(followersOf: profile.id).count)")
         ]
         if own {
             rows += [
@@ -27,34 +28,39 @@ struct ProfileDashboardRow {
 }
 
 final class ProfileDashboardCell: UICollectionViewCell {
-    private let material = UIVisualEffectView(effect: UIBlurEffect(style: .systemThinMaterialDark))
+    private let material = UIVisualEffectView(effect: UIBlurEffect(style: .systemUltraThinMaterialDark))
     private let title = makeLabel(.headline)
     private let detail = makeLabel(.subheadline, color: .secondaryLabel)
     private let icon = UIImageView()
+    private let value = makeLabel(.largeTitle)
+    private let arrow = UIImageView(image: AppSymbol.image("chevron.right"))
     override init(frame: CGRect) {
         super.init(frame: frame)
         backgroundColor = .clear; contentView.backgroundColor = .clear
-        material.layer.cornerRadius = 24; material.layer.cornerCurve = .continuous; material.clipsToBounds = true
-        material.contentView.backgroundColor = UIColor.white.withAlphaComponent(0.045)
+        material.layer.cornerRadius = 22; material.layer.cornerCurve = .continuous; material.clipsToBounds = true
+        material.contentView.backgroundColor = UIColor.white.withAlphaComponent(0.035)
         material.isUserInteractionEnabled = false
         material.pin(to: contentView)
         icon.contentMode = .scaleAspectFit; icon.tintColor = .label
-        icon.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 23, weight: .medium)
-        icon.widthAnchor.constraint(equalToConstant: 30).isActive = true
-        let labels = UIStackView(arrangedSubviews: [title, detail]); labels.axis = .vertical; labels.spacing = 6
-        let arrow = UIImageView(image: AppSymbol.image("chevron.right")); arrow.tintColor = .tertiaryLabel
+        icon.preferredSymbolConfiguration = UIImage.SymbolConfiguration(pointSize: 19, weight: .medium)
+        icon.widthAnchor.constraint(equalToConstant: 24).isActive = true
+        title.font = .preferredFont(forTextStyle: .subheadline).withTraits(.traitBold)
+        value.font = .preferredFont(forTextStyle: .largeTitle).withTraits(.traitBold)
+        arrow.tintColor = .tertiaryLabel
         arrow.setContentHuggingPriority(.required, for: .horizontal)
-        let row = UIStackView(arrangedSubviews: [icon, labels, arrow]); row.alignment = .center; row.spacing = 14
+        let heading = UIStackView(arrangedSubviews: [icon, title, arrow]); heading.alignment = .center; heading.spacing = 10
+        let row = UIStackView(arrangedSubviews: [heading, value, detail]); row.axis = .vertical; row.spacing = 10
         row.isUserInteractionEnabled = false
-        row.pin(to: contentView, insets: .init(top: 22, leading: 20, bottom: 22, trailing: 20))
+        row.pin(to: contentView, insets: .init(top: 18, leading: 18, bottom: 18, trailing: 18))
         isAccessibilityElement = true; accessibilityTraits = .button
     }
     required init?(coder: NSCoder) { fatalError("Use init(frame:)") }
     func show(_ row: ProfileDashboardRow) {
         title.text = row.title; detail.text = row.detail; icon.image = AppSymbol.image(row.symbol)
+        value.text = row.value; value.isHidden = row.value == nil; arrow.isHidden = row.value != nil
         accessibilityLabel = row.title + ", " + row.detail
     }
     override var isHighlighted: Bool {
-        didSet { material.contentView.backgroundColor = UIColor.white.withAlphaComponent(isHighlighted ? 0.10 : 0.045) }
+        didSet { material.contentView.backgroundColor = UIColor.white.withAlphaComponent(isHighlighted ? 0.08 : 0.035) }
     }
 }

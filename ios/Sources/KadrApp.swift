@@ -68,6 +68,10 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
     private var keepsFeedPlaying = false
     private weak var selectedScreen: UIViewController?
     private var welcomePresented = false
+    private var nativeHeaderContext: KadrToolbarState.Context?
+    private weak var nativeHeaderItem: UINavigationItem?
+    private var nativeLeading: UIBarButtonItem?
+    private var nativeTrailing: UIBarButtonItem?
     private var syncTask: Task<Void, Never>?
     private var syncRequested = false
     var sceneActive = false { didSet { updatePlayback(); if sceneActive { synchronizeIfConfigured() } } }
@@ -173,6 +177,7 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
 
     override func viewDidLayoutSubviews() {
         super.viewDidLayoutSubviews()
+        updateSystemHeader(animated: false)
         // Keep the existing full-bleed UIKit screens anchored to the window's top safe area.
         if let window = view.window {
             let inheritedTop = view.safeAreaInsets.top - additionalSafeAreaInsets.top
@@ -295,7 +300,54 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
         if animated && !UIAccessibility.isReduceMotionEnabled {
             withAnimation(.smooth(duration: 0.28)) { toolbarState.context = context }
         } else { toolbarState.context = context }
+        updateSystemHeader(animated: animated)
         view.setNeedsLayout()
+    }
+
+    private func updateSystemHeader(animated: Bool) {
+        guard !immersive, let navigationController else { return }
+        var root: UIViewController = self
+        while let parent = root.parent, !(parent is UINavigationController) { root = parent }
+        // A pushed screen keeps its own navigation item and native back transition.
+        guard navigationController.topViewController === root else { return }
+        let item = root.navigationItem
+        let context = toolbarState.context
+        let changed = nativeHeaderContext != context || nativeHeaderItem !== item
+        if changed {
+            nativeHeaderContext = context; nativeHeaderItem = item
+            if context.canSignOut {
+                let action = UIAction { [weak self] _ in self?.toolbarState.onSignOut?() }
+                nativeTrailing = context.usesPortrait
+                    ? UIBarButtonItem(image: AppSymbol.image("rectangle.portrait.and.arrow.right"), primaryAction: action)
+                    : UIBarButtonItem(title: "Вийти", primaryAction: action)
+            } else {
+                nativeTrailing = UIBarButtonItem(image: AppSymbol.image("magnifyingglass"), primaryAction: UIAction { [weak self] _ in self?.toolbarState.onSearch?() })
+            }
+            nativeTrailing?.accessibilityLabel = context.canSignOut ? "Вийти" : "Пошук"
+            nativeTrailing?.accessibilityIdentifier = "header.action"
+            if context.screen == .feed {
+                nativeLeading = UIBarButtonItem(image: AppSymbol.image("arrow.up.left.and.arrow.down.right"), primaryAction: UIAction { [weak self] _ in self?.toolbarState.onImmersive?() })
+                nativeLeading?.accessibilityLabel = "Безкінечний екран"
+                nativeLeading?.accessibilityIdentifier = "feed.immersive"
+            } else if context.canSignOut {
+                var actions = [
+                    UIAction(title: "Студія та налаштування", image: AppSymbol.image("slider.horizontal.3")) { [weak self] _ in self?.toolbarState.onStudio?() },
+                    UIAction(title: context.usesPortrait ? "Вибрати фото профілю" : "Вибрати фото або відео", image: AppSymbol.image("photo.on.rectangle")) { [weak self] _ in self?.toolbarState.onChooseBanner?() }
+                ]
+                if context.hasBanner && !context.usesPortrait {
+                    actions.append(UIAction(title: "Прибрати банер", image: AppSymbol.image("trash"), attributes: .destructive) { [weak self] _ in self?.toolbarState.onRemoveBanner?() })
+                }
+                nativeLeading = UIBarButtonItem(image: AppSymbol.image("photo.on.rectangle"), menu: UIMenu(children: actions))
+                nativeLeading?.accessibilityLabel = context.usesPortrait ? "Змінити фото профілю" : "Змінити банер"
+            } else { nativeLeading = nil }
+        }
+        let animate = changed && animated && !UIAccessibility.isReduceMotionEnabled
+        if changed || item.leftBarButtonItems?.first !== nativeLeading {
+            item.setLeftBarButtonItems(nativeLeading.map { [$0] } ?? [], animated: animate)
+        }
+        if changed || item.rightBarButtonItems?.first !== nativeTrailing {
+            item.setRightBarButtonItems(nativeTrailing.map { [$0] } ?? [], animated: animate)
+        }
     }
 
     @objc private func synchronizeIfConfigured() {
