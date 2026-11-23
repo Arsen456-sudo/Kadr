@@ -54,14 +54,15 @@ struct KadrNavigationShell: View {
             KadrTabContent(tabs: tabs)
                 .ignoresSafeArea(.container)
                 .scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
-                .navigationTitle(state.screen == .profile ? (state.compactTitle ?? state.screen.title) : state.screen.title)
+                .navigationTitle(state.screen == .profile && state.usesPortrait ? "" : (state.screen == .profile ? (state.compactTitle ?? state.screen.title) : state.screen.title))
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(id: "header.action", placement: .topBarTrailing) {
                         Button {
                             if state.canSignOut { state.onSignOut?() } else { state.onSearch?() }
                         } label: {
-                            if state.canSignOut { Text("Вийти") }
+                            if state.canSignOut && state.usesPortrait { Image(systemName: "rectangle.portrait.and.arrow.right") }
+                            else if state.canSignOut { Text("Вийти") }
                             else { Image(systemName: "magnifyingglass") }
                         }
                         .accessibilityLabel(state.canSignOut ? "Вийти" : "Пошук")
@@ -71,6 +72,19 @@ struct KadrNavigationShell: View {
                         ToolbarItem(placement: .principal) {
                             FeedPickerContent(state: state)
                                 .frame(width: 236, height: 44)
+                        }
+                        .sharedBackgroundVisibility(.hidden)
+                    } else if state.screen == .profile && state.usesPortrait {
+                        ToolbarItem(placement: .principal) {
+                            ZStack {
+                                Text("Профіль").font(.headline)
+                                    .offset(y: state.profileDocked ? -100 : 0)
+                                    .opacity(state.profileDocked ? 0 : 1)
+                                    .accessibilityHidden(state.profileDocked)
+                                if state.profileDocked { ProfilePickerContent(state: state) }
+                            }
+                            .frame(width: min(260, max(160, tabs.view.bounds.width - 128)), height: 44)
+                            .animation(UIAccessibility.isReduceMotionEnabled ? nil : .smooth(duration: 0.22), value: state.profileDocked)
                         }
                         .sharedBackgroundVisibility(.hidden)
                     } else if state.screen == .profile && state.profileDocked {
@@ -168,7 +182,7 @@ private struct FeedPickerContent: UIViewRepresentable {
 private struct ProfilePickerContent: UIViewRepresentable {
     @ObservedObject var state: KadrToolbarState
     func makeUIView(context: Context) -> ProfileSectionPicker {
-        let picker = ProfileSectionPicker()
+        let picker = ProfileSectionPicker(atmosphere: state.usesPortrait)
         picker.onSelection = { section in state.onProfileSection?(section) }
         return picker
     }

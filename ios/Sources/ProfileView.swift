@@ -11,7 +11,11 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
     private let repository: any SocialRepository
     private var followTask: Task<Void, Never>?
     private var selectedSection = ProfileSection.posts
-    private let sectionIsland = ProfileSectionPicker()
+    private var sectionIsland = ProfileSectionPicker()
+    private var atmosphere = false
+    private var dashboard: [ProfileDashboardRow] = []
+    private var snapToStart = false
+    private let ambientBackground = GradientView()
     var sectionInsets = NSDirectionalEdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16) { didSet { updateSectionPosition() } }
     var sectionPinTop: CGFloat? { didSet { updateSectionPosition() } }
     var usesToolbarDock = false
@@ -21,15 +25,23 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
     private var pickerDestination = PhotoDestination.banner
     private lazy var layout = UICollectionViewCompositionalLayout { [weak self] _, environment in
         let width = environment.container.effectiveContentSize.width
-        let side = (width - 4) / 3
-        let size = NSCollectionLayoutSize(widthDimension: .absolute(side), heightDimension: .absolute(side * 1.27))
+        let dashboard = self?.atmosphere == true && self?.selectedSection == .overview
+        let modern = self?.atmosphere == true
+        let side = modern ? (width - 40) / 2 : (width - 4) / 3
+        let size = dashboard
+            ? NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .estimated(98))
+            : NSCollectionLayoutSize(widthDimension: .absolute(side), heightDimension: .absolute(side * (modern ? 1.38 : 1.27)))
         let item = NSCollectionLayoutItem(layoutSize: size)
         let group = NSCollectionLayoutGroup.horizontal(
-            layoutSize: NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .absolute(side * 1.27)),
-            subitems: [item, item, item])
-        group.interItemSpacing = .fixed(2)
+            layoutSize: NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: dashboard ? .estimated(98) : .absolute(side * (modern ? 1.38 : 1.27))),
+            subitems: dashboard ? [item] : (modern ? [item, item] : [item, item, item]))
+        group.interItemSpacing = .fixed(modern ? 8 : 2)
         let section = NSCollectionLayoutSection(group: group)
-        section.interGroupSpacing = 2
+        section.interGroupSpacing = modern ? 12 : 2
+        if modern {
+            section.contentInsets = .init(top: 8, leading: 0, bottom: 24, trailing: 0)
+            group.contentInsets = .init(top: 0, leading: 16, bottom: 0, trailing: 16)
+        }
         if let self, let profile = self.visibleProfile {
             let height = self.heroHeight(for: profile)
             section.boundarySupplementaryItems = [NSCollectionLayoutBoundarySupplementaryItem(
@@ -71,6 +83,9 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
     override func viewDidLoad() {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
+        ambientBackground.isUserInteractionEnabled = false
+        ambientBackground.pin(to: view)
+        backdrop.onPalette = { [weak self] color in self?.setAmbientColor(color) }
         backdrop.translatesAutoresizingMaskIntoConstraints = true
         view.addSubview(backdrop)
         grid.backgroundColor = .clear
@@ -84,6 +99,7 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
         grid.dataSource = self
         grid.delegate = self
         grid.register(ClipThumbnailCell.self, forCellWithReuseIdentifier: "clip")
+        grid.register(ProfileDashboardCell.self, forCellWithReuseIdentifier: "dashboard")
         grid.register(ProfileHero.self, forSupplementaryViewOfKind: UICollectionView.elementKindSectionHeader,
                       withReuseIdentifier: "hero")
         grid.pin(to: view)
@@ -131,7 +147,33 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
         let proposed = targetContentOffset.pointee.y
         // Let UIKit finish the existing deceleration; do not run another animation
         // or intercept the pan. A fast fling that reaches the pinned tabs continues.
-        if proposed > 0, proposed < pinOffset { targetContentOffset.pointee.y = 0 }
+        snapToStart = false
+        if proposed > 0, proposed < pinOffset {
+            if atmosphere {
+                // Finish with UIKit's short animated scroll instead of a long deceleration.
+                snapToStart = true
+                targetContentOffset.pointee.y = scrollView.contentOffset.y
+            } else { targetContentOffset.pointee.y = 0 }
+        }
+    }
+
+    func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
+        guard snapToStart else { return }
+        snapToStart = false
+        scrollView.setContentOffset(.zero, animated: !UIAccessibility.isReduceMotionEnabled)
+    }
+
+    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) { snapToStart = false }
+
+    private func setAmbientColor(_ color: UIColor) {
+        guard atmosphere else { return }
+        view.backgroundColor = color
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        var hue: CGFloat = 0, saturation: CGFloat = 0, brightness: CGFloat = 0, alpha: CGFloat = 0
+        color.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
+        let lower = UIColor(hue: hue, saturation: saturation, brightness: brightness * 0.78, alpha: 1)
+        ambientBackground.gradient.colors = [color.cgColor, lower.cgColor]
+        CATransaction.commit()
     }
 
     private func updateBackdropPosition() {
@@ -166,12 +208,12 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
         let leading = max(view.safeAreaInsets.left, sectionInsets.leading)
         let trailing = max(view.safeAreaInsets.right, sectionInsets.trailing)
         let fullWidth = max(0, view.bounds.width - leading - trailing)
-        let dockWidth = min(216, max(132, view.bounds.width - 172))
-        let dockX = (view.bounds.width - dockWidth) / 2 - 14
+        let dockWidth = atmosphere ? min(260, max(160, view.bounds.width - 128)) : min(216, max(132, view.bounds.width - 172))
+        let dockX = (view.bounds.width - dockWidth) / 2 - (atmosphere ? 0 : 14)
         let fraction = usesToolbarDock ? min(1, max(0, (pin + 96 - naturalY) / 96)) : 0
         let progress = fraction * fraction * (3 - 2 * fraction)
-        sectionIsland.frame = CGRect(x: leading + (dockX - leading) * progress, y: max(pin, naturalY),
-                                     width: fullWidth + (dockWidth - fullWidth) * progress, height: 44)
+        sectionIsland.frame = CGRect(x: atmosphere ? dockX : leading + (dockX - leading) * progress, y: max(pin, naturalY),
+                                     width: atmosphere ? dockWidth : fullWidth + (dockWidth - fullWidth) * progress, height: 44)
         sectionIsland.isHidden = usesToolbarDock && nowCompact
         if view.subviews.last !== sectionIsland { view.bringSubviewToFront(sectionIsland) }
     }
@@ -188,7 +230,14 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
             }
             layout.invalidateLayout()
         }
-        grid.contentInset.bottom = view.safeAreaInsets.bottom
+        var bottomInset = view.safeAreaInsets.bottom
+        if atmosphere, let profile = visibleProfile {
+            let pin = sectionPinTop ?? view.safeAreaInsets.top
+            let pinOffset = max(0, heroHeight(for: profile) - 50 - pin)
+            let available = max(0, layout.collectionViewContentSize.height - view.bounds.height)
+            bottomInset += max(0, pinOffset - available)
+        }
+        if abs(grid.contentInset.bottom - bottomInset) > 0.25 { grid.contentInset.bottom = bottomInset }
         grid.verticalScrollIndicatorInsets = view.safeAreaInsets
         updateSectionPosition()
     }
@@ -214,6 +263,18 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
         displayedAppearance = appearance
         let changedTheme = displayedTheme != appearance.theme
         displayedTheme = appearance.theme
+        let newAtmosphere = appearance.theme == "atmosphere"
+        if atmosphere != newAtmosphere {
+            atmosphere = newAtmosphere
+            sectionIsland.removeFromSuperview()
+            sectionIsland = ProfileSectionPicker(atmosphere: atmosphere)
+            sectionIsland.translatesAutoresizingMaskIntoConstraints = true
+            sectionIsland.onSelection = { [weak self] section in self?.select(section) }
+            view.addSubview(sectionIsland)
+            ambientBackground.isHidden = !atmosphere
+            if atmosphere { setAmbientColor(UIColor(white: 0.16, alpha: 1)) }
+            else { view.backgroundColor = .systemBackground }
+        }
         let changedText = visibleProfile?.name != profile?.name || visibleProfile?.bio != profile?.bio || visibleProfile?.handle != profile?.handle
         let resetScroll = visibleProfile?.id != profile?.id
         let changedBanner = visibleProfile?.bannerFile != profile?.bannerFile || visibleProfile?.portraitFile != profile?.portraitFile
@@ -224,7 +285,11 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
             backdrop.show(profile, start: appearance.bannerStart, theme: appearance.theme)
             backdrop.setPlaying(visible)
         }
-        if resetScroll { selectedSection = .posts; onSectionChange?(.posts) }
+        if resetScroll || changedTheme {
+            selectedSection = atmosphere ? .overview : .posts
+            onSectionChange?(selectedSection)
+        }
+        if let profile { dashboard = ProfileDashboardRow.rows(profile: profile, store: store, own: !preview && store.active?.id == profile.id) }
         updateBackdropPosition()
         backdrop.isHidden = profile == nil
         sectionIsland.select(selectedSection)
@@ -236,7 +301,7 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
             title = profileID == nil ? "Профіль" : "@\(profile.handle)"
             let newClips = posts(for: profile)
             let state: Bool? = store.active?.id != profile.id ? store.follows(profile) : nil
-            if resetScroll || changedBanner || changedAvatar || changedAppearance || changedText || state != followState || clips != newClips {
+            if resetScroll || changedBanner || changedAvatar || changedAppearance || changedText || state != followState || clips != newClips || (atmosphere && selectedSection == .overview) {
                 clips = newClips
                 followState = state
                 cachedHeroHeight = nil
@@ -267,16 +332,26 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
                                at: IndexPath(item: 0, section: 0)) as? ProfileHero
     }
 
-    func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int { clips.count }
+    func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
+        atmosphere && selectedSection == .overview ? dashboard.count : clips.count
+    }
 
     func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
+        if atmosphere && selectedSection == .overview {
+            let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "dashboard", for: indexPath) as! ProfileDashboardCell
+            cell.show(dashboard[indexPath.item]); return cell
+        }
         let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "clip", for: indexPath) as! ClipThumbnailCell
-        cell.show(clips[indexPath.item])
+        cell.layer.cornerRadius = atmosphere ? 18 : 0; cell.layer.cornerCurve = .continuous
+        cell.show(clips[indexPath.item], modern: atmosphere)
         return cell
     }
 
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         collectionView.deselectItem(at: indexPath, animated: true)
+        if atmosphere && selectedSection == .overview {
+            openDashboard(dashboard[indexPath.item].destination); return
+        }
         if let onClip { onClip(clips[indexPath.item]) }
         else { navigationController?.pushViewController(ClipPreviewController(clip: clips[indexPath.item], store: store), animated: true) }
     }
@@ -284,13 +359,16 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
     private func posts(for profile: Profile) -> [Clip] {
         if selectedSection == .posts {
             let pins = store.state.studio?.accounts[profile.id.uuidString]?.appearance.pinnedPosts ?? []
-            return store.allClips.filter { $0.authorID == profile.id && (!preview || !$0.settings.onlyMe) }.sorted {
+            return store.allClips.filter {
+                $0.authorID == profile.id && (!preview || !$0.settings.onlyMe) &&
+                (!atmosphere || store.active?.id == profile.id || !$0.settings.onlyMe)
+            }.sorted {
                 (pins.firstIndex(of: $0.id) ?? Int.max) < (pins.firstIndex(of: $1.id) ?? Int.max)
             }
         }
         guard !preview, store.active?.id == profile.id else { return [] }
         switch selectedSection {
-        case .posts: return []
+        case .posts, .overview: return []
         case .saved: return store.feed(.saved)
         case .liked: return store.allClips.filter { store.liked($0) }
         case .comments: return store.allClips.filter { clip in store.comments(clip).contains { $0.authorID == profile.id } }
@@ -303,6 +381,7 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
         onSectionChange?(section)
         clips = posts(for: profile)
         sectionIsland.select(section)
+        layout.invalidateLayout()
         grid.reloadSections(IndexSet(integer: 0))
         updateSectionPosition()
     }
@@ -340,6 +419,7 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
     }
 
     func scrollToPublications() {
+        if atmosphere { select(.posts) }
         guard let profile = visibleProfile else { return }
         let pin = sectionPinTop ?? view.safeAreaInsets.top + 46
         grid.setContentOffset(CGPoint(x: 0, y: max(0, heroHeight(for: profile) - 50 - pin)), animated: !UIAccessibility.isReduceMotionEnabled)
@@ -350,6 +430,38 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
         else {
             child.navigationItem.leftBarButtonItem = UIBarButtonItem(systemItem: .close, primaryAction: UIAction { [weak child] _ in child?.dismiss(animated: true) })
             present(UINavigationController(rootViewController: child), animated: true)
+        }
+    }
+
+    private func openDashboard(_ destination: ProfileDashboardRow.Destination) {
+        guard let profile = visibleProfile else { return }
+        let own = !preview && store.active?.id == profile.id
+        switch destination {
+        case .settings:
+            if own { showChild(SettingsController(store: store)) }
+        case .appearance:
+            if own { showChild(StudioController(store: store)) }
+        case .library:
+            if own { select(.saved) }
+        case .community:
+            showChild(PeopleListController(store: store, profile: profile, followers: true))
+        case .about:
+            let page = ActionListController("Про автора")
+            page.rows = [StudioRow(title: profile.name, detail: profile.bio.isEmpty ? "@" + profile.handle : profile.bio, navigates: false, action: {})]
+            showChild(page)
+        case .statistics:
+            let posts = store.allClips.filter { $0.authorID == profile.id && (own || !$0.settings.onlyMe) }
+            let page = ActionListController("Статистика")
+            page.rows = [
+                StudioRow(title: "Публікації", detail: "\(posts.count)", navigates: false, action: {}),
+                StudioRow(title: "Уподобання публікацій", detail: "\(posts.reduce(0) { $0 + store.likes($1) })", navigates: false, action: {}),
+                StudioRow(title: "Підписники", detail: "\(store.people(followersOf: profile.id).count)", navigates: false, action: {})
+            ]
+            if own {
+                page.rows.append(StudioRow(title: "Чернетки", detail: "\(store.drafts.count)", navigates: false, action: {}))
+                page.rows.append(StudioRow(title: "Джерело даних", detail: "Локальні дані цього пристрою", navigates: false, action: {}))
+            }
+            showChild(page)
         }
     }
 
@@ -644,6 +756,7 @@ private extension UIView {
 }
 
 private final class ProfileBackdrop: UIView {
+    var onPalette: ((UIColor) -> Void)?
     private let artwork = UIImageView()
     private let blurredBackdrop = UIImageView()
     private let blurMask = CAGradientLayer()
@@ -654,6 +767,7 @@ private final class ProfileBackdrop: UIView {
     private var mediaHeight: CGFloat = 260
     private var artworkTask: Task<Void, Never>?
     private var artworkRevision = UUID()
+    private var portrait = false
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -692,7 +806,7 @@ private final class ProfileBackdrop: UIView {
         let backdropY = -max(0, scrollOffset)
         blurredBackdrop.frame = artwork.frame
         CATransaction.begin(); CATransaction.setDisableActions(true)
-        blurMask.frame = CGRect(x: 0, y: backdropY, width: bounds.width, height: height)
+        blurMask.frame = CGRect(x: 0, y: backdropY - (portrait ? 3 : 0), width: bounds.width, height: height)
         CATransaction.commit()
         shade.frame = CGRect(x: 0, y: backdropY, width: bounds.width, height: height)
     }
@@ -700,14 +814,12 @@ private final class ProfileBackdrop: UIView {
     func show(_ profile: Profile?, start: Double = 0, theme: String = "minimal") {
         artworkTask?.cancel(); artworkRevision = UUID(); let revision = artworkRevision
         let portrait = theme == "atmosphere"
+        self.portrait = portrait
         let url = portrait ? profile?.portraitFile.map { LocalStore.directory.appendingPathComponent($0) } : profile?.bannerURL
         isVideo = !portrait && url.flatMap { UTType(filenameExtension: $0.pathExtension) }?.conforms(to: .movie) == true
         artwork.image = nil
         blurredBackdrop.image = nil; blurredBackdrop.isHidden = !portrait
-        let background = UIColor.systemBackground.resolvedColor(with: UITraitCollection(userInterfaceStyle: .dark))
-        let alphas: [CGFloat] = portrait ? [0, 0, 0.015, 0.06, 0.16, 0.32, 0.52, 0.72, 0.88, 0.97, 1] : [0, 0, 0.03, 0.10, 0.22, 0.38, 0.56, 0.73, 0.87, 0.96, 1]
-        shade.gradient.colors = alphas.map { background.withAlphaComponent($0).cgColor }
-        shade.gradient.locations = portrait ? [0, 0.46, 0.54, 0.60, 0.66, 0.72, 0.78, 0.84, 0.90, 0.96, 1] : [0, 0.33, 0.43, 0.51, 0.59, 0.67, 0.74, 0.81, 0.88, 0.94, 1]
+        updateShade(color: portrait ? UIColor(white: 0.16, alpha: 1) : .systemBackground, portrait: portrait)
         if !isVideo {
             let fallback = portrait ? profile?.avatar : nil
             artworkTask = Task { [weak self] in
@@ -722,23 +834,37 @@ private final class ProfileBackdrop: UIView {
                 guard !Task.isCancelled, let self, self.artworkRevision == revision else { return }
                 self.artwork.image = image
                 if portrait, let image {
-                    ProfilePhotoRenderer.render(image) { [weak self] rendered in
+                    ProfilePhotoRenderer.render(image) { [weak self] rendered, color in
                         guard let self, self.artworkRevision == revision else { return }
                         if let rendered { self.blurredBackdrop.image = rendered }
+                        self.updateShade(color: color, portrait: true)
+                        self.onPalette?(color)
                     }
                 }
             }
         }
         video.isHidden = !isVideo; video.load(isVideo ? url : nil)
         if isVideo { video.seek(to: max(0, start)) }
+        setNeedsLayout()
     }
 
     func setPlaying(_ playing: Bool) { video.setPlaying(playing && isVideo, muted: true) }
+
+    private func updateShade(color: UIColor, portrait: Bool) {
+        let background = color.resolvedColor(with: UITraitCollection(userInterfaceStyle: .dark))
+        let alphas: [CGFloat] = portrait ? [0, 0, 0.015, 0.06, 0.16, 0.32, 0.52, 0.72, 0.88, 0.97, 1] : [0, 0, 0.03, 0.10, 0.22, 0.38, 0.56, 0.73, 0.87, 0.96, 1]
+        CATransaction.begin(); CATransaction.setDisableActions(true)
+        shade.gradient.colors = alphas.map { background.withAlphaComponent($0).cgColor }
+        shade.gradient.locations = portrait ? [0, 0.46, 0.54, 0.60, 0.66, 0.72, 0.78, 0.84, 0.90, 0.96, 1] : [0, 0.33, 0.43, 0.51, 0.59, 0.67, 0.74, 0.81, 0.88, 0.94, 1]
+        CATransaction.commit()
+    }
 }
 
 private final class ClipThumbnailCell: UICollectionViewCell {
     private let image = UIImageView()
     private let play = UIImageView(image: AppSymbol.image( "play.fill"))
+    private let caption = UILabel()
+    private let albumCount = UILabel()
     private var task: Task<Void, Never>?
     private var representedID: String?
 
@@ -761,6 +887,22 @@ private final class ClipThumbnailCell: UICollectionViewCell {
             play.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -8),
             play.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 8)
         ])
+        caption.font = .preferredFont(forTextStyle: .caption1); caption.textColor = .white
+        caption.layer.shadowColor = UIColor.black.cgColor; caption.layer.shadowOpacity = 0.8; caption.layer.shadowRadius = 3
+        caption.translatesAutoresizingMaskIntoConstraints = false; contentView.addSubview(caption)
+        albumCount.font = .preferredFont(forTextStyle: .caption2); albumCount.textColor = .white
+        albumCount.textAlignment = .center; albumCount.backgroundColor = UIColor.black.withAlphaComponent(0.4)
+        albumCount.layer.cornerRadius = 10; albumCount.clipsToBounds = true
+        albumCount.translatesAutoresizingMaskIntoConstraints = false; contentView.addSubview(albumCount)
+        NSLayoutConstraint.activate([
+            caption.leadingAnchor.constraint(equalTo: contentView.leadingAnchor, constant: 28),
+            caption.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -8),
+            caption.bottomAnchor.constraint(equalTo: contentView.bottomAnchor, constant: -8),
+            albumCount.topAnchor.constraint(equalTo: contentView.topAnchor, constant: 8),
+            albumCount.trailingAnchor.constraint(equalTo: contentView.trailingAnchor, constant: -8),
+            albumCount.widthAnchor.constraint(greaterThanOrEqualToConstant: 28),
+            albumCount.heightAnchor.constraint(equalToConstant: 22)
+        ])
         isAccessibilityElement = true
         accessibilityTraits = .button
     }
@@ -774,8 +916,11 @@ private final class ClipThumbnailCell: UICollectionViewCell {
         image.image = nil
     }
 
-    func show(_ clip: Clip) {
+    func show(_ clip: Clip, modern: Bool = false) {
         task?.cancel()
+        caption.isHidden = !modern; caption.text = clip.caption
+        let count = clip.media?.count ?? 1
+        albumCount.isHidden = !modern || count < 2; albumCount.text = " \(count) "
         representedID = clip.id
         accessibilityLabel = (clip.isPhoto ? "Фото. " : "Відео. ") + (clip.caption.isEmpty ? "Публікація" : clip.caption)
         image.image = nil

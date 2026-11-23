@@ -96,7 +96,7 @@ enum AtmosphereProfile {
     private static func action(_ title: String, symbol: String, onTap: (() -> Void)?) -> UIStackView {
         var style = UIButton.Configuration.glass()
         style.cornerStyle = .capsule; style.baseForegroundColor = .label
-        style.image = AppSymbol.image(symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 23, weight: .semibold))
+        style.image = AppSymbol.image(symbol, withConfiguration: UIImage.SymbolConfiguration(pointSize: 21, weight: .semibold))
         let button = UIButton(configuration: style)
         button.accessibilityLabel = title; button.isPointerInteractionEnabled = true
         button.widthAnchor.constraint(equalToConstant: 56).isActive = true

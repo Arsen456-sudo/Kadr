@@ -126,11 +126,12 @@ class GlassSectionPicker: UIView {
     private var control = UISegmentedControl()
     private let titles: [String]
     private var controlHeight: NSLayoutConstraint!
+    private var toolbarWidth: NSLayoutConstraint?
     var onIndexSelection: ((Int) -> Void)?
 
     override var intrinsicContentSize: CGSize { CGSize(width: 184, height: 44) }
 
-    init(titles: [String], symbols: [String] = []) {
+    init(titles: [String], symbols: [String] = [], toolbarHosted: Bool = false) {
         self.titles = titles
         super.init(frame: .zero)
         if symbols.isEmpty {
@@ -150,13 +151,29 @@ class GlassSectionPicker: UIView {
             control = UISegmentedControl(frame: .zero, actions: actions)
         }
         control.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(control)
         controlHeight = control.heightAnchor.constraint(equalToConstant: 44)
-        NSLayoutConstraint.activate([
-            control.centerYAnchor.constraint(equalTo: centerYAnchor),
-            control.leadingAnchor.constraint(equalTo: leadingAnchor),
-            control.trailingAnchor.constraint(equalTo: trailingAnchor), controlHeight
-        ])
+        if toolbarHosted {
+            // The same native bar context is used both in the scrolling profile
+            // and in the navigation bar, so segmented control styling stays stable.
+            let bar = UIToolbar()
+            bar.directionalLayoutMargins = .zero
+            let appearance = UIToolbarAppearance(); appearance.configureWithTransparentBackground()
+            bar.standardAppearance = appearance; bar.scrollEdgeAppearance = appearance
+            bar.compactAppearance = appearance
+            bar.pin(to: self)
+            toolbarWidth = control.widthAnchor.constraint(equalToConstant: 244)
+            NSLayoutConstraint.activate([controlHeight, toolbarWidth!])
+            let item = UIBarButtonItem(customView: control)
+            item.hidesSharedBackground = false
+            bar.setItems([item], animated: false)
+        } else {
+            addSubview(control)
+            NSLayoutConstraint.activate([
+                control.centerYAnchor.constraint(equalTo: centerYAnchor),
+                control.leadingAnchor.constraint(equalTo: leadingAnchor),
+                control.trailingAnchor.constraint(equalTo: trailingAnchor), controlHeight
+            ])
+        }
         let font = UIFont.preferredFont(forTextStyle: .footnote)
         control.setTitleTextAttributes([.font: font], for: .normal)
         control.setTitleTextAttributes([.font: font], for: .selected)
@@ -167,6 +184,12 @@ class GlassSectionPicker: UIView {
     }
 
     required init?(coder: NSCoder) { fatalError("Use init(titles:)") }
+
+    override func layoutSubviews() {
+        let width = max(0, bounds.width - 16)
+        if let toolbarWidth, abs(toolbarWidth.constant - width) > 0.25 { toolbarWidth.constant = width }
+        super.layoutSubviews()
+    }
 
     func matchSearchHeight(_ height: CGFloat) {
         guard height.isFinite, height >= 28, height <= 60 else { return }
