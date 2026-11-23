@@ -73,28 +73,11 @@ struct KadrNavigationShell: View {
 
     @ToolbarContentBuilder private var navigationItems: some ToolbarContent {
         ToolbarItem(id: "header.action", placement: .topBarTrailing) { headerAction }
-        principalItem
-        ToolbarItem(id: "header.leading", placement: .topBarLeading) { leadingAction }
-    }
-
-    @ToolbarContentBuilder private var principalItem: some ToolbarContent {
-        if state.screen == .feed {
-            ToolbarItem(placement: .principal) {
-                FeedPickerContent(state: state).frame(width: 236, height: 44)
-            }
-            .sharedBackgroundVisibility(.hidden)
-        } else if state.screen == .profile && state.usesPortrait {
-            ToolbarItem(placement: .principal) {
-                AtmosphereToolbarTitle(state: state, availableWidth: tabs.view.bounds.width)
-            }
-            .sharedBackgroundVisibility(.hidden)
-        } else if state.screen == .profile && state.profileDocked {
-            ToolbarItem(placement: .principal) {
-                ProfilePickerContent(state: state)
-                    .frame(width: min(216, max(132, tabs.view.bounds.width - 172)), height: 44)
-            }
-            .sharedBackgroundVisibility(.hidden)
+        ToolbarItem(id: "header.principal", placement: .principal) {
+            KadrPrincipalContent(state: state, availableWidth: tabs.view.bounds.width, fallbackTitle: navigationTitle)
         }
+        .sharedBackgroundVisibility(.hidden)
+        ToolbarItem(id: "header.leading", placement: .topBarLeading) { leadingAction }
     }
 
     private var headerAction: some View {
@@ -149,6 +132,25 @@ struct KadrNavigationShell: View {
         .accessibilityLabel("Безкінечний екран")
         .accessibilityValue(state.immersive ? "Увімкнено" : "Вимкнено")
         .accessibilityIdentifier("feed.immersive")
+    }
+}
+
+private struct KadrPrincipalContent: View {
+    @ObservedObject var state: KadrToolbarState
+    let availableWidth: CGFloat
+    let fallbackTitle: String
+    private var regularWidth: CGFloat { min(216, max(132, availableWidth - 172)) }
+
+    @ViewBuilder var body: some View {
+        if state.screen == .feed {
+            FeedPickerContent(state: state).frame(width: 236, height: 44)
+        } else if state.screen == .profile && state.usesPortrait {
+            AtmosphereToolbarTitle(state: state, availableWidth: availableWidth)
+        } else if state.screen == .profile && state.profileDocked {
+            ProfilePickerContent(state: state).frame(width: regularWidth, height: 44)
+        } else {
+            Text(fallbackTitle).font(.headline)
+        }
     }
 }
 
