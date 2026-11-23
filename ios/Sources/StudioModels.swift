@@ -1,6 +1,6 @@
 import Foundation
 
-struct CreatorAppearance: Codable {
+struct CreatorAppearance: Codable, Equatable {
     var theme = "minimal"
     var accent = "peach"
     var introduction = ""

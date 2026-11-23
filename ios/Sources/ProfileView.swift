@@ -1,7 +1,6 @@
 import AVFoundation
 import PhotosUI
 import UIKit
-import CoreImage
 import UniformTypeIdentifiers
 
 final class ProfileController: UIViewController, UICollectionViewDataSource, UICollectionViewDelegate,
@@ -53,7 +52,8 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
     var onChange: (() -> Void)?
     var onCompact: ((String?) -> Void)?
     private var compact = false
-    private var appearanceFingerprint: Data?
+    private var displayedAppearance: CreatorAppearance?
+    private var displayedTheme: String?
 
     init(store: LocalStore, profileID: UUID?, repository: (any SocialRepository)? = nil, preview: Bool = false) {
         self.preview = preview
@@ -77,6 +77,7 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
         grid.topEdgeEffect.isHidden = false
         grid.accessibilityIdentifier = "profile.screen"
         NotificationCenter.default.addObserver(self, selector: #selector(contentSizeChanged), name: UIContentSizeCategory.didChangeNotification, object: nil)
+        NotificationCenter.default.addObserver(self, selector: #selector(localAppearanceChanged), name: .kadrLocalDidChange, object: store)
         grid.dataSource = self
         grid.delegate = self
         grid.register(ClipThumbnailCell.self, forCellWithReuseIdentifier: "clip")
@@ -91,6 +92,19 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
 
     @objc private func contentSizeChanged() {
         cachedHeroHeight = nil; layout.invalidateLayout(); view.setNeedsLayout()
+    }
+
+    @objc private func localAppearanceChanged() {
+        let profile = profileID.flatMap { store.profile($0) } ?? (profileID == nil ? store.active : nil)
+        let appearance = profile.flatMap { store.state.studio?.accounts[$0.id.uuidString]?.appearance } ?? CreatorAppearance()
+        guard appearance != displayedAppearance else { return }
+        refresh()
+        onChange?()
+    }
+
+    override func viewWillAppear(_ animated: Bool) {
+        super.viewWillAppear(animated)
+        refresh()
     }
 
     func scrollViewDidScroll(_ scrollView: UIScrollView) {
@@ -182,9 +196,10 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
         configureBannerMenu()
         let profile = profileID.flatMap { store.profile($0) } ?? (profileID == nil ? store.active : nil)
         let appearance = profile.flatMap { store.state.studio?.accounts[$0.id.uuidString]?.appearance } ?? CreatorAppearance()
-        let fingerprint = try? JSONEncoder().encode(appearance)
-        let changedAppearance = fingerprint != appearanceFingerprint
-        appearanceFingerprint = fingerprint
+        let changedAppearance = appearance != displayedAppearance
+        displayedAppearance = appearance
+        let changedTheme = displayedTheme != appearance.theme
+        displayedTheme = appearance.theme
         let changedText = visibleProfile?.name != profile?.name || visibleProfile?.bio != profile?.bio || visibleProfile?.handle != profile?.handle
         let resetScroll = visibleProfile?.id != profile?.id
         let changedBanner = visibleProfile?.bannerFile != profile?.bannerFile || visibleProfile?.portraitFile != profile?.portraitFile
@@ -213,7 +228,9 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
                 cachedHeroHeight = nil
                 layout.invalidateLayout()
                 grid.reloadData()
-                if resetScroll { grid.setContentOffset(.zero, animated: false) }
+                if resetScroll || changedTheme { grid.setContentOffset(.zero, animated: false) }
+                updateBackdropPosition()
+                updateSectionPosition()
             }
         } else {
             backdrop.setPlaying(false)
@@ -614,8 +631,6 @@ private extension UIView {
 private final class ProfileBackdrop: UIView {
     private let artwork = UIImageView()
     private let video = VideoSurface(frame: .zero)
-    private let blurredArtwork = UIImageView()
-    private let blurMask = CAGradientLayer()
     private let shade = GradientView()
     private var isVideo = false
     private var scrollOffset: CGFloat = 0
@@ -631,10 +646,6 @@ private final class ProfileBackdrop: UIView {
         artwork.clipsToBounds = true
         addSubview(artwork)
         addSubview(video)
-        blurredArtwork.contentMode = .scaleAspectFill; blurredArtwork.clipsToBounds = true
-        blurMask.colors = [UIColor.clear.cgColor, UIColor.clear.cgColor, UIColor.black.withAlphaComponent(0.3).cgColor, UIColor.black.cgColor]
-        blurMask.locations = [0, 0.35, 0.58, 0.85]
-        blurredArtwork.layer.mask = blurMask; addSubview(blurredArtwork)
         let background = UIColor.systemBackground.resolvedColor(with: UITraitCollection(userInterfaceStyle: .dark))
         let alphas: [CGFloat] = [0, 0, 0.03, 0.10, 0.22, 0.38, 0.56, 0.73, 0.87, 0.96, 1]
         shade.gradient.colors = alphas.map { background.withAlphaComponent($0).cgColor }
@@ -656,10 +667,6 @@ private final class ProfileBackdrop: UIView {
         let height = mediaHeight + stretch
         artwork.frame = CGRect(x: 0, y: 0, width: bounds.width, height: height)
         video.frame = artwork.frame
-        blurredArtwork.frame = artwork.frame
-        CATransaction.begin(); CATransaction.setDisableActions(true)
-        blurMask.frame = CGRect(x: 0, y: -max(0, scrollOffset), width: bounds.width, height: height)
-        CATransaction.commit()
         shade.frame = CGRect(x: 0, y: -max(0, scrollOffset), width: bounds.width, height: height)
     }
 
@@ -668,7 +675,7 @@ private final class ProfileBackdrop: UIView {
         let portrait = theme == "atmosphere"
         let url = portrait ? profile?.portraitFile.map { LocalStore.directory.appendingPathComponent($0) } : profile?.bannerURL
         isVideo = !portrait && url.flatMap { UTType(filenameExtension: $0.pathExtension) }?.conforms(to: .movie) == true
-        artwork.image = nil; blurredArtwork.image = nil; blurredArtwork.isHidden = !portrait
+        artwork.image = nil
         let background = UIColor.systemBackground.resolvedColor(with: UITraitCollection(userInterfaceStyle: .dark))
         let alphas: [CGFloat] = portrait ? [0, 0, 0.08, 0.30, 0.70, 1] : [0, 0, 0.03, 0.10, 0.22, 0.38, 0.56, 0.73, 0.87, 0.96, 1]
         shade.gradient.colors = alphas.map { background.withAlphaComponent($0).cgColor }
@@ -677,15 +684,19 @@ private final class ProfileBackdrop: UIView {
             let fallback = portrait ? profile?.avatar : nil
             artworkTask = Task { [weak self] in
                 let image: UIImage?
-                if let url { image = await PhotoLoader.image(url, maxPixel: 1920) }
+                if let url {
+                    let loaded = await PhotoLoader.image(url, maxPixel: 1920)
+                    if loaded == nil, let fallback { image = await Task.detached { UIImage(data: fallback) }.value }
+                    else { image = loaded }
+                }
                 else if let fallback { image = await Task.detached { UIImage(data: fallback) }.value }
                 else { image = nil }
                 guard !Task.isCancelled, let self, self.artworkRevision == revision else { return }
                 self.artwork.image = image
-                if portrait, let cgImage = image?.cgImage {
-                    MediaBackdropRenderer.render(CIImage(cgImage: cgImage)) { [weak self] blurred in
+                if portrait, let image {
+                    ProfilePhotoRenderer.render(image) { [weak self] rendered in
                         guard let self, self.artworkRevision == revision else { return }
-                        self.blurredArtwork.image = blurred.map { UIImage(cgImage: $0) }
+                        if let rendered { self.artwork.image = rendered }
                     }
                 }
             }
