@@ -29,6 +29,7 @@ final class KadrToolbarState: ObservableObject {
     @Published var immersive = false
     @Published var feedSection = FeedSection.recommended
     @Published var overview = false
+    @Published var compactTitle: String?
     var onSection: ((FeedSection) -> Void)?
     var onOverview: (() -> Void)?
     var onStudio: (() -> Void)?
@@ -48,7 +49,7 @@ struct KadrNavigationShell: View {
             KadrTabContent(tabs: tabs)
                 .ignoresSafeArea(.container)
                 .scrollEdgeEffectStyle(.soft, for: [.top, .bottom])
-                .navigationTitle(state.screen.title)
+                .navigationTitle(state.screen == .profile ? (state.compactTitle ?? state.screen.title) : state.screen.title)
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {

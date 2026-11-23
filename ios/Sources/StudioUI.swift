@@ -8,6 +8,8 @@ struct StudioRow {
     var title: String
     var detail: String = ""
     var icon: String = "chevron.right"
+    var thumbnail: URL? = nil
+    var videoThumbnail = false
     var action: () -> Void
 }
 
@@ -24,13 +26,14 @@ class ActionListController: UITableViewController {
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { rows.count }
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         let row = rows[indexPath.row]
-        let cell = tableView.dequeueReusableCell(withIdentifier: "action") ?? UITableViewCell(style: .subtitle, reuseIdentifier: "action")
+        let cell = tableView.dequeueReusableCell(withIdentifier: "action") as? StudioActionCell ?? StudioActionCell(style: .subtitle, reuseIdentifier: "action")
         var content = cell.defaultContentConfiguration()
         content.text = row.title
         content.secondaryText = row.detail.isEmpty ? nil : row.detail
         content.image = AppSymbol.image(row.icon)
         content.imageProperties.tintColor = .kadrPeach
         cell.contentConfiguration = content
+        cell.loadThumbnail(row)
         cell.accessoryType = .disclosureIndicator
         return cell
     }
@@ -54,6 +57,24 @@ class ActionListController: UITableViewController {
         present(alert, animated: true)
     }
     func push(_ controller: UIViewController) { navigationController?.pushViewController(controller, animated: true) }
+}
+
+private final class StudioActionCell: UITableViewCell {
+    private var task: Task<Void, Never>?
+    override func prepareForReuse() { task?.cancel(); super.prepareForReuse() }
+    func loadThumbnail(_ row: StudioRow) {
+        task?.cancel()
+        guard let url = row.thumbnail else { return }
+        task = Task { [weak self] in
+            let image: UIImage?
+            if row.videoThumbnail { image = await VideoPoster.image(for: url).map { UIImage(cgImage: $0) } }
+            else { image = await PhotoLoader.image(url, maxPixel: 160) }
+            guard !Task.isCancelled, let self, var content = self.contentConfiguration as? UIListContentConfiguration else { return }
+            content.image = image; content.imageProperties.maximumSize = CGSize(width: 48, height: 48); content.imageProperties.cornerRadius = 8
+            self.contentConfiguration = content
+        }
+    }
+    deinit { task?.cancel() }
 }
 
 final class StudioController: ActionListController, UIDocumentPickerDelegate, UISearchResultsUpdating {
@@ -167,7 +188,7 @@ final class StudioController: ActionListController, UIDocumentPickerDelegate, UI
             return [StudioRow(title: "Усе збережене", icon: "bookmark", action: { self.savedBrowser() }),
                     StudioRow(title: "Створити колекцію", icon: "plus", action: {
                         page.prompt("Назва колекції") { title in guard !title.isEmpty else { return }; self.store.changeStudio { $0.collections.append(SavedCollection(title: title)) }; page.reload() }
-                    })] + self.store.studio.collections.map { collection in StudioRow(title: collection.title, detail: "\(collection.posts.count) публікацій", icon: "rectangle.stack", action: { self.collection(collection.id) }) }
+                    })] + self.store.studio.collections.map { collection in StudioRow(title: collection.title, detail: "\(collection.posts.count) публікацій", icon: "rectangle.stack", thumbnail: self.store.allClips.first { $0.id == collection.cover }?.coverURL, videoThumbnail: self.store.allClips.first { $0.id == collection.cover }?.isPhoto == false, action: { self.collection(collection.id) }) }
         }
         push(page)
     }
@@ -220,7 +241,8 @@ final class StudioController: ActionListController, UIDocumentPickerDelegate, UI
     private func statistics() {
         let mine = store.allClips.filter { $0.authorID == store.active?.id }
         var days: [String: Int] = [:]
-        for watch in store.studio.watches.values { days[watch.updatedAt.formatted(date: .abbreviated, time: .omitted), default: 0] += 1 }
+        if let saved = store.studio.dailyViews { days = saved }
+        else { for watch in store.studio.watches.values { days[watch.updatedAt.formatted(date: .abbreviated, time: .omitted), default: 0] += 1 } }
         let page = ActionListController("Моя статистика")
         page.rows = [StudioRow(title: "Публікації: \(mine.count)", action: {}), StudioRow(title: "Лайки публікацій: \(mine.reduce(0) { $0 + store.likes($1) })", action: {}), StudioRow(title: "Переглянуто: \(store.studio.watches.count)", action: {})]
             + days.keys.sorted().map { day in StudioRow(title: day, detail: "\(days[day] ?? 0) переглядів", action: {}) }

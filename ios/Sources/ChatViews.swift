@@ -27,6 +27,10 @@ final class InboxController: LibraryController, UISearchResultsUpdating {
         super.init(nibName: nil, bundle: nil)
     }
     required init?(coder: NSCoder) { fatalError("Use init(store:repository:)") }
+    override func showEmpty(_ empty: EmptyStateView?) {
+        tableView.isHidden = false
+        tableView.backgroundView = activityMode ? nil : empty
+    }
     override func viewDidLoad() {
         super.viewDidLoad()
         NotificationCenter.default.addObserver(self, selector: #selector(refresh), name: .kadrMessagesDidChange, object: store)
@@ -225,7 +229,7 @@ final class ChatController: UIViewController, UITableViewDataSource, UITableView
     }
     private func updateSend() {
         let text = (field.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        send.isEnabled = sendTask == nil && !text.isEmpty && text.count <= 4000 && accountID == store.active?.id
+        send.isEnabled = sendTask == nil && !text.isEmpty && text.count <= 4000 && accountID == store.active?.id && !store.studio.preferences.blocked.contains(peer.id)
     }
     private func sendMessage() {
         guard sendTask == nil, accountID != nil, accountID == store.active?.id else { return }

@@ -45,6 +45,7 @@ struct AccountStudio: Codable {
     var chatDrafts: [String: String] = [:]
     var pinnedChats: Set<UUID> = []
     var searchSort = "date"
+    var dailyViews: [String: Int]? = nil
 }
 struct SyncMutation: Codable, Identifiable {
     var id = UUID()
@@ -66,13 +67,14 @@ struct ActivityEntry: Codable, Identifiable {
     var postID: String?
     var createdAt = Date()
 }
-struct PostExtras: Codable {
+struct PostExtras: Codable, Equatable {
     var photoCaptions: [String: String] = [:]
     var albumLayout = "fit"
     var hideLikes = false
     var trimStart: Double = 0
     var trimEnd: Double?
     var coverTime: Double = 0.5
+    var collageGap: Double? = nil
     var coverFile: String?
 }
 
@@ -114,7 +116,12 @@ extension LocalStore {
     }
     func recordWatch(_ clip: Clip, seconds: Double, duration: Double) {
         guard seconds.isFinite, duration.isFinite else { return }
-        changeStudio { $0.watches[clip.id] = WatchRecord(postID: clip.id, seconds: seconds, duration: duration) }
+        changeStudio { account in
+            account.watches[clip.id] = WatchRecord(postID: clip.id, seconds: seconds, duration: duration)
+            let date = Calendar.current.dateComponents([.year, .month, .day], from: Date())
+            let key = String(format: "%04d-%02d-%02d", date.year ?? 0, date.month ?? 0, date.day ?? 0)
+            var days = account.dailyViews ?? [:]; days[key, default: 0] += 1; account.dailyViews = days
+        }
     }
     func addToCollection(_ clip: Clip, collectionID: UUID) {
         guard active != nil else { return }

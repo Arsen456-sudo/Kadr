@@ -118,6 +118,7 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
         }
         profile.onClip = { [weak self] clip in self?.openClip(clip) }
         profile.onAccount = { [weak self] in self?.openAccount() }
+        profile.onCompact = { [weak self] title in self?.toolbarState.compactTitle = title }
         profile.onChange = { [weak self] in self?.refresh() }
 
         toolbarState.onStudio = { [weak self] in
@@ -334,7 +335,12 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
             self?.closeSheet {
                 self?.feed.selectSection(.recommended)
                 self?.refresh()
-                afterAuthentication?()
+                if let afterAuthentication { afterAuthentication() }
+                else if let self, self.store.studio.appearance.interests.isEmpty {
+                    let interests = InterestPickerController(store: self.store)
+                    interests.onComplete = { [weak self] in self?.closeSheet() }
+                    self.showSheet(interests)
+                }
             }
         }
         showSheet(account)

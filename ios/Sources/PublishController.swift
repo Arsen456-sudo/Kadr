@@ -300,6 +300,9 @@ final class PublishController: UITableViewController, PHPickerViewControllerDele
     }
     override func tableView(_ tableView: UITableView, moveRowAt source: IndexPath, to destination: IndexPath) {
         let cover = media[options.coverIndex].0
+        var captions = media.indices.map { extras.photoCaptions[String($0)] ?? "" }
+        let movedCaption = captions.remove(at: source.row); captions.insert(movedCaption, at: destination.row)
+        extras.photoCaptions = Dictionary(uniqueKeysWithValues: captions.enumerated().map { (String($0.offset), $0.element) })
         let item = media.remove(at: source.row)
         media.insert(item, at: destination.row)
         options.coverIndex = media.firstIndex { $0.0 == cover } ?? 0
@@ -324,6 +327,8 @@ final class PublishController: UITableViewController, PHPickerViewControllerDele
     }
     private func remove(_ index: Int) {
         let cover = media.indices.contains(options.coverIndex) ? media[options.coverIndex].0 : nil
+        var captions = media.indices.map { extras.photoCaptions[String($0)] ?? "" }; captions.remove(at: index)
+        extras.photoCaptions = Dictionary(uniqueKeysWithValues: captions.enumerated().map { (String($0.offset), $0.element) })
         media.remove(at: index)
         options.coverIndex = media.firstIndex { $0.0 == cover } ?? 0
         isModalInPresentation = !media.isEmpty

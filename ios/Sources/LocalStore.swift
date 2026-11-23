@@ -15,7 +15,7 @@ struct Profile: Codable, Identifiable {
 
 enum MediaKind: String, Codable { case video, photo }
 
-struct PostMedia: Codable, Identifiable {
+struct PostMedia: Codable, Identifiable, Equatable {
     let id: UUID
     let kind: MediaKind
     let file: String
@@ -23,7 +23,7 @@ struct PostMedia: Codable, Identifiable {
     var url: URL { remoteURL ?? LocalStore.directory.appending(path: file) }
 }
 
-struct PostOptions: Codable {
+struct PostOptions: Codable, Equatable {
     var tags: String = ""
     var location: String = ""
     var allowsComments: Bool = true
@@ -31,7 +31,7 @@ struct PostOptions: Codable {
     var coverIndex: Int = 0
 }
 
-struct Clip: Codable, Identifiable {
+struct Clip: Codable, Identifiable, Equatable {
     let id: String
     let authorID: UUID?
     var caption: String
@@ -117,7 +117,7 @@ final class LocalStore {
         (state.clips.filter { $0.isDraft != true && (!$0.settings.onlyMe || $0.authorID == state.activeID) } + Clip.samples).filter { clip in
             let preferences = studio.preferences
             return !preferences.hiddenPosts.contains(clip.id) && !(clip.authorID.map { preferences.blocked.contains($0) || preferences.hiddenAuthors.contains($0) } ?? false)
-                && (preferences.mediaFilter == "all" || (preferences.mediaFilter == "photo") == clip.isPhoto)
+               
         }
     }
     var draft: Clip? { state.clips.first { $0.authorID == state.activeID && $0.isDraft == true } }
@@ -126,6 +126,7 @@ final class LocalStore {
     func profile(_ id: UUID?) -> Profile? { state.profiles.first { $0.id == id } }
 
     func feed(_ section: FeedSection) -> [Clip] {
+        let visible = allClips.filter { studio.preferences.mediaFilter == "all" || (studio.preferences.mediaFilter == "photo") == $0.isPhoto }
         switch section {
         case .saved:
             guard let id = state.activeID else { return [] }
@@ -133,18 +134,18 @@ final class LocalStore {
         case .following:
             guard let id = state.activeID else { return [] }
             let followed = state.following[id, default: []]
-            return allClips.filter { $0.authorID.map(followed.contains) ?? false }
+            return visible.filter { $0.authorID.map(followed.contains) ?? false }
         case .recommended:
-            guard let id = state.activeID else { return allClips }
+            guard let id = state.activeID else { return visible }
             let followed = state.following[id, default: []]
-            let preferred = allClips.filter { $0.authorID.map(followed.contains) ?? false }
-            let others = allClips.filter { $0.authorID != nil && !($0.authorID.map(followed.contains) ?? false) }
+            let preferred = visible.filter { $0.authorID.map(followed.contains) ?? false }
+            let others = visible.filter { $0.authorID != nil && !($0.authorID.map(followed.contains) ?? false) }
             let samples = id.uuid.0.isMultiple(of: 2) ? Clip.samples : Array(Clip.samples.reversed())
             let interests = studio.preferences.preferredTags.union(studio.appearance.interests)
             let ranked = others.sorted { a, b in
                 interests.filter { a.settings.tags.localizedCaseInsensitiveContains($0) }.count > interests.filter { b.settings.tags.localizedCaseInsensitiveContains($0) }.count
             }
-            return preferred + ranked + samples
+            return preferred + ranked + samples.filter { studio.preferences.mediaFilter != "photo" && !studio.preferences.hiddenPosts.contains($0.id) }
         }
     }
 

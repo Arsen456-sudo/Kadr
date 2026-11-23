@@ -50,6 +50,8 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
     var onClip: ((Clip) -> Void)?
     var onAccount: (() -> Void)?
     var onChange: (() -> Void)?
+    var onCompact: ((String?) -> Void)?
+    private var compact = false
 
     init(store: LocalStore, profileID: UUID?, repository: (any SocialRepository)? = nil, preview: Bool = false) {
         self.preview = preview
@@ -126,6 +128,12 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
         let headerHeight = heroHeight(for: profile)
         let naturalY = headerHeight - 50 - grid.contentOffset.y
         let pin = sectionPinTop ?? (navigationController == nil ? view.safeAreaInsets.top + 46 : view.safeAreaInsets.top + 2)
+        let nowCompact = naturalY <= pin
+        if compact != nowCompact {
+            compact = nowCompact
+            onCompact?(compact ? "@" + profile.handle : nil)
+            if navigationController?.presentingViewController != nil { navigationItem.title = compact ? "@" + profile.handle : "Профіль" }
+        }
         let leading = max(view.safeAreaInsets.left, sectionInsets.leading)
         let trailing = max(view.safeAreaInsets.right, sectionInsets.trailing)
         sectionIsland.frame = CGRect(x: leading, y: max(pin, naturalY),
@@ -187,7 +195,7 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
             title = profileID == nil ? "Профіль" : "@\(profile.handle)"
             let newClips = posts(for: profile)
             let state: Bool? = store.active?.id != profile.id ? store.follows(profile) : nil
-            if resetScroll || changedBanner || changedAvatar || state != followState || clips.map(\.id) != newClips.map(\.id) {
+            if resetScroll || changedBanner || changedAvatar || state != followState || clips != newClips {
                 clips = newClips
                 followState = state
                 cachedHeroHeight = nil
@@ -263,9 +271,9 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
         let follow = followState
         view.setCover(for: profile, width: collectionView.bounds.width, top: self.view.safeAreaInsets.top)
         view.show(profile, store: store, own: profile.id == store.active?.id && !preview, following: follow, onPeople: { [weak self] followers in
-            guard let self else { return }; self.navigationController?.pushViewController(PeopleListController(store: self.store, profile: profile, followers: followers), animated: true)
+            guard let self else { return }; self.showChild(PeopleListController(store: self.store, profile: profile, followers: followers))
         }, onStudio: { [weak self] in
-            guard let self else { return }; self.navigationController?.pushViewController(StudioController(store: self.store), animated: true)
+            guard let self else { return }; self.showChild(StudioController(store: self.store))
         }, onAvatar: { [weak self] in self?.openAvatar() }, onMessage: { [weak self] in
             guard let self else { return }
             self.navigationController?.pushViewController(ChatController(store: self.store, repository: self.repository, peer: profile), animated: true)
@@ -287,8 +295,22 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
         return view
     }
 
+    private func showChild(_ child: UIViewController) {
+        if let navigationController { navigationController.pushViewController(child, animated: true) }
+        else {
+            child.navigationItem.leftBarButtonItem = UIBarButtonItem(systemItem: .close, primaryAction: UIAction { [weak child] _ in child?.dismiss(animated: true) })
+            present(UINavigationController(rootViewController: child), animated: true)
+        }
+    }
+
     private func configureBannerMenu() {
         guard !preview else { return }
+        if let profileID, store.active?.id != profileID {
+            navigationItem.rightBarButtonItem = UIBarButtonItem(image: AppSymbol.image("ellipsis"), menu: UIMenu(children: [UIAction(title: "Заблокувати", image: AppSymbol.image("person.slash"), attributes: .destructive) { [weak self] _ in
+                self?.store.changeStudio { $0.preferences.blocked.insert(profileID) }; self?.navigationController?.popViewController(animated: true)
+            }]))
+            return
+        }
         guard let profileID, store.active?.id == profileID else { return }
         var actions = [UIAction(title: "Вибрати фото або відео", image: AppSymbol.image( "photo.on.rectangle")) { [weak self] _ in
             self?.chooseBanner()

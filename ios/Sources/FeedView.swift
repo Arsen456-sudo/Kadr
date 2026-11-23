@@ -61,6 +61,8 @@ final class FeedController: UIViewController, UICollectionViewDataSource, UIColl
         playingPage?.setPlaying(false, muted: muted)
         for controller in pages.values { detach(controller) }
         pages.removeAll()
+        let key = (overview ? "overview" : "feed") + (section == .following ? ".following" : ".recommended")
+        if let id = store.studio.feedPositions[key], let index = clips.firstIndex(where: { $0.id == id }) { currentIndex = index }
         pager.isPagingEnabled = !enabled
         pager.contentInset = enabled ? .init(top: view.safeAreaInsets.top + 48, left: 0, bottom: view.safeAreaInsets.bottom, right: 0) : .zero
         pagingLayout.minimumLineSpacing = enabled ? 20 : 0
@@ -267,7 +269,7 @@ final class FeedController: UIViewController, UICollectionViewDataSource, UIColl
         let key = (overview ? "overview" : "feed") + (section == .following ? ".following" : ".recommended")
         let target = preferredID ?? (reset ? store.studio.feedPositions[key] : current)
         let nextIndex = updated.firstIndex { $0.id == target } ?? 0
-        let changed = clips.map(\.id) != updated.map(\.id)
+        let changed = clips != updated
         if changed {
             playingPage?.setPlaying(false, muted: muted)
             for controller in pages.values { detach(controller) }
@@ -460,6 +462,19 @@ final class FeedController: UIViewController, UICollectionViewDataSource, UIColl
         if indexPath.item == currentIndex { syncPlayback() }
     }
 
+    private static var lastVisibilityCheck: CFTimeInterval = 0
+    func scrollViewDidScroll(_ scrollView: UIScrollView) {
+        guard overview, CACurrentMediaTime() - Self.lastVisibilityCheck > 0.12 else { return }
+        Self.lastVisibilityCheck = CACurrentMediaTime()
+        let viewport = CGRect(origin: pager.contentOffset, size: pager.bounds.size)
+        let visible = pager.indexPathsForVisibleItems
+        if let best = visible.max(by: {
+            (pager.layoutAttributesForItem(at: $0)?.frame.intersection(viewport).height ?? 0) < (pager.layoutAttributesForItem(at: $1)?.frame.intersection(viewport).height ?? 0)
+        }), best.item != currentIndex {
+            currentIndex = best.item; _ = controller(at: currentIndex); updateCurrent()
+        }
+    }
+    func scrollViewDidEndScrollingAnimation(_ scrollView: UIScrollView) { finishPaging() }
     func scrollViewDidEndDecelerating(_ scrollView: UIScrollView) { finishPaging() }
     func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
         if !decelerate { finishPaging() }
@@ -478,6 +493,7 @@ final class FeedController: UIViewController, UICollectionViewDataSource, UIColl
             guard let self else { return nil }
             return self.postMenu(clip, store: self.store, onChange: { [weak self] in self?.refresh() }, previous: { [weak self] in
                 guard let self, self.currentIndex > 0 else { return }; self.currentIndex -= 1
+                _ = self.controller(at: self.currentIndex)
                 self.pager.scrollToItem(at: IndexPath(item: self.currentIndex, section: 0), at: .top, animated: !UIAccessibility.isReduceMotionEnabled)
                 self.updateCurrent()
             })
