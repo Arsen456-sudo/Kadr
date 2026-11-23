@@ -14,7 +14,6 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
     private var sectionIsland = ProfileSectionPicker()
     private var atmosphere = false
     private var dashboard: [ProfileDashboardRow] = []
-    private var snapToStart = false
     private let ambientBackground = GradientView()
     var sectionInsets = NSDirectionalEdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16) { didSet { updateSectionPosition() } }
     var sectionPinTop: CGFloat? { didSet { updateSectionPosition() } }
@@ -48,21 +47,27 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
         let width = environment.container.effectiveContentSize.width
         let dashboard = self?.atmosphere == true && self?.selectedSection == .overview
         let modern = self?.atmosphere == true
-        let metrics = dashboard && sectionIndex == 1
         let side = modern ? (width - 40) / 2 : (width - 4) / 3
-        let size = dashboard
-            ? NSCollectionLayoutSize(widthDimension: metrics ? .absolute(side) : .fractionalWidth(1), heightDimension: .estimated(metrics ? 160 : 92))
-            : NSCollectionLayoutSize(widthDimension: .absolute(side), heightDimension: .absolute(side * (modern ? 1.38 : 1.27)))
-        let item = NSCollectionLayoutItem(layoutSize: size)
-        let group = NSCollectionLayoutGroup.horizontal(
-            layoutSize: NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: dashboard ? .estimated(metrics ? 160 : 92) : .absolute(side * (modern ? 1.38 : 1.27))),
-            subitems: dashboard ? (metrics ? [item, item] : [item]) : (modern ? [item, item] : [item, item, item]))
-        group.interItemSpacing = .fixed(modern ? 8 : 2)
+        let group: NSCollectionLayoutGroup
+        if modern {
+            if dashboard {
+                let size = NSCollectionLayoutSize(widthDimension: .fractionalWidth(1), heightDimension: .estimated(92))
+                group = .vertical(layoutSize: size, subitems: [NSCollectionLayoutItem(layoutSize: size)])
+            } else {
+                let item = NSCollectionLayoutItem(layoutSize: .init(widthDimension: .fractionalWidth(1), heightDimension: .fractionalHeight(1)))
+                group = .horizontal(layoutSize: .init(widthDimension: .fractionalWidth(1), heightDimension: .absolute((side * 1.38).rounded())), repeatingSubitem: item, count: 2)
+                group.interItemSpacing = .fixed(8)
+            }
+        } else {
+            let size = NSCollectionLayoutSize(widthDimension: .absolute(side), heightDimension: .absolute(side * 1.27))
+            let item = NSCollectionLayoutItem(layoutSize: size)
+            group = .horizontal(layoutSize: .init(widthDimension: .fractionalWidth(1), heightDimension: .absolute(side * 1.27)), subitems: [item, item, item])
+            group.interItemSpacing = .fixed(2)
+        }
         let section = NSCollectionLayoutSection(group: group)
-        section.interGroupSpacing = modern ? 12 : 2
-        if modern && sectionIndex > 0 {
-            section.contentInsets = .init(top: 8, leading: 0, bottom: 24, trailing: 0)
-            group.contentInsets = .init(top: 0, leading: 16, bottom: 0, trailing: 16)
+        section.interGroupSpacing = modern ? (dashboard ? 0 : 8) : 2
+        if modern && sectionIndex == 1 {
+            section.contentInsets = .init(top: 12, leading: 16, bottom: 24, trailing: 16)
         }
         if sectionIndex == 0, let self, let profile = self.visibleProfile {
             let height = self.heroHeight(for: profile)
@@ -163,38 +168,20 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
 
     func scrollViewWillEndDragging(_ scrollView: UIScrollView, withVelocity velocity: CGPoint,
                                   targetContentOffset: UnsafeMutablePointer<CGPoint>) {
-        guard let profile = visibleProfile else { return }
+        guard !atmosphere, let profile = visibleProfile else { return }
         let pin = sectionPinTop ?? (navigationController == nil ? view.safeAreaInsets.top + 46 : view.safeAreaInsets.top + 2)
         let pinOffset = max(0, heroHeight(for: profile) - 50 - pin)
         let proposed = targetContentOffset.pointee.y
         // Let UIKit finish the existing deceleration; do not run another animation
         // or intercept the pan. A fast fling that reaches the pinned tabs continues.
-        snapToStart = false
-        if proposed > 0, proposed < pinOffset {
-            if atmosphere {
-                // Finish with UIKit's short animated scroll instead of a long deceleration.
-                snapToStart = true
-                targetContentOffset.pointee.y = scrollView.contentOffset.y
-            } else { targetContentOffset.pointee.y = 0 }
-        }
+        if proposed > 0, proposed < pinOffset { targetContentOffset.pointee.y = 0 }
     }
-
-    func scrollViewDidEndDragging(_ scrollView: UIScrollView, willDecelerate decelerate: Bool) {
-        guard snapToStart else { return }
-        snapToStart = false
-        scrollView.setContentOffset(.zero, animated: !UIAccessibility.isReduceMotionEnabled)
-    }
-
-    func scrollViewWillBeginDragging(_ scrollView: UIScrollView) { snapToStart = false }
 
     private func setAmbientColor(_ color: UIColor) {
         guard atmosphere else { return }
         view.backgroundColor = color
         CATransaction.begin(); CATransaction.setDisableActions(true)
-        var hue: CGFloat = 0, saturation: CGFloat = 0, brightness: CGFloat = 0, alpha: CGFloat = 0
-        color.getHue(&hue, saturation: &saturation, brightness: &brightness, alpha: &alpha)
-        let lower = UIColor(hue: hue, saturation: saturation, brightness: brightness * 0.78, alpha: 1)
-        ambientBackground.gradient.colors = [color.cgColor, lower.cgColor]
+        ambientBackground.gradient.colors = [color.cgColor, color.cgColor]
         CATransaction.commit()
     }
 
@@ -382,7 +369,7 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
     func collectionView(_ collectionView: UICollectionView, numberOfItemsInSection section: Int) -> Int {
         if atmosphere {
             if section == 0 { return 0 }
-            if selectedSection == .overview { return section == 1 ? min(2, dashboard.count) : max(0, dashboard.count - 2) }
+            if selectedSection == .overview { return section == 1 ? dashboard.count : 0 }
             return section == 1 ? clips.count : 0
         }
         return clips.count
@@ -391,7 +378,7 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
     func collectionView(_ collectionView: UICollectionView, cellForItemAt indexPath: IndexPath) -> UICollectionViewCell {
         if atmosphere && selectedSection == .overview {
             let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "dashboard", for: indexPath) as! ProfileDashboardCell
-            cell.show(dashboard[indexPath.item + (indexPath.section == 2 ? 2 : 0)]); return cell
+            cell.show(dashboard[indexPath.item], first: indexPath.item == 0, last: indexPath.item == dashboard.count - 1); return cell
         }
         let cell = collectionView.dequeueReusableCell(withReuseIdentifier: "clip", for: indexPath) as! ClipThumbnailCell
         cell.layer.cornerRadius = atmosphere ? 18 : 0; cell.layer.cornerCurve = .continuous
@@ -402,7 +389,7 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
     func collectionView(_ collectionView: UICollectionView, didSelectItemAt indexPath: IndexPath) {
         collectionView.deselectItem(at: indexPath, animated: true)
         if atmosphere && selectedSection == .overview {
-            openDashboard(dashboard[indexPath.item + (indexPath.section == 2 ? 2 : 0)].destination); return
+            openDashboard(dashboard[indexPath.item].destination); return
         }
         if let onClip { onClip(clips[indexPath.item]) }
         else { navigationController?.pushViewController(ClipPreviewController(clip: clips[indexPath.item], store: store), animated: true) }
