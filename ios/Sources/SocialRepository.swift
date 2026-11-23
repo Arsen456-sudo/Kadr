@@ -4,8 +4,14 @@ struct ChatMessage: Codable, Identifiable {
     let id: UUID
     let senderID: UUID
     let recipientID: UUID
-    let text: String
+    var text: String
     let createdAt: Date
+    var replyTo: UUID? = nil
+    var reactions: [String: String]? = nil
+    var edited: Bool? = nil
+    var attachmentFile: String? = nil
+    var attachmentKind: String? = nil
+    var postID: String? = nil
 }
 
 struct ConversationSummary: Codable, Identifiable {

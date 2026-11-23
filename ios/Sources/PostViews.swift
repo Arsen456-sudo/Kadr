@@ -136,12 +136,14 @@ final class CommentsController: UIViewController, UITableViewDataSource, UITextF
 
 final class ClipPreviewController: UIViewController {
     private let clip: Clip
+    private let store: LocalStore?
     private let video = VideoSurface(frame: .zero)
     private var paused = false
     private let playbackButton = makePlaybackButton(symbol: "pause.fill", label: "Призупинити")
     private let tapArea = UIButton(type: .custom)
 
-    init(clip: Clip) {
+    init(clip: Clip, store: LocalStore? = nil) {
+        self.store = store
         self.clip = clip
         super.init(nibName: nil, bundle: nil)
     }

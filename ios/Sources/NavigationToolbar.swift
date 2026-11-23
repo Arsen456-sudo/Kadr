@@ -31,6 +31,7 @@ final class KadrToolbarState: ObservableObject {
     @Published var overview = false
     var onSection: ((FeedSection) -> Void)?
     var onOverview: (() -> Void)?
+    var onStudio: (() -> Void)?
     var onSearch: (() -> Void)?
     var onSignOut: (() -> Void)?
     var onChooseBanner: (() -> Void)?
@@ -50,26 +51,15 @@ struct KadrNavigationShell: View {
                 .navigationTitle(state.screen.title)
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
-                    if state.canSignOut {
-                        ToolbarItem(placement: .topBarTrailing) {
-                            Button {
-                                state.onSignOut?()
-                            } label: {
-                                Text("Вийти")
-                            }
-                            .accessibilityLabel("Вийти")
-                            .accessibilityIdentifier("header.action")
+                    ToolbarItem(placement: .topBarTrailing) {
+                        Button {
+                            if state.canSignOut { state.onSignOut?() } else { state.onSearch?() }
+                        } label: {
+                            if state.canSignOut { Text("Вийти") }
+                            else { Image(systemName: "magnifyingglass") }
                         }
-                    } else {
-                        ToolbarItem(placement: .topBarTrailing) {
-                            Button {
-                                state.onSearch?()
-                            } label: {
-                                Image(systemName: "magnifyingglass")
-                            }
-                            .accessibilityLabel("Пошук")
-                            .accessibilityIdentifier("header.action")
-                        }
+                        .accessibilityLabel(state.canSignOut ? "Вийти" : "Пошук")
+                        .accessibilityIdentifier("header.action")
                     }
                     if state.screen == .feed {
                         ToolbarItem(placement: .principal) {
@@ -83,6 +73,7 @@ struct KadrNavigationShell: View {
                     } else if state.canSignOut {
                         ToolbarItem(placement: .topBarLeading) {
                             Menu {
+                                Button { state.onStudio?() } label: { Label("Студія та налаштування", systemImage: "slider.horizontal.3") }
                                 Button {
                                     state.onChooseBanner?()
                                 } label: {
@@ -138,7 +129,8 @@ private struct KadrTabContent: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> KadrTabs { tabs }
 
     func updateUIViewController(_ controller: KadrTabs, context: Context) {
-        controller.viewIfLoaded?.setNeedsLayout()
+        // Containment and layout are managed by UIKit; state-only toolbar updates
+        // must not invalidate the entire video/profile subtree.
     }
 }
 

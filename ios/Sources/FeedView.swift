@@ -857,6 +857,7 @@ enum VideoPoster {
         return cache
     }()
 
+    static func clearCache() { cache.removeAllObjects() }
     private static var requests: [URL: Task<CGImage?, Never>] = [:]
 
     static func image(for url: URL) async -> CGImage? {

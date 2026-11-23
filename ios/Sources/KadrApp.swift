@@ -112,6 +112,9 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
         profile.onAccount = { [weak self] in self?.openAccount() }
         profile.onChange = { [weak self] in self?.refresh() }
 
+        toolbarState.onStudio = { [weak self] in
+            guard let self else { return }; self.showSheet(StudioController(store: self.store))
+        }
         toolbarState.onSearch = { [weak self] in self?.openSearch() }
         toolbarState.onSignOut = { [weak self] in self?.signOut() }
         toolbarState.onChooseBanner = { [weak self] in self?.profile.chooseBanner() }
@@ -262,9 +265,9 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
         let context = KadrToolbarState.Context(screen: screen, canSignOut: canSignOut,
                                                hasBanner: canSignOut && store.active?.bannerURL != nil)
         guard toolbarState.context != context else { return }
-        withAnimation(animated && !UIAccessibility.isReduceMotionEnabled ? .default : nil) {
-            toolbarState.context = context
-        }
+        // Let the system bars animate their own content, without animating or
+        // re-laying out the complete UIKit controller tree inside a SwiftUI transaction.
+        toolbarState.context = context
         view.setNeedsLayout()
     }
 

@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 
 final class PublishController: UITableViewController, PHPickerViewControllerDelegate {
     private let store: LocalStore
+    private let editingDraft: Clip?
     private let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     private var media: [(URL, MediaKind)] = []
     private var options = PostOptions()
@@ -20,7 +21,8 @@ final class PublishController: UITableViewController, PHPickerViewControllerDele
     var onPublish: ((Clip) -> Void)?
     var onClose: (() -> Void)?
 
-    init(store: LocalStore) {
+    init(store: LocalStore, draft: Clip? = nil) {
+        editingDraft = draft
         self.store = store
         super.init(style: .insetGrouped)
     }
@@ -44,7 +46,7 @@ final class PublishController: UITableViewController, PHPickerViewControllerDele
         comments.isOn = true
         navigationItem.leftBarButtonItem = UIBarButtonItem(systemItem: .close, primaryAction: UIAction { [weak self] _ in self?.close() })
         navigationItem.rightBarButtonItem = editButtonItem
-        if let draft = store.draft {
+        if let draft = editingDraft ?? store.draft {
             media = (draft.media ?? []).map { ($0.url, $0.kind) }
             options = draft.settings
             caption.text = draft.caption

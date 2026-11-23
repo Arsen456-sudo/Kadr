@@ -34,13 +34,14 @@ struct PostOptions: Codable {
 struct Clip: Codable, Identifiable {
     let id: String
     let authorID: UUID?
-    let caption: String
+    var caption: String
     let file: String
     let credit: String
     var media: [PostMedia]? = nil
     var options: PostOptions? = nil
     var createdAt: Date? = nil
     var isDraft: Bool? = nil
+    var extras: PostExtras? = nil
 
     var isPhoto: Bool { media?.first?.kind == .photo }
     var settings: PostOptions { options ?? PostOptions() }
@@ -65,11 +66,17 @@ struct Clip: Codable, Identifiable {
 struct Comment: Codable, Identifiable {
     let id: UUID
     let authorID: UUID
-    let text: String
+    var text: String
+    var parentID: UUID? = nil
+    var likes: Set<UUID>? = nil
+    var pinned: Bool? = nil
+    var createdAt: Date? = nil
 }
 
 final class LocalStore {
     struct State: Codable {
+        var studio: StudioState? = nil
+        var activity: [ActivityEntry]? = nil
         var messages: [ChatMessage]? = nil
         var profiles: [Profile] = []
         var activeID: UUID?
@@ -82,7 +89,7 @@ final class LocalStore {
 
     static let directory = URL.applicationSupportDirectory.appending(path: "Kadr", directoryHint: .isDirectory)
     private static let stateFile = directory.appending(path: "state.json")
-    private var state: State
+    private(set) var state: State
 
     init() {
         if FileManager.default.fileExists(atPath: Self.stateFile.path) {
@@ -103,7 +110,11 @@ final class LocalStore {
     var profiles: [Profile] { state.profiles }
     var active: Profile? { profile(state.activeID) }
     var allClips: [Clip] {
-        state.clips.filter { $0.isDraft != true && (!$0.settings.onlyMe || $0.authorID == state.activeID) } + Clip.samples
+        (state.clips.filter { $0.isDraft != true && (!$0.settings.onlyMe || $0.authorID == state.activeID) } + Clip.samples).filter { clip in
+            let preferences = studio.preferences
+            return !preferences.hiddenPosts.contains(clip.id) && !(clip.authorID.map { preferences.blocked.contains($0) || preferences.hiddenAuthors.contains($0) } ?? false)
+                && (preferences.mediaFilter == "all" || (preferences.mediaFilter == "photo") == clip.isPhoto)
+        }
     }
     var draft: Clip? { state.clips.first { $0.authorID == state.activeID && $0.isDraft == true } }
 
@@ -145,7 +156,7 @@ final class LocalStore {
 
     func searchProfiles(_ handle: String) -> [Profile] {
         let term = normalized(handle)
-        return profiles.filter { term.isEmpty || $0.handle.hasPrefix(term) }.sorted { $0.handle < $1.handle }
+        return profiles.filter { !studio.preferences.blocked.contains($0.id) && (term.isEmpty || $0.handle.hasPrefix(term) || $0.name.localizedCaseInsensitiveContains(term) || $0.bio.localizedCaseInsensitiveContains(term)) }.sorted { $0.handle < $1.handle }
     }
 
     func messages(with peer: UUID) -> [ChatMessage] {
@@ -168,7 +179,10 @@ final class LocalStore {
     func sendMessage(_ text: String, to peer: UUID, id: UUID) throws -> ChatMessage {
         guard let me = state.activeID else { throw SocialError.accountRequired }
         guard let profile = profile(peer), peer != me else { throw SocialError.unavailable }
-        guard follows(profile) || !messages(with: peer).isEmpty else { throw SocialError.followRequired }
+        guard !studio.preferences.blocked.contains(peer) else { throw SocialError.unavailable }
+        let recipient = state.studio?.accounts[peer.uuidString]?.preferences ?? AppPreferences()
+        guard !recipient.blocked.contains(me), recipient.messagePermission != "nobody" else { throw SocialError.unavailable }
+        guard follows(profile) || !messages(with: peer).isEmpty || recipient.messagePermission == "everyone" else { throw SocialError.followRequired }
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, text.count <= 4000 else { throw SocialError.invalidMessage }
         if let existing = (state.messages ?? []).first(where: { $0.id == id }) {
@@ -277,11 +291,15 @@ final class LocalStore {
     }
 
     @discardableResult
-    func addComment(_ text: String, to clip: Clip) -> Bool {
+    func addComment(_ text: String, to clip: Clip, parentID: UUID? = nil) -> Bool {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard clip.settings.allowsComments, let id = state.activeID, !text.isEmpty, text.count <= 500 else { return false }
         var next = state
-        next.comments[clip.id, default: []].append(Comment(id: UUID(), authorID: id, text: text))
+        guard !studio.preferences.mutedWords.contains(where: { !$0.isEmpty && text.localizedCaseInsensitiveContains($0) }) else { return false }
+        next.comments[clip.id, default: []].append(Comment(id: UUID(), authorID: id, text: text, parentID: parentID, createdAt: Date()))
+        if let author = clip.authorID, author != id {
+            next.activity = (next.activity ?? []) + [ActivityEntry(recipientID: author, actorID: id, kind: "comment", postID: clip.id)]
+        }
         return save(next)
     }
 
@@ -327,6 +345,13 @@ final class LocalStore {
             errorMessage = "Не вдалося зберегти публікацію. Перевір вільне місце."
             return nil
         }
+    }
+
+    @discardableResult
+    func updateState(_ update: (inout State) -> Void) -> Bool {
+        var next = state
+        update(&next)
+        return save(next)
     }
 
     private func save(_ next: State) -> Bool {

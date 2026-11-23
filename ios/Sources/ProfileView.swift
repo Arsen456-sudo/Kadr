@@ -7,6 +7,7 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
                                PHPickerViewControllerDelegate {
     private let store: LocalStore
     private let profileID: UUID?
+    private let preview: Bool
     private let repository: any SocialRepository
     private var followTask: Task<Void, Never>?
     private var selectedSection = ProfileSection.posts
@@ -50,7 +51,8 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
     var onAccount: (() -> Void)?
     var onChange: (() -> Void)?
 
-    init(store: LocalStore, profileID: UUID?, repository: (any SocialRepository)? = nil) {
+    init(store: LocalStore, profileID: UUID?, repository: (any SocialRepository)? = nil, preview: Bool = false) {
+        self.preview = preview
         self.repository = repository ?? LocalSocialRepository(store: store)
         self.store = store
         self.profileID = profileID
@@ -228,8 +230,13 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
     }
 
     private func posts(for profile: Profile) -> [Clip] {
-        if selectedSection == .posts { return store.allClips.filter { $0.authorID == profile.id } }
-        guard store.active?.id == profile.id else { return [] }
+        if selectedSection == .posts {
+            let pins = store.state.studio?.accounts[profile.id.uuidString]?.appearance.pinnedPosts ?? []
+            return store.allClips.filter { $0.authorID == profile.id && (!preview || !$0.settings.onlyMe) }.sorted {
+                (pins.firstIndex(of: $0.id) ?? Int.max) < (pins.firstIndex(of: $1.id) ?? Int.max)
+            }
+        }
+        guard !preview, store.active?.id == profile.id else { return [] }
         switch selectedSection {
         case .posts: return []
         case .saved: return store.feed(.saved)
@@ -276,6 +283,7 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
     }
 
     private func configureBannerMenu() {
+        guard !preview else { return }
         guard let profileID, store.active?.id == profileID else { return }
         var actions = [UIAction(title: "Вибрати фото або відео", image: AppSymbol.image( "photo.on.rectangle")) { [weak self] _ in
             self?.chooseBanner()

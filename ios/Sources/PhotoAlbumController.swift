@@ -8,6 +8,7 @@ enum PhotoLoader {
         cache.totalCostLimit = 64 * 1024 * 1024
         return cache
     }()
+    static func clearCache() { cache.removeAllObjects() }
     static func image(_ url: URL, maxPixel: CGFloat = 1800) async -> UIImage? {
         let key = (url.absoluteString + "#" + String(Int(maxPixel))) as NSString
         if let image = cache.object(forKey: key) { return image }
