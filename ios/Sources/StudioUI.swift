@@ -8,6 +8,7 @@ struct StudioRow {
     var title: String
     var detail: String = ""
     var icon: String = "chevron.right"
+    var navigates = true
     var thumbnail: URL? = nil
     var videoThumbnail = false
     var action: () -> Void
@@ -42,12 +43,13 @@ class ActionListController: UITableViewController {
         content.imageProperties.tintColor = .kadrPeach
         cell.contentConfiguration = content
         cell.loadThumbnail(row)
-        cell.accessoryType = .disclosureIndicator
+        cell.accessoryType = row.navigates ? .disclosureIndicator : .none
+        cell.selectionStyle = row.navigates ? .default : .none
         return cell
     }
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        rows[indexPath.row].action()
+        if rows[indexPath.row].navigates { rows[indexPath.row].action() }
     }
     func prompt(_ title: String, value: String = "", completion: @escaping (String) -> Void) {
         let alert = UIAlertController(title: title, message: nil, preferredStyle: .alert)
@@ -128,10 +130,10 @@ final class StudioController: ActionListController {
         page.reloadRows = { [weak self, weak page] in
             guard let self, let page else { return [] }
             let appearance = self.store.studio.appearance
-            return [StudioRow(title: "Стиль", detail: appearance.theme, icon: "rectangle.3.group", action: {
-                page.options("Стиль профілю", values: ["minimal", "cinema", "vivid"]) { value in self.store.changeStudio { $0.appearance.theme = value }; page.reload() }
-            }), StudioRow(title: "Акцент", detail: appearance.accent, icon: "paintpalette", action: {
-                page.options("Акцент", values: ["peach", "mint", "violet", "blue", "rose"]) { value in self.store.changeStudio { $0.appearance.accent = value }; page.reload() }
+            return [StudioRow(title: "Стиль", detail: StudioLabels.title(appearance.theme), icon: "rectangle.3.group", action: {
+                page.options("Стиль профілю", values: ["minimal", "cinema", "vivid"].map(StudioLabels.title)) { value in self.store.changeStudio { $0.appearance.theme = StudioLabels.key(value, among: ["minimal", "cinema", "vivid"]) }; page.reload() }
+            }), StudioRow(title: "Акцент", detail: StudioLabels.title(appearance.accent), icon: "paintpalette", action: {
+                page.options("Акцент", values: ["peach", "mint", "violet", "blue", "rose"].map(StudioLabels.title)) { value in self.store.changeStudio { $0.appearance.accent = StudioLabels.key(value, among: ["peach", "mint", "violet", "blue", "rose"]) }; page.reload() }
             }), StudioRow(title: "Знайомство з автором", detail: appearance.introduction, icon: "person.text.rectangle", action: {
                 page.prompt("Текст знайомства", value: appearance.introduction) { value in self.store.changeStudio { $0.appearance.introduction = value }; page.reload() }
             }), StudioRow(title: "Посилання", detail: "\(appearance.links.count)", icon: "link", action: {
@@ -251,8 +253,8 @@ final class StudioController: ActionListController {
         if let saved = store.studio.dailyViews { days = saved }
         else { for watch in store.studio.watches.values { days[watch.updatedAt.formatted(date: .abbreviated, time: .omitted), default: 0] += 1 } }
         let page = ActionListController("Моя статистика")
-        page.rows = [StudioRow(title: "Публікації: \(mine.count)", action: {}), StudioRow(title: "Лайки публікацій: \(mine.reduce(0) { $0 + store.likes($1) })", action: {}), StudioRow(title: "Переглянуто: \(store.studio.watches.count)", action: {})]
-            + days.keys.sorted().map { day in StudioRow(title: day, detail: "\(days[day] ?? 0) переглядів", action: {}) }
+        page.rows = [StudioRow(title: "Публікації: \(mine.count)", navigates: false, action: {}), StudioRow(title: "Лайки публікацій: \(mine.reduce(0) { $0 + store.likes($1) })", navigates: false, action: {}), StudioRow(title: "Переглянуто: \(store.studio.watches.count)", navigates: false, action: {})]
+            + days.keys.sorted().map { day in StudioRow(title: day, detail: "\(days[day] ?? 0) переглядів", navigates: false, action: {}) }
         push(page)
     }
     private func qr() {
@@ -288,7 +290,7 @@ final class SavedBrowserController: ActionListController, UISearchResultsUpdatin
         let search = UISearchController(); search.searchResultsUpdater = self; search.obscuresBackgroundDuringPresentation = false
         navigationItem.searchController = search
         navigationItem.rightBarButtonItem = UIBarButtonItem(image: AppSymbol.image("arrow.up.arrow.down"), primaryAction: UIAction { [weak self] _ in
-            self?.options("Порядок", values: ["date", "author", "media"]) { value in self?.sort = value; self?.reload() }
+            self?.options("Порядок", values: ["date", "author", "media"].map(StudioLabels.title)) { value in self?.sort = StudioLabels.key(value, among: ["date", "author", "media"]); self?.reload() }
         })
         reloadRows = { [weak self] in
             guard let self else { return [] }

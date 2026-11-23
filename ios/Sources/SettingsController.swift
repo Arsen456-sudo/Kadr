@@ -22,8 +22,8 @@ final class SettingsController: ActionListController, UISearchResultsUpdating, U
             self?.store.changeStudio { $0.preferences.autoSound.toggle() }; self?.reload()
         }), StudioRow(title: "Швидкість відео", detail: "\(preferences.playbackRate)×", icon: "speedometer", action: { [weak self] in
             self?.options("Швидкість", values: ["0.5", "0.75", "1", "1.25", "1.5", "2"]) { value in self?.store.changeStudio { $0.preferences.playbackRate = Float(value) ?? 1 }; self?.reload() }
-        }), StudioRow(title: "Хто може починати чат", detail: preferences.messagePermission, icon: "lock", action: { [weak self] in
-            self?.options("Повідомлення", values: ["following", "everyone", "nobody"]) { value in self?.store.changeStudio { $0.preferences.messagePermission = value }; self?.reload() }
+        }), StudioRow(title: "Хто може починати чат", detail: StudioLabels.title(preferences.messagePermission), icon: "lock", action: { [weak self] in
+            self?.options("Повідомлення", values: ["following", "everyone", "nobody"].map(StudioLabels.title)) { value in self?.store.changeStudio { $0.preferences.messagePermission = StudioLabels.key(value, among: ["following", "everyone", "nobody"]) }; self?.reload() }
         }), StudioRow(title: "Заблоковані користувачі", detail: "\(preferences.blocked.count)", icon: "person.slash", action: { [weak self] in
             guard let self else { return }; let page = ActionListController("Заблоковані")
             page.reloadRows = { [weak self, weak page] in

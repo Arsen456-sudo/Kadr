@@ -18,8 +18,8 @@ final class EditorToolsController: ActionListController {
                 self.extras.hideLikes.toggle(); self.changed()
             })]
             if self.media.first?.1 == .photo {
-                rows += [StudioRow(title: "Формат альбому", detail: self.extras.albumLayout, icon: "aspectratio", action: {
-                    self.options("Формат", values: ["fit", "square", "portrait"]) { value in self.extras.albumLayout = value; self.changed() }
+                rows += [StudioRow(title: "Формат альбому", detail: StudioLabels.title(self.extras.albumLayout), icon: "aspectratio", action: {
+                    self.options("Формат", values: ["fit", "square", "portrait"].map(StudioLabels.title)) { value in self.extras.albumLayout = StudioLabels.key(value, among: ["fit", "square", "portrait"]); self.changed() }
                 }), StudioRow(title: "Створити колаж", icon: "square.grid.2x2", action: {
                     self.options("Шаблон", values: ["Сітка", "Вертикальна стрічка", "Мозаїка"]) { template in self.collage(template) }
                 })]
