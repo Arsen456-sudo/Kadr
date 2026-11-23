@@ -4,7 +4,7 @@ extension UIViewController {
     func postMenu(_ clip: Clip, store: LocalStore, onChange: (() -> Void)? = nil, previous: (() -> Void)? = nil) -> UIMenu {
         var actions: [UIMenuElement] = [UIAction(title: "Поділитися", image: AppSymbol.image("square.and.arrow.up")) { [weak self] _ in
             self?.present(UIActivityViewController(activityItems: [URL(string: "kadr://post/\(clip.id)")!], applicationActivities: nil), animated: true)
-        }, UIAction(title: "До колекції", image: AppSymbol.image("folder.badge.plus")) { [weak self] _ in
+        }, UIAction(title: "До колекції", image: AppSymbol.image("folder.badge.plus"), attributes: store.active == nil ? .disabled : []) { [weak self] _ in
             guard let self, store.active != nil else { return }
             let page = ActionListController("До колекції")
             page.rows = store.studio.collections.map { collection in StudioRow(title: collection.title, icon: "bookmark", action: { [weak page] in
@@ -18,7 +18,7 @@ extension UIViewController {
                 }
             }), at: 0)
             self.present(UINavigationController(rootViewController: page), animated: true)
-        }, UIAction(title: "Приватна нотатка", image: AppSymbol.image("note.text")) { [weak self] _ in
+        }, UIAction(title: "Приватна нотатка", image: AppSymbol.image("note.text"), attributes: store.active == nil ? .disabled : []) { [weak self] _ in
             guard let self, store.active != nil else { return }
             let alert = UIAlertController(title: "Нотатка", message: "Видно тільки тобі", preferredStyle: .alert)
             alert.addTextField { $0.text = store.studio.notes[clip.id] }
@@ -41,7 +41,7 @@ extension UIViewController {
             actions.append(UIAction(title: "Приховати автора", image: AppSymbol.image("eye.slash")) { _ in store.changeStudio { $0.preferences.hiddenAuthors.insert(author) }; onChange?() })
             actions.append(UIAction(title: "Заблокувати автора", image: AppSymbol.image("person.slash"), attributes: .destructive) { _ in store.changeStudio { $0.preferences.blocked.insert(author) }; onChange?() })
         }
-        if store.active?.id == clip.authorID {
+        if let me = store.active?.id, me == clip.authorID {
             actions.append(UIAction(title: "Редагувати публікацію", image: AppSymbol.image("pencil")) { [weak self] _ in
                 self?.present(UINavigationController(rootViewController: PostEditController(store: store, clip: clip)), animated: true)
             })

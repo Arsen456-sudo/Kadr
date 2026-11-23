@@ -177,6 +177,7 @@ final class CommentsController: UIViewController, UITableViewDataSource, UITable
         let comment = comments[indexPath.row]
         return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self] _ in
             guard let self else { return nil }
+            guard self.store.active != nil else { return UIMenu(children: [UIAction(title: "Увійти, щоб взаємодіяти") { [weak self] _ in self?.onAccount?() }]) }
             var actions = [UIAction(title: "Відповісти", image: AppSymbol.image("arrowshape.turn.up.left")) { [weak self] _ in
                 self?.replyTo = comment.id; self?.field.placeholder = "Відповідь @" + (self?.store.profile(comment.authorID)?.handle ?? "")
                 self?.field.becomeFirstResponder()

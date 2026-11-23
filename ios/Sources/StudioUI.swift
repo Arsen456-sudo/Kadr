@@ -170,7 +170,7 @@ final class StudioController: ActionListController {
             case "До колекції": self.chooseCollection(clip, from: page)
             case "Приватна нотатка": page.prompt("Нотатка", value: self.store.studio.notes[clip.id] ?? "") { value in self.store.changeStudio { $0.notes[clip.id] = value } }
             default:
-                guard clip.authorID == self.store.active?.id else { return }
+                guard let me = self.store.active?.id, clip.authorID == me else { return }
                 page.push(PostEditController(store: self.store, clip: clip))
             }
         }

@@ -96,7 +96,7 @@ extension LocalStore {
     }
     var drafts: [Clip] { state.clips.filter { $0.authorID == active?.id && $0.isDraft == true } }
     func editPost(_ clip: Clip, caption: String, options: PostOptions, extras: PostExtras) {
-        guard clip.authorID == active?.id else { return }
+        guard let me = active?.id, clip.authorID == me else { return }
         updateState { state in
             guard let index = state.clips.firstIndex(where: { $0.id == clip.id }) else { return }
             state.clips[index].caption = caption
@@ -105,7 +105,7 @@ extension LocalStore {
         }
     }
     func deletePost(_ clip: Clip) {
-        guard active?.id == clip.authorID else { return }
+        guard let me = active?.id, me == clip.authorID else { return }
         updateState { $0.clips.removeAll { $0.id == clip.id } }
     }
     func people(followersOf id: UUID) -> [Profile] {
@@ -139,7 +139,7 @@ extension LocalStore {
         }
     }
     func deleteComment(_ comment: Comment, clip: Clip) {
-        guard comment.authorID == active?.id || clip.authorID == active?.id else { return }
+        guard let me = active?.id, comment.authorID == me || clip.authorID == me else { return }
         updateState { $0.comments[clip.id]?.removeAll { $0.id == comment.id || $0.parentID == comment.id } }
     }
     func toggleCommentLike(_ comment: Comment, clip: Clip) {
@@ -152,7 +152,7 @@ extension LocalStore {
         }
     }
     func pinComment(_ comment: Comment, clip: Clip) {
-        guard clip.authorID == active?.id else { return }
+        guard let me = active?.id, clip.authorID == me else { return }
         updateState { state in
             guard let comments = state.comments[clip.id] else { return }
             for index in comments.indices { state.comments[clip.id]?[index].pinned = comments[index].id == comment.id && comments[index].pinned != true }
