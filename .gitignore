@@ -16,3 +16,5 @@
 # Local social API runtime state
 backend/*.sqlite3*
 backend/__pycache__/
+
+backend/assets/

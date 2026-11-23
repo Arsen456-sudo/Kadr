@@ -77,9 +77,8 @@ private final class StudioActionCell: UITableViewCell {
     deinit { task?.cancel() }
 }
 
-final class StudioController: ActionListController, UIDocumentPickerDelegate, UISearchResultsUpdating {
+final class StudioController: ActionListController {
     private let store: LocalStore
-    private var settingRows: [StudioRow] = []
     init(store: LocalStore) { self.store = store; super.init("Студія автора") }
     required init?(coder: NSCoder) { fatalError("Use init(store:)") }
     override func viewDidLoad() {
@@ -268,8 +267,6 @@ final class StudioController: ActionListController, UIDocumentPickerDelegate, UI
         push(page)
     }
     private func settings() { push(SettingsController(store: store)) }
-    func updateSearchResults(for searchController: UISearchController) { }
-    func documentPicker(_ controller: UIDocumentPickerViewController, didPickDocumentsAt urls: [URL]) { }
 }
 
 final class SavedBrowserController: ActionListController, UISearchResultsUpdating {

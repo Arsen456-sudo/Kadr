@@ -14,6 +14,7 @@ final class PublishController: UITableViewController, PHPickerViewControllerDele
     private var draftID: String?
     private var autosaveTask: Task<Void, Never>?
     private var loading = true
+    private var importedFiles = Set<String>()
     private let caption = UITextView()
     private let tags = UITextField()
     private let location = UITextField()
@@ -161,7 +162,16 @@ final class PublishController: UITableViewController, PHPickerViewControllerDele
             if indexPath.row == 2 {
                 let tools = EditorToolsController(media: media, extras: extras)
                 tools.onChange = { [weak self] extras in self?.extras = extras; self?.reloadEditor() }
-                tools.onCollage = { [weak self] url in self?.media.insert((url, .photo), at: 0); self?.reloadEditor() }
+                tools.onCollage = { [weak self] url in
+                    guard let self else { return }
+                    let target = LocalStore.directory.appendingPathComponent(url.lastPathComponent)
+                    do {
+                        try FileManager.default.createDirectory(at: LocalStore.directory, withIntermediateDirectories: true)
+                        try FileManager.default.moveItem(at: url, to: target); self.importedFiles.insert(target.lastPathComponent)
+                        self.extras.photoCaptions = Dictionary(uniqueKeysWithValues: self.extras.photoCaptions.compactMap { key, value in Int(key).map { (String($0 + 1), value) } })
+                        self.media.insert((target, .photo), at: 0); self.options.coverIndex = 0; self.reloadEditor()
+                    } catch { self.showMessage(error.localizedDescription) }
+                }
                 navigationController?.pushViewController(tools, animated: true)
             }
         case 4: save(draft: indexPath.row == 1)
@@ -229,7 +239,7 @@ final class PublishController: UITableViewController, PHPickerViewControllerDele
             var failed = 0
             for result in results {
                 do {
-                    let item = try await Self.importMedia(result.itemProvider, into: self.directory)
+                    let item = try await Self.importMedia(result.itemProvider, into: LocalStore.directory)
                     if item.1 == .video {
                         let asset = AVURLAsset(url: item.0)
                         guard (try? await asset.load(.isPlayable)) == true else {
@@ -239,6 +249,7 @@ final class PublishController: UITableViewController, PHPickerViewControllerDele
                         }
                     }
                     imported.append(item)
+                    self.importedFiles.insert(item.0.lastPathComponent)
                 } catch { failed += 1 }
             }
             if let first = imported.first {
@@ -367,6 +378,7 @@ final class PublishController: UITableViewController, PHPickerViewControllerDele
         present(alert, animated: true)
     }
     deinit {
+        store.cleanUnreferenced(importedFiles)
         autosaveTask?.cancel()
         coverTask?.cancel()
         importTask?.cancel()

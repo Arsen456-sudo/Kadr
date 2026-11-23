@@ -191,8 +191,8 @@ final class LocalStore {
         guard let profile = profile(peer), peer != me else { throw SocialError.unavailable }
         guard !studio.preferences.blocked.contains(peer) else { throw SocialError.unavailable }
         let recipient = state.studio?.accounts[peer.uuidString]?.preferences ?? AppPreferences()
-        guard !recipient.blocked.contains(me), recipient.messagePermission != "nobody" else { throw SocialError.unavailable }
-        guard follows(profile) || !messages(with: peer).isEmpty || recipient.messagePermission == "everyone" else { throw SocialError.followRequired }
+        guard !recipient.blocked.contains(me) else { throw SocialError.unavailable }
+        guard !messages(with: peer).isEmpty || recipient.messagePermission == "everyone" || (recipient.messagePermission == "following" && follows(profile)) else { throw SocialError.followRequired }
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty, text.count <= 4000 else { throw SocialError.invalidMessage }
         if let existing = (state.messages ?? []).first(where: { $0.id == id }) {
@@ -271,7 +271,7 @@ final class LocalStore {
                 if let destination { try? FileManager.default.removeItem(at: destination) }
                 return false
             }
-            if let old { try? FileManager.default.removeItem(at: old) }
+            if let old { cleanUnreferenced([old.lastPathComponent]) }
             return true
         } catch {
             if let destination { try? FileManager.default.removeItem(at: destination) }
@@ -354,9 +354,7 @@ final class LocalStore {
                 for url in copied { try? FileManager.default.removeItem(at: url) }
                 return nil
             }
-            for item in previousDraft?.media ?? [] where !media.contains(where: { $0.file == item.file }) {
-                try? FileManager.default.removeItem(at: Self.directory.appending(path: item.file))
-            }
+            cleanUnreferenced(Set((previousDraft?.media ?? []).filter { item in !media.contains(where: { $0.file == item.file }) }.map(\.file)))
             return post
         } catch {
             for url in copied { try? FileManager.default.removeItem(at: url) }
@@ -369,7 +367,37 @@ final class LocalStore {
     func updateState(_ update: (inout State) -> Void) -> Bool {
         var next = state
         update(&next)
+        if let owner = state.activeID, next.activeID == owner {
+            var studio = next.studio ?? StudioState()
+            func tombstone(_ kind: String, _ key: String) {
+                studio.outbox.removeAll { $0.owner == owner && $0.resource == kind && $0.entityID == key }
+                studio.outbox.append(SyncMutation(owner: owner, resource: kind, entityID: key, payload: Data("{\"deleted\":true}".utf8)))
+            }
+            let posts = Set(next.clips.map(\.id))
+            for clip in state.clips where clip.authorID == owner && !posts.contains(clip.id) { tombstone(clip.isDraft == true ? "draft" : "post", clip.id) }
+            let messages = Set((next.messages ?? []).map(\.id))
+            for message in state.messages ?? [] where message.senderID == owner && !messages.contains(message.id) { tombstone("message", message.id.uuidString) }
+            let comments = Set(next.comments.values.flatMap { $0.map(\.id) })
+            for comment in state.comments.values.flatMap({ $0 }) where comment.authorID == owner && !comments.contains(comment.id) { tombstone("comment", comment.id.uuidString) }
+            next.studio = studio
+        }
         return save(next)
+    }
+
+    func cleanUnreferenced(_ candidates: Set<String>) {
+        guard !candidates.isEmpty else { return }
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do { try await self.flush() } catch { return }
+            let referenced = Set(self.state.clips.flatMap { ($0.media ?? []).map(\.file) })
+                .union(self.state.profiles.compactMap(\.bannerFile))
+                .union(self.state.messages?.compactMap(\.attachmentFile) ?? [])
+                .union(self.state.clips.compactMap { $0.extras?.coverFile })
+            let removable = candidates.subtracting(referenced).filter { !$0.isEmpty && URL(fileURLWithPath: $0).lastPathComponent == $0 && !$0.contains("..") }
+            await Task.detached(priority: .utility) {
+                for file in removable { try? FileManager.default.removeItem(at: Self.directory.appendingPathComponent(file)) }
+            }.value
+        }
     }
 
     private func save(_ next: State) -> Bool {

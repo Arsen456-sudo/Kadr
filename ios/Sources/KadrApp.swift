@@ -62,7 +62,8 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
     private weak var observedScroll: UIScrollView?
     private var observedImmersive = false
     private let addTab = UIViewController()
-    private lazy var social = LocalSocialRepository(store: store)
+    private lazy var services = AppServices(store: store)
+    private var social: any SocialRepository { services.social }
     private lazy var inbox = InboxController(store: store, repository: social)
     private var keepsFeedPlaying = false
     private weak var selectedScreen: UIViewController?
