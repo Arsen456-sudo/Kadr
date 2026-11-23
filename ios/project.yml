@@ -21,6 +21,10 @@ targets:
         CFBundleShortVersionString: $(MARKETING_VERSION)
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         UILaunchScreen: {}
+        NSMicrophoneUsageDescription: Запис голосових повідомлень перед надсиланням.
+        NSCameraUsageDescription: Сканування QR-кодів профілів.
+        CFBundleURLTypes:
+          - CFBundleURLSchemes: [kadr]
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
         UISupportedInterfaceOrientations:

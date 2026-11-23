@@ -4,13 +4,15 @@ import UIKit
 import Symbols
 import UniformTypeIdentifiers
 
-final class CommentsController: UIViewController, UITableViewDataSource, UITextFieldDelegate {
+final class CommentsController: UIViewController, UITableViewDataSource, UITableViewDelegate, UITextFieldDelegate {
     private let store: LocalStore
     private let clip: Clip
     private let table = UITableView()
     private let field = UITextField()
     private let send = GlyphButton(symbol: "arrow.up", label: "Надіслати коментар")
     private var comments: [Comment] = []
+    private var replyTo: UUID?
+    private var sort = "new"
     var onAccount: (() -> Void)?
     var onComment: (() -> Void)?
 
@@ -27,6 +29,12 @@ final class CommentsController: UIViewController, UITableViewDataSource, UITextF
         title = "Коментарі"
         view.backgroundColor = .systemBackground
         table.dataSource = self
+        table.delegate = self
+        navigationItem.rightBarButtonItem = UIBarButtonItem(title: "Порядок", menu: UIMenu(children: [
+            UIAction(title: "Нові") { [weak self] _ in self?.sort = "new"; self?.refreshComments() },
+            UIAction(title: "Популярні") { [weak self] _ in self?.sort = "popular"; self?.refreshComments() },
+            UIAction(title: "Від автора") { [weak self] _ in self?.sort = "author"; self?.refreshComments() }
+        ]))
         table.keyboardDismissMode = .interactive
         table.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(table)
@@ -74,16 +82,30 @@ final class CommentsController: UIViewController, UITableViewDataSource, UITextF
 
     private func updateSendButton() {
         send.isEnabled = !draft.isEmpty && draft.count <= 500
+        if let text = field.text, let at = text.lastIndex(of: "@") {
+            let term = String(text[text.index(after: at)...])
+            let toolbar = UIToolbar(); toolbar.sizeToFit()
+            toolbar.items = store.searchProfiles(term).prefix(4).map { profile in
+                UIBarButtonItem(title: "@" + profile.handle, primaryAction: UIAction { [weak self] _ in
+                    self?.field.text = String(text[..<at]) + "@" + profile.handle + " "
+                    self?.field.inputAccessoryView = nil; self?.field.reloadInputViews()
+                })
+            }
+            field.inputAccessoryView = toolbar
+        } else { field.inputAccessoryView = nil }
+        if field.isFirstResponder { field.reloadInputViews() }
     }
 
     private func sendComment() {
         guard send.isEnabled else { return }
-        guard store.addComment(draft, to: clip) else {
+        guard store.addComment(draft, to: clip, parentID: replyTo) else {
             showMessage(store.errorMessage ?? "Не вдалося зберегти коментар.")
             store.errorMessage = nil
             return
         }
         field.text = nil
+        replyTo = nil
+        field.placeholder = "Написати коментар"
         updateSendButton()
         refreshComments()
         table.scrollToRow(at: IndexPath(row: comments.count - 1, section: 0), at: .bottom,
@@ -93,7 +115,23 @@ final class CommentsController: UIViewController, UITableViewDataSource, UITextF
     }
 
     private func refreshComments() {
-        comments = store.comments(clip)
+        let all = store.comments(clip)
+        let sorted = all.sorted { a, b in
+            if a.pinned != b.pinned { return a.pinned == true }
+            if sort == "popular", (a.likes?.count ?? 0) != (b.likes?.count ?? 0) { return (a.likes?.count ?? 0) > (b.likes?.count ?? 0) }
+            if sort == "author", (a.authorID == clip.authorID) != (b.authorID == clip.authorID) { return a.authorID == clip.authorID }
+            return (a.createdAt ?? .distantPast) > (b.createdAt ?? .distantPast)
+        }
+        var ordered: [Comment] = []
+        var visited = Set<UUID>()
+        func append(_ comment: Comment) {
+            guard visited.insert(comment.id).inserted else { return }
+            ordered.append(comment)
+            for reply in sorted where reply.parentID == comment.id { append(reply) }
+        }
+        for comment in sorted where comment.parentID == nil { append(comment) }
+        for comment in sorted { append(comment) }
+        comments = ordered
         if comments.isEmpty {
             var empty = UIContentUnavailableConfiguration.empty()
             empty.text = "Коментарів ще немає"
@@ -120,9 +158,11 @@ final class CommentsController: UIViewController, UITableViewDataSource, UITextF
         let cell = tableView.dequeueReusableCell(withIdentifier: "comment") ??
             UITableViewCell(style: .default, reuseIdentifier: "comment")
         var configuration = cell.defaultContentConfiguration()
-        configuration.text = profile.map { "@\($0.handle)" }
+        configuration.text = profile.map { "@\($0.handle)" + ($0.id == clip.authorID ? " · Автор" : "") }
+        if comment.pinned == true { configuration.text = "📌 " + (configuration.text ?? "") }
+        configuration.secondaryText = comment.text + ((comment.likes?.isEmpty == false) ? "  ♥ \(comment.likes?.count ?? 0)" : "")
+        cell.indentationLevel = comment.parentID == nil ? 0 : 1
         configuration.textProperties.color = .kadrPeach
-        configuration.secondaryText = comment.text
         configuration.secondaryTextProperties.color = .label
         configuration.image = profile?.avatar.flatMap { UIImage(data: $0) } ?? AppSymbol.image( "person.crop.circle.fill")
         configuration.imageProperties.maximumSize = CGSize(width: 34, height: 34)
@@ -132,6 +172,41 @@ final class CommentsController: UIViewController, UITableViewDataSource, UITextF
         cell.selectionStyle = .none
         return cell
     }
+    func tableView(_ tableView: UITableView, contextMenuConfigurationForRowAt indexPath: IndexPath, point: CGPoint) -> UIContextMenuConfiguration? {
+        let comment = comments[indexPath.row]
+        return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self] _ in
+            guard let self else { return nil }
+            var actions = [UIAction(title: "Відповісти", image: AppSymbol.image("arrowshape.turn.up.left")) { [weak self] _ in
+                self?.replyTo = comment.id; self?.field.placeholder = "Відповідь @" + (self?.store.profile(comment.authorID)?.handle ?? "")
+                self?.field.becomeFirstResponder()
+            }, UIAction(title: "Подобається", image: AppSymbol.image("heart")) { [weak self] _ in
+                guard let self else { return }; self.store.toggleCommentLike(comment, clip: self.clip); self.refreshComments()
+            }]
+            if self.clip.authorID == self.store.active?.id {
+                actions.append(UIAction(title: "Закріпити / відкріпити", image: AppSymbol.image("pin")) { [weak self] _ in
+                    guard let self else { return }; self.store.pinComment(comment, clip: self.clip); self.refreshComments()
+                })
+            }
+            if comment.authorID == self.store.active?.id {
+                actions.append(UIAction(title: "Редагувати", image: AppSymbol.image("pencil")) { [weak self] _ in
+                    guard let self else { return }
+                    let alert = UIAlertController(title: "Коментар", message: nil, preferredStyle: .alert)
+                    alert.addTextField { $0.text = comment.text }
+                    alert.addAction(UIAlertAction(title: "Зберегти", style: .default) { [weak self] _ in
+                        guard let self else { return }; self.store.updateComment(comment, clip: self.clip, text: alert.textFields?.first?.text ?? ""); self.refreshComments()
+                    })
+                    alert.addAction(UIAlertAction(title: "Скасувати", style: .cancel)); self.present(alert, animated: true)
+                })
+            }
+            if comment.authorID == self.store.active?.id || self.clip.authorID == self.store.active?.id {
+                actions.append(UIAction(title: "Видалити", image: AppSymbol.image("trash"), attributes: .destructive) { [weak self] _ in
+                    guard let self else { return }; self.store.deleteComment(comment, clip: self.clip); self.refreshComments()
+                })
+            }
+            return UIMenu(children: actions)
+        }
+    }
+
 }
 
 final class ClipPreviewController: UIViewController {

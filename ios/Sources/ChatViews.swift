@@ -1,9 +1,20 @@
 import UIKit
+import PhotosUI
+import AVFoundation
 
-final class InboxController: LibraryController {
+final class InboxController: LibraryController, UISearchResultsUpdating {
     private let store: LocalStore
     private let repository: any SocialRepository
     private var rows: [ConversationSummary] = []
+    private var query = ""
+    private var activityMode = false
+    private var conversations: [ConversationSummary] { rows.filter { query.isEmpty || $0.profile.handle.localizedCaseInsensitiveContains(query) || $0.lastMessage.text.localizedCaseInsensitiveContains(query) }.sorted {
+        let a = store.studio.pinnedChats.contains($0.id), b = store.studio.pinnedChats.contains($1.id)
+        return a != b ? a : $0.lastMessage.createdAt > $1.lastMessage.createdAt
+    } }
+    private var activities: [ActivityEntry] { (store.state.activity ?? []).filter { $0.recipientID == store.active?.id }.sorted { $0.createdAt > $1.createdAt } }
+    var onProfile: ((UUID) -> Void)?
+    var onPost: ((Clip) -> Void)?
     private var request: Task<Void, Never>?
     var scrollView: UIScrollView { tableView }
     var onSearch: (() -> Void)?
@@ -19,6 +30,12 @@ final class InboxController: LibraryController {
     override func viewDidLoad() {
         super.viewDidLoad()
         NotificationCenter.default.addObserver(self, selector: #selector(refresh), name: .kadrMessagesDidChange, object: store)
+        let search = UISearchController(); search.searchResultsUpdater = self; search.obscuresBackgroundDuringPresentation = false
+        navigationItem.searchController = search
+        let sections = UISegmentedControl(items: ["Повідомлення", "Активність"])
+        sections.selectedSegmentIndex = 0
+        sections.addAction(UIAction { [weak self, weak sections] _ in self?.activityMode = sections?.selectedSegmentIndex == 1; self?.showEmpty(nil); self?.tableView.reloadData() }, for: .valueChanged)
+        let header = UIView(frame: CGRect(x: 0, y: 0, width: 320, height: 52)); sections.pin(to: header, insets: .init(top: 4, leading: 16, bottom: 4, trailing: 16)); tableView.tableHeaderView = header
         tableView.refreshControl = UIRefreshControl()
         tableView.refreshControl?.addAction(UIAction { [weak self] _ in self?.refresh() }, for: .valueChanged)
         refresh()
@@ -54,9 +71,17 @@ final class InboxController: LibraryController {
             }
         }
     }
-    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { rows.count }
+    override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { activityMode ? activities.count : conversations.count }
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let row = rows[indexPath.row]
+        if activityMode {
+            let entry = activities[indexPath.row]
+            let cell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)
+            cell.textLabel?.text = "@" + (store.profile(entry.actorID)?.handle ?? "користувач")
+            cell.detailTextLabel?.text = entry.kind == "follow" ? "Підписався на тебе" : entry.kind == "like" ? "Уподобав публікацію" : "Залишив коментар"
+            cell.imageView?.image = AppSymbol.image(entry.kind == "follow" ? "person.badge.plus" : entry.kind == "like" ? "heart" : "bubble.left")
+            return cell
+        }
+        let row = conversations[indexPath.row]
         let cell = tableView.dequeueReusableCell(withIdentifier: "conversation") ?? UITableViewCell(style: .subtitle, reuseIdentifier: "conversation")
         var content = cell.defaultContentConfiguration()
         content.text = "@\(row.profile.handle)"
@@ -71,18 +96,29 @@ final class InboxController: LibraryController {
     }
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
-        onChat?(rows[indexPath.row].profile)
+        if activityMode {
+            let entry = activities[indexPath.row]
+            if let post = store.allClips.first(where: { $0.id == entry.postID }) { onPost?(post) } else { onProfile?(entry.actorID) }
+        } else { onChat?(conversations[indexPath.row].profile) }
     }
+    func updateSearchResults(for searchController: UISearchController) { query = searchController.searchBar.text ?? ""; showEmpty(nil); tableView.reloadData() }
     deinit { request?.cancel() }
 
 }
 
-final class ChatController: UIViewController, UITableViewDataSource, UITextFieldDelegate {
+final class ChatController: UIViewController, UITableViewDataSource, UITableViewDelegate, UITextFieldDelegate, UISearchResultsUpdating, PHPickerViewControllerDelegate {
     private let store: LocalStore
     private let repository: any SocialRepository
     private let peer: Profile
     private let accountID: UUID?
     private let table = UITableView()
+    private var query = ""
+    private var replyTo: UUID?
+    private var audioPlayer: AVAudioPlayer?
+    private var attachment: URL?
+    private var attachmentKind: String?
+    private var sharedPost: String?
+    private var visibleRows: [ChatMessage] { rows.filter { query.isEmpty || $0.text.localizedCaseInsensitiveContains(query) } }
     private let field = UITextField()
     private let send = UIButton(configuration: .glass())
     private var rows: [ChatMessage] = []
@@ -104,11 +140,20 @@ final class ChatController: UIViewController, UITableViewDataSource, UITextField
         title = "@\(peer.handle)"
         view.backgroundColor = .systemBackground
         table.dataSource = self
+        table.delegate = self
+        let search = UISearchController(); search.searchResultsUpdater = self; search.obscuresBackgroundDuringPresentation = false
+        navigationItem.searchController = search
+        navigationItem.rightBarButtonItem = UIBarButtonItem(image: AppSymbol.image("pin"), primaryAction: UIAction { [weak self] _ in
+            guard let self else { return }; self.store.changeStudio { account in
+                if account.pinnedChats.remove(self.peer.id) == nil { account.pinnedChats.insert(self.peer.id) }
+            }
+        })
         table.separatorStyle = .none
         table.keyboardDismissMode = .interactive
-        table.allowsSelection = false
+        table.allowsSelection = true
         table.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(table)
+        field.text = store.studio.chatDrafts[peer.id.uuidString]
         field.placeholder = "Повідомлення"
         field.returnKeyType = .send
         field.delegate = self
@@ -122,7 +167,30 @@ final class ChatController: UIViewController, UITableViewDataSource, UITextField
         send.widthAnchor.constraint(equalToConstant: 48).isActive = true
         send.heightAnchor.constraint(equalToConstant: 48).isActive = true
         send.addAction(UIAction { [weak self] _ in self?.sendMessage() }, for: .primaryActionTriggered)
-        let composer = UIStackView(arrangedSubviews: [island, send])
+        let attach = UIButton(configuration: .glass())
+        attach.configuration?.image = AppSymbol.image("plus")
+        attach.accessibilityLabel = "Додати вкладення"
+        attach.widthAnchor.constraint(equalToConstant: 44).isActive = true
+        attach.menu = UIMenu(children: [UIAction(title: "Фотографія", image: AppSymbol.image("photo")) { [weak self] _ in
+            guard let self else { return }; var configuration = PHPickerConfiguration(); configuration.filter = .images; configuration.selectionLimit = 1
+            let picker = PHPickerViewController(configuration: configuration); picker.delegate = self; self.present(picker, animated: true)
+        }, UIAction(title: "Голосове повідомлення", image: AppSymbol.image("mic")) { [weak self] _ in
+            guard let self else { return }; let recorder = VoiceRecorderController()
+            recorder.onSend = { [weak self, weak recorder] url in
+                let retained = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension("m4a")
+                do { try FileManager.default.copyItem(at: url, to: retained) } catch { self?.showMessage(error.localizedDescription); return }
+                self?.attachment = retained; self?.attachmentKind = "audio"; self?.field.text = "Голосове повідомлення"
+                self?.sendMessage(); recorder?.navigationController?.popViewController(animated: true)
+            }; self.navigationController?.pushViewController(recorder, animated: true)
+        }, UIAction(title: "Публікація", image: AppSymbol.image("play.rectangle")) { [weak self] _ in
+            guard let self else { return }; let page = ActionListController("Надіслати публікацію")
+            page.rows = self.store.allClips.map { clip in StudioRow(title: clip.caption, icon: "play", action: { [weak self, weak page] in
+                self?.sharedPost = clip.id; self?.field.text = clip.caption.isEmpty ? "Публікація" : clip.caption
+                self?.sendMessage(); page?.navigationController?.popViewController(animated: true)
+            }) }; self.navigationController?.pushViewController(page, animated: true)
+        }])
+        attach.showsMenuAsPrimaryAction = true
+        let composer = UIStackView(arrangedSubviews: [attach, island, send])
         composer.spacing = 8
         composer.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(composer)
@@ -151,7 +219,7 @@ final class ChatController: UIViewController, UITableViewDataSource, UITextField
                 guard !Task.isCancelled else { return }
                 self.rows = messages
                 self.table.reloadData()
-                if !messages.isEmpty { self.table.scrollToRow(at: IndexPath(row: messages.count - 1, section: 0), at: .bottom, animated: false) }
+                if !self.visibleRows.isEmpty { self.table.scrollToRow(at: IndexPath(row: self.visibleRows.count - 1, section: 0), at: .bottom, animated: false) }
             } catch { if !Task.isCancelled { self.showMessage(error.localizedDescription) } }
         }
     }
@@ -168,12 +236,17 @@ final class ChatController: UIViewController, UITableViewDataSource, UITextField
         retryText = text
         field.isEnabled = false
         send.isEnabled = false
+        let source = attachment, kind = attachmentKind, reply = replyTo, post = sharedPost
         sendTask = Task { [weak self] in
             guard let self else { return }
             defer { self.sendTask = nil; self.field.isEnabled = true; self.updateSend() }
             do {
                 _ = try await self.repository.send(text: text, to: self.peer.id, id: id)
+                try self.store.attachMessage(id, source: source, kind: kind, reply: reply, postID: post)
+                self.attachment = nil; self.attachmentKind = nil; self.sharedPost = nil; self.replyTo = nil
+                self.field.placeholder = "Повідомлення"
                 self.field.text = ""
+                self.store.changeStudio { $0.chatDrafts[self.peer.id.uuidString] = nil }
                 self.retryID = nil
                 self.retryText = nil
                 self.loadMessages()
@@ -181,13 +254,20 @@ final class ChatController: UIViewController, UITableViewDataSource, UITextField
         }
     }
     func textFieldShouldReturn(_ textField: UITextField) -> Bool { sendMessage(); return false }
-    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { rows.count }
+    func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int { visibleRows.count }
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        let message = rows[indexPath.row]
+        let message = visibleRows[indexPath.row]
         let cell = tableView.dequeueReusableCell(withIdentifier: "message") ?? UITableViewCell(style: .subtitle, reuseIdentifier: "message")
         var content = cell.defaultContentConfiguration()
         let mine = message.senderID == accountID
-        content.text = message.text
+        content.text = (message.replyTo.flatMap { id in rows.first { $0.id == id } }.map { "↪ " + String($0.text.prefix(60)) + "\n" } ?? "") + message.text
+        if let reactions = message.reactions, !reactions.isEmpty { content.text = (content.text ?? "") + "\n" + reactions.values.sorted().joined(separator: " ") }
+        if message.postID != nil { content.image = AppSymbol.image("play.rectangle.fill") }
+        if message.attachmentKind == "audio" { content.image = AppSymbol.image("waveform") }
+        if message.attachmentKind == "photo", let file = message.attachmentFile {
+            content.image = UIImage(contentsOfFile: LocalStore.directory.appendingPathComponent(file).path)
+            content.imageProperties.maximumSize = CGSize(width: 160, height: 160)
+        }
         content.textProperties.numberOfLines = 0
         content.textProperties.alignment = .natural
         content.secondaryText = message.createdAt.formatted(date: .abbreviated, time: .shortened)
@@ -200,6 +280,54 @@ final class ChatController: UIViewController, UITableViewDataSource, UITextField
         cell.contentConfiguration = content
         cell.backgroundConfiguration = background
         return cell
+    }
+    override func viewWillDisappear(_ animated: Bool) {
+        super.viewWillDisappear(animated)
+        if accountID == store.active?.id { store.changeStudio { $0.chatDrafts[peer.id.uuidString] = field.text } }
+        audioPlayer?.stop()
+    }
+    func updateSearchResults(for searchController: UISearchController) { query = searchController.searchBar.text ?? ""; table.reloadData() }
+    func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
+        let message = visibleRows[indexPath.row]
+        if let postID = message.postID, let clip = store.allClips.first(where: { $0.id == postID }) { navigationController?.pushViewController(ClipPreviewController(clip: clip, store: store), animated: true) }
+        if let file = message.attachmentFile, message.attachmentKind == "audio" {
+            do { audioPlayer = try AVAudioPlayer(contentsOf: LocalStore.directory.appendingPathComponent(file)); audioPlayer?.play() } catch { showMessage(error.localizedDescription) }
+        }
+        if let file = message.attachmentFile, message.attachmentKind == "photo" {
+            let album = PhotoAlbumController(media: [PostMedia(id: UUID(), kind: .photo, file: file)])
+            navigationController?.pushViewController(album, animated: true)
+        }
+    }
+    func tableView(_ tableView: UITableView, contextMenuConfigurationForRowAt indexPath: IndexPath, point: CGPoint) -> UIContextMenuConfiguration? {
+        let message = visibleRows[indexPath.row]
+        return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self] _ in
+            guard let self else { return nil }
+            var actions = [UIAction(title: "Відповісти", image: AppSymbol.image("arrowshape.turn.up.left")) { [weak self] _ in
+                self?.replyTo = message.id; self?.field.placeholder = "Відповідь на: " + String(message.text.prefix(32)); self?.field.becomeFirstResponder()
+            }]
+            actions += ["❤️", "👍", "😂", "🔥"].map { emoji in UIAction(title: emoji) { [weak self] _ in self?.store.reactToMessage(message, emoji: emoji) } }
+            if message.senderID == self.accountID {
+                actions.append(UIAction(title: "Редагувати", image: AppSymbol.image("pencil")) { [weak self] _ in
+                    guard let self else { return }; let alert = UIAlertController(title: "Повідомлення", message: nil, preferredStyle: .alert)
+                    alert.addTextField { $0.text = message.text }
+                    alert.addAction(UIAlertAction(title: "Зберегти", style: .default) { [weak self] _ in self?.store.editMessage(message, text: alert.textFields?.first?.text ?? "") })
+                    alert.addAction(UIAlertAction(title: "Скасувати", style: .cancel)); self.present(alert, animated: true)
+                })
+                actions.append(UIAction(title: "Видалити", image: AppSymbol.image("trash"), attributes: .destructive) { [weak self] _ in self?.store.deleteMessage(message) })
+            }
+            return UIMenu(children: actions)
+        }
+    }
+    func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+        picker.dismiss(animated: true)
+        guard let provider = results.first?.itemProvider else { return }
+        provider.loadObject(ofClass: UIImage.self) { [weak self] object, _ in
+            guard let image = object as? UIImage, let data = image.jpegData(compressionQuality: 0.95) else { return }
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString).appendingPathExtension("jpg")
+            do { try data.write(to: url); DispatchQueue.main.async {
+                self?.attachment = url; self?.attachmentKind = "photo"; self?.field.text = "Фотографія"; self?.sendMessage()
+            } } catch { }
+        }
     }
     deinit { loadTask?.cancel(); sendTask?.cancel() }
 }

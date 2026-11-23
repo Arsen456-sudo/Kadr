@@ -103,6 +103,8 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
         feed.onComments = { [weak self] clip in self?.openComments(clip) }
         inbox.onSearch = { [weak self] in self?.openSearch() }
         inbox.onAccount = { [weak self] in self?.openAccount() }
+        inbox.onProfile = { [weak self] id in self?.openAuthor(id) }
+        inbox.onPost = { [weak self] clip in self?.openClip(clip) }
         inbox.onChat = { [weak self] peer in self?.openChat(peer) }
         feed.onDescription = { [weak self] clip in
             guard let self else { return }

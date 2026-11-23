@@ -150,6 +150,7 @@ final class LocalStore {
         var next = state
         if next.following[id, default: []].remove(profile.id) == nil {
             next.following[id, default: []].insert(profile.id)
+            next.activity = (next.activity ?? []) + [ActivityEntry(recipientID: profile.id, actorID: id, kind: "follow")]
         }
         _ = save(next)
     }
@@ -285,7 +286,10 @@ final class LocalStore {
         var next = state
         let keyPath = bookmark ? \State.bookmarks : \State.likes
         var users = next[keyPath: keyPath][clip.id, default: []]
-        if users.remove(id) == nil { users.insert(id) }
+        if users.remove(id) == nil {
+            users.insert(id)
+            if !bookmark, let author = clip.authorID, author != id { next.activity = (next.activity ?? []) + [ActivityEntry(recipientID: author, actorID: id, kind: "like", postID: clip.id)] }
+        }
         next[keyPath: keyPath][clip.id] = users
         _ = save(next)
     }
@@ -295,7 +299,9 @@ final class LocalStore {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard clip.settings.allowsComments, let id = state.activeID, !text.isEmpty, text.count <= 500 else { return false }
         var next = state
-        guard !studio.preferences.mutedWords.contains(where: { !$0.isEmpty && text.localizedCaseInsensitiveContains($0) }) else { return false }
+        let commentPreferences = clip.authorID.flatMap { state.studio?.accounts[$0.uuidString]?.preferences } ?? AppPreferences()
+        if let parentID, !comments(clip).contains(where: { $0.id == parentID }) { return false }
+        guard !commentPreferences.mutedWords.contains(where: { !$0.isEmpty && text.localizedCaseInsensitiveContains($0) }) else { return false }
         next.comments[clip.id, default: []].append(Comment(id: UUID(), authorID: id, text: text, parentID: parentID, createdAt: Date()))
         if let author = clip.authorID, author != id {
             next.activity = (next.activity ?? []) + [ActivityEntry(recipientID: author, actorID: id, kind: "comment", postID: clip.id)]
