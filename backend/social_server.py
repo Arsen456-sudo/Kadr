@@ -264,7 +264,7 @@ class SocialService:
                 value = json.loads(record["payload"])
                 if record["resource"] == "post" and value.get("options", {}).get("onlyMe") is not True and any(item.get("file") == name for item in value.get("media", [])):
                     return
-                if record["resource"] == "profile" and value.get("bannerFile") == name: return
+                if record["resource"] == "profile" and name in (value.get("bannerFile"), value.get("portraitFile")): return
                 if record["resource"] == "message" and value.get("recipientID", "").lower() == user and value.get("attachmentFile") == name: return
             raise APIError(403, "Немає доступу до файлу.")
 

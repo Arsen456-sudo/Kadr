@@ -94,6 +94,7 @@ final class FeatureSyncEngine {
         let records = try await Task.detached(priority: .utility) { try Self.records(snapshot, owner: owner) }.value
         let files = Set(snapshot.clips.filter { $0.authorID == owner }.flatMap { ($0.media ?? []).map(\.file) })
             .union(snapshot.profiles.filter { $0.id == owner }.compactMap(\.bannerFile))
+            .union(snapshot.profiles.filter { $0.id == owner }.compactMap(\.portraitFile))
             .union(snapshot.messages?.filter { $0.senderID == owner }.compactMap(\.attachmentFile) ?? [])
         for file in files {
             guard URL(fileURLWithPath: file).lastPathComponent == file, !file.contains("..") else { throw SocialError.unavailable }
@@ -114,6 +115,8 @@ final class FeatureSyncEngine {
                 if record.resource == "profile", let profile = try? JSONDecoder().decode(Profile.self, from: record.payload), let file = profile.bannerFile,
                    !FileManager.default.fileExists(atPath: LocalStore.directory.appendingPathComponent(file).path) { _ = try await transport.download(name: file) }
                 if record.resource == "message", let message = try? JSONDecoder().decode(ChatMessage.self, from: record.payload), let file = message.attachmentFile,
+                   !FileManager.default.fileExists(atPath: LocalStore.directory.appendingPathComponent(file).path) { _ = try await transport.download(name: file) }
+                if record.resource == "profile", let profile = try? JSONDecoder().decode(Profile.self, from: record.payload), let file = profile.portraitFile,
                    !FileManager.default.fileExists(atPath: LocalStore.directory.appendingPathComponent(file).path) { _ = try await transport.download(name: file) }
                 apply(record, owner: owner)
             }

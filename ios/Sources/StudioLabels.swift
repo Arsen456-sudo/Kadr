@@ -3,6 +3,7 @@ import Foundation
 enum StudioLabels {
     static func title(_ key: String) -> String {
         switch key {
+        case "atmosphere": return "Атмосфера"
         case "minimal": return "Мінімалізм"
         case "cinema": return "Кінематографічний"
         case "vivid": return "Яскравий"

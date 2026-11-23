@@ -7,6 +7,7 @@ struct Profile: Codable, Identifiable {
     let bio: String
     var avatar: Data?
     var bannerFile: String? = nil
+    var portraitFile: String? = nil
     var avatarRemoteURL: URL? = nil
     var avatarRevision: UUID? = nil
 
@@ -264,6 +265,24 @@ final class LocalStore {
     }
 
     @discardableResult
+    func setPortrait(_ photo: Data, avatar: Data, for id: UUID) -> Bool {
+        guard state.activeID == id, let index = state.profiles.firstIndex(where: { $0.id == id }) else { return false }
+        let old = state.profiles[index].portraitFile
+        let file = "portrait-" + UUID().uuidString + ".jpg"
+        do {
+            try FileManager.default.createDirectory(at: Self.directory, withIntermediateDirectories: true)
+            try photo.write(to: Self.directory.appendingPathComponent(file), options: .atomic)
+            var next = state
+            next.profiles[index].portraitFile = file; next.profiles[index].avatar = avatar; next.profiles[index].avatarRevision = UUID()
+            next.profiles[index].avatarRemoteURL = nil
+            guard save(next) else { try? FileManager.default.removeItem(at: Self.directory.appendingPathComponent(file)); return false }
+            if let old { cleanUnreferenced([old]) }
+            NotificationCenter.default.post(name: .kadrProfileDidChange, object: self, userInfo: ["profileID": id])
+            return true
+        } catch { errorMessage = "Не вдалося зберегти фото профілю."; return false }
+    }
+
+    @discardableResult
     func setBanner(_ source: URL?, extension suffix: String, for id: UUID) -> Bool {
         guard state.activeID == id, let index = state.profiles.firstIndex(where: { $0.id == id }) else { return false }
         let old = state.profiles[index].bannerURL
@@ -407,6 +426,7 @@ final class LocalStore {
             guard !self.isRestoringBackup else { return }
             let referenced = Set(self.state.clips.flatMap { ($0.media ?? []).map(\.file) })
                 .union(self.state.profiles.compactMap(\.bannerFile))
+                .union(self.state.profiles.compactMap(\.portraitFile))
                 .union(self.state.messages?.compactMap(\.attachmentFile) ?? [])
                 .union(self.state.clips.compactMap { $0.extras?.coverFile })
             let removable = candidates.subtracting(referenced).filter { !$0.isEmpty && URL(fileURLWithPath: $0).lastPathComponent == $0 && !$0.contains("..") }

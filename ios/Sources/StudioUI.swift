@@ -131,7 +131,7 @@ final class StudioController: ActionListController {
             guard let self, let page else { return [] }
             let appearance = self.store.studio.appearance
             return [StudioRow(title: "Стиль", detail: StudioLabels.title(appearance.theme), icon: "rectangle.3.group", action: {
-                page.options("Стиль профілю", values: ["minimal", "cinema", "vivid"].map(StudioLabels.title)) { value in self.store.changeStudio { $0.appearance.theme = StudioLabels.key(value, among: ["minimal", "cinema", "vivid"]) }; page.reload() }
+                page.options("Стиль профілю", values: ["minimal", "cinema", "vivid", "atmosphere"].map(StudioLabels.title)) { value in self.store.changeStudio { $0.appearance.theme = StudioLabels.key(value, among: ["minimal", "cinema", "vivid", "atmosphere"]) }; page.reload() }
             }), StudioRow(title: "Акцент", detail: StudioLabels.title(appearance.accent), icon: "paintpalette", action: {
                 page.options("Акцент", values: ["peach", "mint", "violet", "blue", "rose"].map(StudioLabels.title)) { value in self.store.changeStudio { $0.appearance.accent = StudioLabels.key(value, among: ["peach", "mint", "violet", "blue", "rose"]) }; page.reload() }
             }), StudioRow(title: "Знайомство з автором", detail: appearance.introduction, icon: "person.text.rectangle", action: {
@@ -152,7 +152,7 @@ final class StudioController: ActionListController {
                         else if account.appearance.pinnedPosts.count < 3 { account.appearance.pinnedPosts.append(clip.id) }
                     }
                 }
-            })]
+            })].filter { appearance.theme != "atmosphere" || $0.title != "Кадр початку відеобанера" }
         }
         push(page)
     }

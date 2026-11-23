@@ -20,12 +20,14 @@ final class KadrToolbarState: ObservableObject {
         var screen: Screen
         var canSignOut: Bool
         var hasBanner: Bool = false
+        var usesPortrait: Bool = false
     }
 
     @Published var context = Context(screen: .feed, canSignOut: false)
     var screen: Screen { context.screen }
     var canSignOut: Bool { context.canSignOut }
     var hasBanner: Bool { context.hasBanner }
+    var usesPortrait: Bool { context.usesPortrait }
     @Published var immersive = false
     @Published var feedSection = FeedSection.recommended
     @Published var overview = false
@@ -78,9 +80,9 @@ struct KadrNavigationShell: View {
                                 Button {
                                     state.onChooseBanner?()
                                 } label: {
-                                    Label("Вибрати фото або відео", systemImage: AppSymbol.name("photo.on.rectangle"))
+                                    Label(state.usesPortrait ? "Вибрати фото профілю" : "Вибрати фото або відео", systemImage: AppSymbol.name("photo.on.rectangle"))
                                 }
-                                if state.hasBanner {
+                                if state.hasBanner && !state.usesPortrait {
                                     Button(role: .destructive) {
                                         state.onRemoveBanner?()
                                     } label: {
@@ -90,7 +92,7 @@ struct KadrNavigationShell: View {
                             } label: {
                                 Image(systemName: AppSymbol.name("photo.on.rectangle"))
                             }
-                            .accessibilityLabel("Змінити банер")
+                            .accessibilityLabel(state.usesPortrait ? "Змінити фото профілю" : "Змінити банер")
                         }
                     }
                 }

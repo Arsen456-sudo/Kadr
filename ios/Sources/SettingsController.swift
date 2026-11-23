@@ -91,6 +91,7 @@ extension LocalStore {
             let snapshot = try JSONDecoder().decode(State.self, from: Data(contentsOf: source.appendingPathComponent("state.json")))
             var files = Set(snapshot.clips.flatMap { ($0.media ?? []).map(\.file) })
             snapshot.profiles.compactMap(\.bannerFile).forEach { files.insert($0) }
+            snapshot.profiles.compactMap(\.portraitFile).forEach { files.insert($0) }
             snapshot.clips.compactMap { $0.extras?.coverFile }.forEach { files.insert($0) }
             snapshot.messages?.compactMap(\.attachmentFile).forEach { files.insert($0) }
             guard files.allSatisfy({ !$0.isEmpty && URL(fileURLWithPath: $0).lastPathComponent == $0 && !$0.contains("..") }) else { throw CocoaError(.fileReadCorruptFile) }

@@ -276,7 +276,8 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
         else { screen = .feed }
         let canSignOut = screen == .profile && store.active != nil
         let context = KadrToolbarState.Context(screen: screen, canSignOut: canSignOut,
-                                               hasBanner: canSignOut && store.active?.bannerURL != nil)
+                                               hasBanner: canSignOut && store.active?.bannerURL != nil,
+                                               usesPortrait: canSignOut && store.studio.appearance.theme == "atmosphere")
         guard toolbarState.context != context else { return }
         // Let the system bars animate their own content, without animating or
         // re-laying out the complete UIKit controller tree inside a SwiftUI transaction.
