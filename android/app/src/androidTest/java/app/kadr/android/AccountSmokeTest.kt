@@ -19,7 +19,10 @@ class AccountSmokeTest {
         compose.onNodeWithText("Унікальний @нікнейм").performTextInput("android_tester")
         compose.onNodeWithText("Створити").performClick()
         compose.waitUntil(10000) { compose.onAllNodesWithText("Твій профіль у Кадрі").fetchSemanticsNodes().isEmpty() }
+        compose.waitUntil(10000) { compose.activity.filesDir.resolve("kadr-state.json").takeIf { it.exists() }?.readText()?.contains("android_tester") == true }
         compose.onNodeWithTag("tab:3").performClick()
+        compose.waitForIdle()
+        compose.onRoot().printToLog("KadrSmoke")
         compose.waitUntil(15000) { compose.onAllNodesWithText("@android_tester").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("@android_tester").performScrollTo().assertIsDisplayed()
         compose.waitUntil(10000) { compose.activity.filesDir.resolve("kadr-state.json").takeIf { it.exists() }?.readText()?.contains("android_tester") == true }

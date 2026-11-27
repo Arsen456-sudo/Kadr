@@ -101,7 +101,9 @@ import kotlinx.coroutines.launch
                     }
                 }
                 if (route == "main" && !(tab == 0 && immersive)) Surface(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(horizontal = 16.dp, vertical = 10.dp).fillMaxWidth(), shape = MaterialTheme.shapes.extraLarge, tonalElevation = 3.dp) {
-                    ShortNavigationBar {
+                    // Surface propagates its minimum width. Reset it before the native bar
+                    // measures individual destinations, otherwise every item gets full width.
+                    ShortNavigationBar(modifier = Modifier.wrapContentWidth(), windowInsets = WindowInsets(0, 0, 0, 0)) {
                         listOf("Стрічка", "Додати", "Вхідні", "Профіль").forEachIndexed { index, title ->
                             val icon = listOf(Icons.Outlined.Home, Icons.Outlined.Add, Icons.Outlined.Inbox, Icons.Outlined.Person)[index]
                             ShortNavigationBarItem(selected = tab == index, onClick = { if (index == 1) account { open("publish") } else tab = index }, modifier = Modifier.testTag("tab:$index"), icon = { Icon(icon, title) }, label = { Text(title) })
