@@ -15,6 +15,9 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures { compose = true }
+    // AGP 9.2.1 UAST hangs in KotlinUFile.getAllCommentsInFile during this detector.
+    // Keep the remaining lint checks; checkSourceText below rejects bidi controls directly.
+    lint { disable += "BidiSpoofing" }
     val developmentKey = rootProject.file(".signing/debug.keystore")
     if (developmentKey.exists()) signingConfigs.getByName("debug") {
         storeFile = developmentKey; storePassword = "android"; keyAlias = "androiddebugkey"; keyPassword = "android"
@@ -23,6 +26,18 @@ android {
     buildTypes { release { isMinifyEnabled = false } }
     sourceSets["main"].assets.srcDir("../../ios/Media")
 }
+val checkSourceText by tasks.registering {
+    val sources = fileTree("src") { include("**/*.kt", "**/*.xml", "**/*.json") }
+    inputs.files(sources)
+    doLast {
+        sources.forEach { file ->
+            check(file.readText(Charsets.UTF_8).none { it in '\u202A'..'\u202E' || it in '\u2066'..'\u2069' || it == '\u061C' || it == '\u200E' || it == '\u200F' }) {
+                "Unexpected Unicode bidi control in ${file.relativeTo(projectDir)}"
+            }
+        }
+    }
+}
+tasks.named("preBuild") { dependsOn(checkSourceText) }
 dependencies {
     implementation("androidx.activity:activity-compose:1.12.3")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.10.0")
