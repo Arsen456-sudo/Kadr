@@ -2,6 +2,7 @@ package app.kadr.android.ui
 
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.graphics.Color
 
 @Composable fun KadrTheme(accent: String, content: @Composable () -> Unit) {
@@ -13,8 +14,8 @@ import androidx.compose.ui.graphics.Color
         else -> listOf(0xFFFFB59A, 0xFF55200A, 0xFF73351D, 0xFFFFDBCE, 0xFF5C4034, 0xFFFFDBCE)
     }.map { Color(it) }
     MaterialExpressiveTheme(
-        colorScheme = darkColorScheme(primary = tones[0], onPrimary = tones[1], primaryContainer = tones[2], onPrimaryContainer = tones[3], secondary = tones[0], onSecondary = tones[1], secondaryContainer = tones[4], onSecondaryContainer = tones[5], background = Color(0xFF101115), surface = Color(0xFF141419), surfaceContainerLowest = Color(0xFF0F1014), surfaceContainerLow = Color(0xFF1A1B20), surfaceContainer = Color(0xFF222329), surfaceContainerHigh = Color(0xFF2C2D34)),
+        colorScheme = darkColorScheme(primary = tones[0], onPrimary = tones[1], primaryContainer = tones[2], onPrimaryContainer = tones[3], secondary = tones[0], onSecondary = tones[1], secondaryContainer = tones[4], onSecondaryContainer = tones[5], background = Color(0xFF101115), onBackground = Color(0xFFF1EFF4), surface = Color(0xFF141419), onSurface = Color(0xFFF1EFF4), onSurfaceVariant = Color(0xFFCCC7D1), surfaceContainerLowest = Color(0xFF0F1014), surfaceContainerLow = Color(0xFF1A1B20), surfaceContainer = Color(0xFF222329), surfaceContainerHigh = Color(0xFF2C2D34)),
         motionScheme = MotionScheme.expressive(),
-        content = content
+        content = { CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface, content = content) }
     )
 }

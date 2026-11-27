@@ -35,9 +35,9 @@ import kotlinx.coroutines.delay
     }
     LaunchedEffect(draft) { if (!published && draft.media.isNotEmpty() && existing?.isDraft != false) { delay(600); vm.act { if (!published) publish(draft.copy(isDraft = true)) } } }
     DisposableEffect(Unit) { onDispose { if (!published && draft.media.isNotEmpty() && existing?.isDraft != false && vm.repository.state.value.activeID == draft.authorID) vm.repository.publish(draft.copy(isDraft = true)) } }
-    Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding()) {
-        ScreenHeader(if (existing?.isDraft == false) "Редагувати кадр" else "Новий кадр", back)
-        LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+    FloatingPage(if (existing?.isDraft == false) "Редагувати кадр" else "Новий кадр", back) { pageInsets ->
+        Box(Modifier.fillMaxSize().imePadding()) {
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = pageInsets.calculateTopPadding(), bottom = pageInsets.calculateBottomPadding() + 80.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
             item {
                 Text("Поділись своїм поглядом", style = MaterialTheme.typography.headlineMedium)
                 Text("Фото, відео чи ціла історія — оригінали зберігаються без стискання.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -81,25 +81,27 @@ import kotlinx.coroutines.delay
             require(from.isFinite() && from >= 0 && poster.isFinite() && poster >= 0 && (until == null || (until.isFinite() && until > from))) { "Перевір діапазон відео." }
             publish(draft.copy(isDraft = false, extras = draft.extras.copy(trimStart = from, trimEnd = until, coverTime = poster)))
             published = true; back()
-        } }, modifier = Modifier.fillMaxWidth().padding(16.dp), enabled = draft.media.isNotEmpty() && !importing, shapes = ButtonDefaults.shapes()) { Text(if (existing?.isDraft == false) "Зберегти зміни" else "Опублікувати") }
+        } }, modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().padding(16.dp), enabled = draft.media.isNotEmpty() && !importing, shapes = ButtonDefaults.shapes()) { Text(if (existing?.isDraft == false) "Зберегти зміни" else "Опублікувати") }
+        }
     }
 }
 
-@Composable fun SettingSwitch(title: String, checked: Boolean, changed: (Boolean) -> Unit) { ListItem(headlineContent = { Text(title) }, trailingContent = { Switch(checked, changed) }) }
+@Composable fun SettingSwitch(title: String, checked: Boolean, changed: (Boolean) -> Unit) {
+    SegmentedListItem(onClick = { changed(!checked) }, shapes = ListItemDefaults.segmentedShapes(0, 1), trailingContent = { Switch(checked, null) }) { Text(title) }
+}
 
 @Composable fun StudioScreen(vm: KadrViewModel, state: AppState, open: (String) -> Unit, back: () -> Unit, post: (Post) -> Unit) {
     var page by rememberSaveable { mutableStateOf("home") }
     var value by rememberSaveable { mutableStateOf("") }
     var createCollection by remember { mutableStateOf(false) }
     var selectedCollection by remember { mutableStateOf<SavedCollection?>(null) }
-    Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
-        ScreenHeader(if (page == "home") "Студія" else when (page) { "drafts" -> "Чернетки"; "history" -> "Історія"; "collections" -> "Колекції"; else -> "Оформлення" }, { if (page == "home") back() else page = "home" })
-        LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+    FloatingPage(if (page == "home") "Студія" else when (page) { "drafts" -> "Чернетки"; "history" -> "Історія"; "collections" -> "Колекції"; else -> "Оформлення" }, { if (page == "home") back() else page = "home" }) { pageInsets ->
+        LazyColumn(Modifier.fillMaxSize(), contentPadding = pageInsets, verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap)) {
             if (page == "home") {
                 item { Text("Місце для твоїх ідей", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(12.dp)) }
-                listOf("Оформлення профілю" to "appearance", "Чернетки" to "drafts", "Колекції" to "collections", "Історія переглядів" to "history").forEach { (title, route) -> item { IslandListItem(headlineContent = { Text(title) }, leadingContent = { Icon(when (route) { "appearance" -> Icons.Outlined.Palette; "drafts" -> Icons.Outlined.EditNote; "collections" -> Icons.Outlined.CollectionsBookmark; else -> Icons.Outlined.History }, null) }, onClick = { page = route }) } }
-                item { IslandListItem(headlineContent = { Text("Налаштування") }, leadingContent = { Icon(Icons.Outlined.Settings, null) }, onClick = { open("settings") }) }
-                item { IslandListItem(headlineContent = { Text("QR-код профілю") }, leadingContent = { Icon(Icons.Outlined.QrCode, null) }, onClick = { state.activeID?.let { open("qr:$it") } }) }
+                listOf("Оформлення профілю" to "appearance", "Чернетки" to "drafts", "Колекції" to "collections", "Історія переглядів" to "history").forEachIndexed { index, (title, route) -> item { IslandListItem(index = index, count = 6, headlineContent = { Text(title) }, leadingContent = { Icon(when (route) { "appearance" -> Icons.Outlined.Palette; "drafts" -> Icons.Outlined.EditNote; "collections" -> Icons.Outlined.CollectionsBookmark; else -> Icons.Outlined.History }, null) }, onClick = { page = route }) } }
+                item { IslandListItem(index = 4, count = 6, headlineContent = { Text("Налаштування") }, leadingContent = { Icon(Icons.Outlined.Settings, null) }, onClick = { open("settings") }) }
+                item { IslandListItem(index = 5, count = 6, headlineContent = { Text("QR-код профілю") }, leadingContent = { Icon(Icons.Outlined.QrCode, null) }, onClick = { state.activeID?.let { open("qr:$it") } }) }
             } else if (page == "appearance") {
                 item { Text("Акцентний колір", style = MaterialTheme.typography.titleMedium) }
                 itemsIndexed(listOf("peach", "mint", "violet", "blue", "rose")) { _, accent -> FilterChip(selected = state.studio.appearance.accent == accent, onClick = { vm.act { changeStudio { it.copy(appearance = it.appearance.copy(accent = accent)) } } }, label = { Text(mapOf("peach" to "Персиковий", "mint" to "Мʼятний", "violet" to "Фіолетовий", "blue" to "Блакитний", "rose" to "Рожевий").getValue(accent)) }) }
@@ -130,7 +132,7 @@ import kotlinx.coroutines.delay
     }
     if (createCollection) AlertDialog(onDismissRequest = { createCollection = false }, title = { Text("Нова колекція") }, text = { OutlinedTextField(value, { value = it }, label = { Text("Назва") }) }, confirmButton = { TextButton(onClick = { vm.act { changeStudio { it.copy(collections = it.collections + SavedCollection(title = value.trim())) }; createCollection = false } }, enabled = value.isNotBlank(), shapes = ButtonDefaults.shapes()) { Text("Створити") } }, dismissButton = { TextButton(onClick = { createCollection = false }, shapes = ButtonDefaults.shapes()) { Text("Скасувати") } })
     selectedCollection?.let { collection -> ModalBottomSheet(onDismissRequest = { selectedCollection = null }) {
-        LazyColumn(Modifier.padding(16.dp)) {
+        LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap)) {
             item { Text(collection.title, style = MaterialTheme.typography.titleLarge); Text("Оберіть збережені кадри для колекції", style = MaterialTheme.typography.bodySmall) }
             itemsIndexed((state.posts + AppState.samples).filter { state.activeID in state.bookmarks[it.id].orEmpty() }) { _, item ->
                 val checked = item.id in (state.studio.collections.find { it.id == collection.id }?.posts.orEmpty())

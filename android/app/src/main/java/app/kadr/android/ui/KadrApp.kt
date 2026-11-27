@@ -121,7 +121,7 @@ import kotlinx.coroutines.launch
                 var pause by remember(post.id) { mutableStateOf(false) }
                 var mute by remember { mutableStateOf(!state.studio.preferences.autoSound) }
                 PostMediaView(post, vm.repository, true, mute, pause, Modifier.fillMaxSize()) { pause = !pause }
-                Row(Modifier.align(Alignment.TopStart).statusBarsPadding().padding(16.dp)) { CircleAction(Icons.AutoMirrored.Outlined.ArrowBack, "Назад", { openedPost = null }, visualSize = 40.dp); CircleAction(if (mute) Icons.Outlined.VolumeOff else Icons.AutoMirrored.Outlined.VolumeUp, "Звук", { mute = !mute }, visualSize = 40.dp) }
+                Row(Modifier.align(Alignment.TopStart).statusBarsPadding().padding(16.dp)) { CircleAction(Icons.AutoMirrored.Outlined.ArrowBack, "Назад", { openedPost = null }, visualSize = 44.dp); CircleAction(if (mute) Icons.Outlined.VolumeOff else Icons.AutoMirrored.Outlined.VolumeUp, "Звук", { mute = !mute }, visualSize = 44.dp) }
             }
         } }
         menuPost?.let { post -> PostActionsSheet(vm, state, post, { menuPost = null }, ::open, { auth = true }) }
@@ -197,8 +197,8 @@ import kotlinx.coroutines.launch
             }
         }
         Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) { CircleAction(if (immersive) Icons.Outlined.FullscreenExit else Icons.Outlined.Fullscreen, "Повноекранний режим", { onImmersive(!immersive) }, visualSize = 40.dp, containerColor = ToggleButtonDefaults.colors().containerColor) }
-            if (!immersive) { Choices(listOf("Для тебе", "Підписки", "Огляд"), section, { if (it == 1 && state.active == null) onAccount() else section = it }, Modifier.weight(1f), compact = true); Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) { CircleAction(Icons.Outlined.Search, "Пошук", onSearch, visualSize = 40.dp, containerColor = ToggleButtonDefaults.colors().containerColor) } }
+            Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) { CircleAction(if (immersive) Icons.Outlined.FullscreenExit else Icons.Outlined.Fullscreen, "Повноекранний режим", { onImmersive(!immersive) }, visualSize = 44.dp, containerColor = ToggleButtonDefaults.colors().containerColor) }
+            if (!immersive) { Choices(listOf("Для тебе", "Підписки", "Огляд"), section, { if (it == 1 && state.active == null) onAccount() else section = it }, Modifier.weight(1f), compact = true); Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) { CircleAction(Icons.Outlined.Search, "Пошук", onSearch, visualSize = 44.dp, containerColor = ToggleButtonDefaults.colors().containerColor) } }
         }
     }
 }

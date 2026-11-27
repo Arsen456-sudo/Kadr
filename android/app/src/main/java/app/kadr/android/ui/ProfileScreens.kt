@@ -30,6 +30,7 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
@@ -87,7 +88,7 @@ private val profilePaletteCache = android.util.LruCache<String, Color>(16)
                 val y = (bitmap.height * .95f).toInt().coerceIn(0, bitmap.height - 1)
                 for (x in 0 until bitmap.width step 2) { val pixel = bitmap.getPixel(x, y); r += AndroidColor.red(pixel); g += AndroidColor.green(pixel); b += AndroidColor.blue(pixel); count++ }
                 bitmap.recycle()
-                if (count == 0) fallback else Color((r / count).toInt(), (g / count).toInt(), (b / count).toInt())
+                if (count == 0) fallback else lerp(Color((r / count).toInt(), (g / count).toInt(), (b / count).toInt()), fallback, .65f)
             }.getOrDefault(fallback).also { profilePaletteCache.put(file.path, it) }
         }
     }
@@ -103,7 +104,7 @@ private val profilePaletteCache = android.util.LruCache<String, Color>(16)
 }
 
 @Composable fun QrScreen(profile: Profile?, onBack: () -> Unit) {
-    Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
+    Column(Modifier.fillMaxSize().statusBarsPadding()) {
         ScreenHeader("QR-код профілю", onBack)
         if (profile != null) {
             val bitmap by produceState<Bitmap?>(null, profile.handle) { value = withContext(Dispatchers.Default) {

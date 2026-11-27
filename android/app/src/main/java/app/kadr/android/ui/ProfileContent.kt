@@ -59,7 +59,7 @@ import java.io.File
     val list = rememberLazyListState()
     val photo = profile.portraitFile?.let { File(vm.repository.mediaDirectory, it) }
     val background = ProfilePalette(photo, MaterialTheme.colorScheme.background)
-    val ink = if (background.luminance() > .42f) Color.Black else Color.White
+    val ink = MaterialTheme.colorScheme.onSurface
     val island = lerp(background, ink, .10f)
     val selectedIsland = lerp(background, ink, .20f)
     val islandScheme = MaterialTheme.colorScheme.copy(
@@ -103,7 +103,7 @@ import java.io.File
             if (image != null) PortraitBlur(photo, image as? ByteArray, Modifier.matchParentSize())
             Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Color.Transparent, .4f to Color.Transparent, .72f to background.copy(alpha = .5f), 1f to background)))
         }
-        LazyColumn(Modifier.fillMaxSize().padding(top = topInset).navigationBarsPadding().testTag("profile-scroll"), state = list, contentPadding = PaddingValues(bottom = 120.dp)) {
+        LazyColumn(Modifier.fillMaxSize().testTag("profile-scroll"), state = list, contentPadding = PaddingValues(top = topInset, bottom = 120.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding())) {
             item(key = "identity") {
                 Box(Modifier.fillMaxWidth().height(headerHeight)) {
                     Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -137,21 +137,10 @@ import java.io.File
                     CircleAction(Icons.Outlined.Share, "Поділитися", { context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, "kadr://profile/${profile.handle}"), "Поділитися")) })
                     ExpandingIslandAction(Icons.Outlined.MoreHoriz, "Ще", listOf(
                         if (own) IslandMenuAction("Вийти з акаунта", Icons.Outlined.Logout) { vm.act { activate(null) } }
-                        else IslandMenuAction("Заблокувати", Icons.Outlined.Block) { vm.act { requireAccount(); changeStudio { it.copy(preferences = it.preferences.copy(blocked = it.preferences.blocked + profile.id)) } }; onBack() }))
+                        else IslandMenuAction("Заблокувати", Icons.Outlined.Block) { vm.act { requireAccount(); changeStudio { it.copy(preferences = it.preferences.copy(blocked = it.preferences.blocked + profile.id)) } }; onBack() }), visualSize = 48.dp)
                 }
             }
-            stickyHeader(key = "profile-sections") {
-                Surface(color = Color.Transparent, modifier = Modifier.fillMaxWidth()) {
-                    Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp).selectableGroup().testTag("profile-categories"), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-                        val icons = listOf(Icons.Outlined.Person, Icons.Outlined.GridView, Icons.Outlined.BookmarkBorder, Icons.Outlined.FavoriteBorder, Icons.Outlined.ChatBubbleOutline).take(if (own) 5 else 2)
-                        icons.forEachIndexed { index, icon ->
-                            ToggleButton(checked = category == index, onCheckedChange = { category = index }, modifier = Modifier.weight(1f).heightIn(min = 48.dp).testTag("profile-category:$index"), contentPadding = PaddingValues(0.dp), shapes = when (index) { 0 -> ButtonGroupDefaults.connectedLeadingButtonShapes(); icons.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes(); else -> ButtonGroupDefaults.connectedMiddleButtonShapes() }) {
-                                Icon(icon, listOf("Профіль", "Публікації", "Збережені", "Уподобання", "Коментарі")[index], Modifier.size(24.dp))
-                            }
-                        }
-                    }
-                }
-            }
+            item(key = "profile-sections") { Spacer(Modifier.height(64.dp)) }
             if (category == 0) {
                 item(key = "dashboard") {
                     val rows = buildList {
@@ -163,9 +152,9 @@ import java.io.File
                             add(Triple(Icons.Outlined.Settings, "Налаштування" to "Приватність і відтворення", "settings"))
                         }
                     }
-                    Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        rows.forEach { (icon, text, target) ->
-                            IslandListItem(headlineContent = { Text(text.first) }, supportingContent = { Text(text.second) }, leadingContent = { Icon(icon, null) }, trailingContent = { Icon(Icons.Outlined.ChevronRight, null) }, onClick = { when (target) { "posts" -> category = 1; "saved" -> category = 2; "people" -> open("followers:${profile.id}"); else -> open(target) } })
+                    Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(ListItemDefaults.SegmentedGap)) {
+                        rows.forEachIndexed { itemIndex, (icon, text, target) ->
+                            IslandListItem(index = itemIndex, count = rows.size, headlineContent = { Text(text.first) }, supportingContent = { Text(text.second) }, leadingContent = { Icon(icon, null) }, trailingContent = { Icon(Icons.Outlined.ChevronRight, null) }, onClick = { when (target) { "posts" -> category = 1; "saved" -> category = 2; "people" -> open("followers:${profile.id}"); else -> open(target) } })
                         }
                     }
                 }
@@ -183,13 +172,28 @@ import java.io.File
                 }
             }
         }
+        val pinnedTop = with(LocalDensity.current) { topInset.roundToPx() }
+        val showSections by remember(list) { derivedStateOf { list.firstVisibleItemIndex > 2 || list.layoutInfo.visibleItemsInfo.any { it.key == "profile-sections" } } }
+        if (showSections) {
+                    Row(Modifier.fillMaxWidth().offset {
+                            val anchor = list.layoutInfo.visibleItemsInfo.firstOrNull { it.key == "profile-sections" }
+                            androidx.compose.ui.unit.IntOffset(0, if (anchor == null) pinnedTop else maxOf(pinnedTop, anchor.offset + list.layoutInfo.beforeContentPadding))
+                        }.padding(horizontal = 16.dp, vertical = 8.dp).selectableGroup().testTag("profile-categories"), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                        val icons = listOf(Icons.Outlined.Person, Icons.Outlined.GridView, Icons.Outlined.BookmarkBorder, Icons.Outlined.FavoriteBorder, Icons.Outlined.ChatBubbleOutline).take(if (own) 5 else 2)
+                        icons.forEachIndexed { index, icon ->
+                            ToggleButton(checked = category == index, onCheckedChange = { category = index }, modifier = Modifier.weight(1f).heightIn(min = 44.dp).testTag("profile-category:$index"), contentPadding = PaddingValues(0.dp), shapes = when (index) { 0 -> ButtonGroupDefaults.connectedLeadingButtonShapes(); icons.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes(); else -> ButtonGroupDefaults.connectedMiddleButtonShapes() }) {
+                                Icon(icon, listOf("Профіль", "Публікації", "Збережені", "Уподобання", "Коментарі")[index], Modifier.size(24.dp))
+                            }
+                        }
+                    }
+        }
         Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) { CircleAction(if (own) Icons.Outlined.QrCode else Icons.AutoMirrored.Outlined.ArrowBack, if (own) "QR-код" else "Назад", { if (own) open("qr:${profile.id}") else onBack() }, visualSize = 40.dp) }
+            Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) { CircleAction(if (own) Icons.Outlined.QrCode else Icons.AutoMirrored.Outlined.ArrowBack, if (own) "QR-код" else "Назад", { if (own) open("qr:${profile.id}") else onBack() }, visualSize = 44.dp) }
             Text("Профіль", Modifier.weight(1f), textAlign = TextAlign.Center, style = MaterialTheme.typography.titleMedium, maxLines = 1)
             if (own) ExpandingIslandAction(Icons.Outlined.Edit, "Редагувати", listOf(
                 IslandMenuAction("Змінити фото", Icons.Outlined.AddPhotoAlternate) { picker.launch("image/*") },
                 IslandMenuAction("Імʼя та @нікнейм", Icons.Outlined.Person) { edit = true }))
-            else CircleAction(Icons.Outlined.QrCode, "QR-код", { open("qr:${profile.id}") }, visualSize = 40.dp)
+            else CircleAction(Icons.Outlined.QrCode, "QR-код", { open("qr:${profile.id}") }, visualSize = 44.dp)
         }
     }
     if (edit) AccountDialog(vm, state, { edit = false }, edit = true)

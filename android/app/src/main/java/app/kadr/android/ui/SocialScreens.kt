@@ -26,10 +26,10 @@ import app.kadr.android.data.*
     val term = query.trim().removePrefix("@").lowercase()
     val profiles = state.profiles.filter { (allowedIDs == null || it.id in allowedIDs) && it.id !in state.studio.preferences.blocked && (term.isBlank() || it.handle.contains(term) || it.name.contains(term, true)) }
     val posts = if (allowedIDs != null) emptyList() else (state.posts + AppState.samples).filter { !it.isDraft && (!it.options.onlyMe || it.authorID == state.activeID) && (it.caption.contains(query, true) || it.options.tags.contains(query, true)) }
-    Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
+    Column(Modifier.fillMaxSize().statusBarsPadding()) {
         ScreenHeader(title, back)
         OutlinedTextField(query, { query = it }, leadingIcon = { Icon(Icons.Outlined.Search, null) }, label = { Text("@нікнейм, відео або #тег") }, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), singleLine = true)
-        LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
+        LazyColumn(contentPadding = PaddingValues(bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 24.dp)) {
             if (term.isEmpty() && state.studio.searches.isNotEmpty()) {
                 item { Text("Недавні запити", Modifier.padding(20.dp), style = MaterialTheme.typography.titleSmall) }
                 items(state.studio.searches.take(8)) { text -> ListItem(headlineContent = { Text(text) }, modifier = Modifier.clickable { query = text }, trailingContent = { IconButton(onClick = { vm.act { changeStudio { it.copy(searches = it.searches - text) } } }, shapes = IconButtonDefaults.shapes()) { Icon(Icons.Outlined.Close, "Прибрати") } }) }
@@ -89,13 +89,13 @@ import app.kadr.android.data.*
 @Composable fun InboxScreen(vm: KadrViewModel, state: AppState, account: () -> Unit, chat: (String) -> Unit, search: () -> Unit) {
     var query by rememberSaveable { mutableStateOf("") }
     var mode by rememberSaveable { mutableIntStateOf(0) }
-    Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
-        FloatingHeader("Вхідні", actions = { Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) { CircleAction(Icons.Outlined.PersonSearch, "Новий чат", search, visualSize = 40.dp) } })
+    Column(Modifier.fillMaxSize().statusBarsPadding()) {
+        FloatingHeader("Вхідні", actions = { Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) { CircleAction(Icons.Outlined.PersonSearch, "Новий чат", search, visualSize = 44.dp) } })
         if (state.active == null) { EmptyMessage("Розмови, що залишаються з тобою", "Увійди, щоб надсилати повідомлення авторам.", "Увійти", account); return }
         Choices(listOf("Повідомлення", "Активність"), mode, { mode = it }, Modifier.padding(horizontal = 20.dp))
         OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth().padding(16.dp), label = { Text("Пошук розмов") }, singleLine = true)
         val peers = state.messages.filter { it.senderID == state.activeID || it.recipientID == state.activeID }.groupBy { if (it.senderID == state.activeID) it.recipientID else it.senderID }.entries.sortedWith(compareByDescending<Map.Entry<String, List<Message>>> { it.key in state.studio.pinnedChats }.thenByDescending { it.value.maxOfOrNull(Message::createdAt) ?: 0.0 })
-        LazyColumn(contentPadding = PaddingValues(bottom = 120.dp)) {
+        LazyColumn(contentPadding = PaddingValues(bottom = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding() + 96.dp)) {
             if (mode == 1) {
                 val mine = state.posts.filter { it.authorID == state.activeID }
                 mine.forEach { post ->
@@ -128,8 +128,8 @@ import app.kadr.android.data.*
     val list = rememberLazyListState()
     LaunchedEffect(messages.size) { if (messages.isNotEmpty()) list.animateScrollToItem(messages.lastIndex) }
     DisposableEffect(peer, owner) { onDispose { if (vm.repository.state.value.activeID == owner && vm.repository.ready.value) vm.repository.changeStudio { it.copy(chatDrafts = it.chatDrafts + (peer to input)) } } }
-    Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding()) {
-        ScreenHeader(profile?.name ?: "Повідомлення", back) { Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) { CircleAction(Icons.Outlined.PushPin, "Закріпити розмову", { vm.act { changeStudio { it.copy(pinnedChats = if (peer in it.pinnedChats) it.pinnedChats - peer else it.pinnedChats + peer) } } }, visualSize = 40.dp) } }
+    Column(Modifier.fillMaxSize().statusBarsPadding().imePadding()) {
+        ScreenHeader(profile?.name ?: "Повідомлення", back) { Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) { CircleAction(Icons.Outlined.PushPin, "Закріпити розмову", { vm.act { changeStudio { it.copy(pinnedChats = if (peer in it.pinnedChats) it.pinnedChats - peer else it.pinnedChats + peer) } } }, visualSize = 44.dp) } }
         OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth().padding(horizontal = 16.dp), placeholder = { Text("Знайти повідомлення") }, singleLine = true)
         LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = list, contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(messages, key = Message::id) { message ->
@@ -142,7 +142,7 @@ import app.kadr.android.data.*
             }
         }
         reply?.let { Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) { Text("↳ ${it.text.take(70)}", Modifier.weight(1f)); IconButton(onClick = { reply = null }, shapes = IconButtonDefaults.shapes()) { Icon(Icons.Outlined.Close, "Скасувати відповідь") } } }
-        if (state.active == null) Button(onClick = account, shapes = ButtonDefaults.shapes()) { Text("Увійти") } else Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (state.active == null) Button(onClick = account, shapes = ButtonDefaults.shapes()) { Text("Увійти") } else Row(Modifier.navigationBarsPadding().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(input, { input = it }, Modifier.weight(1f), placeholder = { Text("Повідомлення…") }, shape = MaterialTheme.shapes.extraLarge, maxLines = 5)
             FilledIconButton({ vm.act { send(peer, input, reply?.id); input = ""; reply = null } }, enabled = input.isNotBlank()) { Icon(Icons.AutoMirrored.Outlined.Send, "Надіслати") }
         }
