@@ -100,7 +100,8 @@ final class SearchController: UITableViewController, UISearchResultsUpdating, UI
         search.searchBar.placeholder = "Люди, публікації та #теги"
         search.searchBar.delegate = self
         search.searchBar.scopeButtonTitles = ["Усе", "Люди", "Публікації"]
-        search.scopeBarActivation = .always
+        search.scopeBarActivation = .manual
+        search.searchBar.showsScopeBar = true
         search.searchResultsUpdater = self
         search.obscuresBackgroundDuringPresentation = false
         search.searchBar.autocapitalizationType = .none
