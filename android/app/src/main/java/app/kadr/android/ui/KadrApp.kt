@@ -103,7 +103,10 @@ import kotlinx.coroutines.launch
                         else -> SettingsScreen(vm, state, ::goBack)
                     }
                 }
-                if (route == "main" && !(tab == 0 && immersive)) AppNavigation(tab, { index -> if (index == 1) account { open("publish") } else tab = index }, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(horizontal = 16.dp, vertical = 10.dp).fillMaxWidth())
+                if (route == "main" && !(tab == 0 && immersive)) {
+                    val profileColor = if (tab == 3) ProfilePalette(state.active?.portraitFile?.let { java.io.File(vm.repository.mediaDirectory, it) }, MaterialTheme.colorScheme.background) else null
+                    AppNavigation(tab, { index -> if (index == 1) account { open("publish") } else tab = index }, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(horizontal = 24.dp, vertical = 10.dp).fillMaxWidth(), profileColor)
+                }
             }
             SnackbarHost(notices, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 94.dp))
         }
@@ -123,9 +126,9 @@ import kotlinx.coroutines.launch
     }
 }
 
-@Composable fun CircleAction(icon: ImageVector, label: String, onClick: () -> Unit, modifier: Modifier = Modifier, selected: Boolean = false, visualSize: Dp = 48.dp) {
+@Composable fun CircleAction(icon: ImageVector, label: String, onClick: () -> Unit, modifier: Modifier = Modifier, selected: Boolean = false, visualSize: Dp = 48.dp, containerColor: Color? = null) {
     val view = LocalView.current
-    FilledTonalIconButton(onClick = { view.performHapticFeedback(android.view.HapticFeedbackConstants.CONTEXT_CLICK); onClick() }, shapes = IconButtonDefaults.shapes(), modifier = modifier.size(visualSize), colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh)) { Icon(icon, label, Modifier.size(if (visualSize < 48.dp) 20.dp else 24.dp)) }
+    FilledTonalIconButton(onClick = { view.performHapticFeedback(android.view.HapticFeedbackConstants.CONTEXT_CLICK); onClick() }, shapes = IconButtonDefaults.shapes(), modifier = modifier.size(visualSize), colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = containerColor ?: if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh)) { Icon(icon, label, Modifier.size(if (visualSize < 48.dp) 20.dp else 24.dp)) }
 }
 @Composable fun Choices(labels: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier, compact: Boolean = false) {
     Row(modifier.heightIn(min = 48.dp).selectableGroup(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -192,8 +195,8 @@ import kotlinx.coroutines.launch
             }
         }
         Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-            Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) { CircleAction(if (immersive) Icons.Outlined.FullscreenExit else Icons.Outlined.Fullscreen, "Повноекранний режим", { onImmersive(!immersive) }, visualSize = 40.dp) }
-            if (!immersive) { Choices(listOf("Для тебе", "Підписки", "Огляд"), section, { if (it == 1 && state.active == null) onAccount() else section = it }, Modifier.weight(1f), compact = true); Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) { CircleAction(Icons.Outlined.Search, "Пошук", onSearch, visualSize = 40.dp) } }
+            Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) { CircleAction(if (immersive) Icons.Outlined.FullscreenExit else Icons.Outlined.Fullscreen, "Повноекранний режим", { onImmersive(!immersive) }, visualSize = 40.dp, containerColor = ToggleButtonDefaults.colors().containerColor) }
+            if (!immersive) { Choices(listOf("Для тебе", "Підписки", "Огляд"), section, { if (it == 1 && state.active == null) onAccount() else section = it }, Modifier.weight(1f), compact = true); Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) { CircleAction(Icons.Outlined.Search, "Пошук", onSearch, visualSize = 40.dp, containerColor = ToggleButtonDefaults.colors().containerColor) } }
         }
     }
 }

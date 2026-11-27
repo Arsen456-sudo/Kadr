@@ -26,6 +26,8 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -53,8 +55,6 @@ import java.io.File
     val own = profile.id == state.activeID
     val context = LocalContext.current
     var edit by remember(profile.id) { mutableStateOf(false) }
-    var editMenu by remember { mutableStateOf(false) }
-    var more by remember { mutableStateOf(false) }
     var category by rememberSaveable(profile.id) { mutableIntStateOf(0) }
     val list = rememberLazyListState()
     val photo = profile.portraitFile?.let { File(vm.repository.mediaDirectory, it) }
@@ -86,27 +86,26 @@ import java.io.File
     }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri -> uri?.let { vm.act { setPhoto(it) } } }
     MaterialTheme(colorScheme = islandScheme) {
-    Scaffold(containerColor = background, topBar = {
-        Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            CircleAction(if (own) Icons.Outlined.QrCode else Icons.AutoMirrored.Outlined.ArrowBack, if (own) "QR-код" else "Назад", { if (own) open("qr:${profile.id}") else onBack() })
-            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                Surface(shape = androidx.compose.foundation.shape.CircleShape, color = island) { Text("Профіль", Modifier.padding(horizontal = 20.dp, vertical = 10.dp), style = MaterialTheme.typography.titleMedium, maxLines = 1) }
+    val headerHeight = if (image == null) 224.dp else 360.dp
+    val topInset = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() + 64.dp
+    val headerPx = with(LocalDensity.current) { headerHeight.toPx() }
+    val fullHeaderPx = with(LocalDensity.current) { (headerHeight + topInset).toPx() }
+    Box(Modifier.fillMaxSize().background(background)) {
+        Box(Modifier.fillMaxWidth().height(headerHeight + topInset).graphicsLayer {
+            translationY = -when (list.firstVisibleItemIndex) {
+                0 -> list.firstVisibleItemScrollOffset.toFloat()
+                1 -> headerPx + list.firstVisibleItemScrollOffset
+                else -> fullHeaderPx
             }
-                if (own) Box {
-                    CircleAction(Icons.Outlined.Edit, "Редагувати", { editMenu = true })
-                    IslandMenu(editMenu, { editMenu = false }, listOf(
-                        IslandMenuAction("Змінити фото", Icons.Outlined.AddPhotoAlternate) { picker.launch("image/*") },
-                        IslandMenuAction("Імʼя та @нікнейм", Icons.Outlined.Person) { edit = true }))
-                } else CircleAction(Icons.Outlined.QrCode, "QR-код", { open("qr:${profile.id}") })
+        }) {
+            if (image != null) AsyncImage(image, null, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+            else Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(MaterialTheme.colorScheme.primaryContainer, background))))
+            if (image != null) PortraitBlur(photo, image as? ByteArray, Modifier.matchParentSize())
+            Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Color.Transparent, .4f to Color.Transparent, .72f to background.copy(alpha = .5f), 1f to background)))
         }
-    }) { padding ->
-        LazyColumn(Modifier.fillMaxSize().padding(top = padding.calculateTopPadding()).navigationBarsPadding().testTag("profile-scroll"), state = list, contentPadding = PaddingValues(bottom = 120.dp)) {
+        LazyColumn(Modifier.fillMaxSize().padding(top = topInset).navigationBarsPadding().testTag("profile-scroll"), state = list, contentPadding = PaddingValues(bottom = 120.dp)) {
             item(key = "identity") {
-                Box(Modifier.fillMaxWidth().height(if (image == null) 224.dp else 360.dp)) {
-                    if (image != null) AsyncImage(image, profile.name, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-                    else Box(Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(MaterialTheme.colorScheme.primaryContainer, background))))
-                    if (image != null) PortraitBlur(photo, image as? ByteArray, Modifier.matchParentSize())
-                    Box(Modifier.fillMaxSize().background(Brush.verticalGradient(0f to Color.Transparent, .4f to Color.Transparent, .72f to background.copy(alpha = .5f), 1f to background)))
+                Box(Modifier.fillMaxWidth().height(headerHeight)) {
                     Column(Modifier.align(Alignment.BottomStart).fillMaxWidth().padding(horizontal = 24.dp, vertical = 16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(profile.name, style = MaterialTheme.typography.headlineLarge, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                         Text("@${profile.handle}", style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -136,12 +135,9 @@ import java.io.File
                         if (follows) ProfilePill(Icons.Outlined.ChatBubbleOutline, "Написати", { open("chat:${profile.id}") }, Modifier.weight(1f))
                     }
                     CircleAction(Icons.Outlined.Share, "Поділитися", { context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, "kadr://profile/${profile.handle}"), "Поділитися")) })
-                    Box {
-                        CircleAction(Icons.Outlined.MoreHoriz, "Ще", { more = true })
-                        IslandMenu(more, { more = false }, listOf(
-                            if (own) IslandMenuAction("Вийти з акаунта", Icons.Outlined.Logout) { vm.act { activate(null) } }
-                            else IslandMenuAction("Заблокувати", Icons.Outlined.Block) { vm.act { requireAccount(); changeStudio { it.copy(preferences = it.preferences.copy(blocked = it.preferences.blocked + profile.id)) } }; onBack() }))
-                    }
+                    ExpandingIslandAction(Icons.Outlined.MoreHoriz, "Ще", listOf(
+                        if (own) IslandMenuAction("Вийти з акаунта", Icons.Outlined.Logout) { vm.act { activate(null) } }
+                        else IslandMenuAction("Заблокувати", Icons.Outlined.Block) { vm.act { requireAccount(); changeStudio { it.copy(preferences = it.preferences.copy(blocked = it.preferences.blocked + profile.id)) } }; onBack() }))
                 }
             }
             stickyHeader(key = "profile-sections") {
@@ -187,6 +183,14 @@ import java.io.File
                     repeat(3 - row.size) { Spacer(Modifier.weight(1f)) }
                 }
             }
+        }
+        Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            CircleAction(if (own) Icons.Outlined.QrCode else Icons.AutoMirrored.Outlined.ArrowBack, if (own) "QR-код" else "Назад", { if (own) open("qr:${profile.id}") else onBack() })
+            Text("Профіль", Modifier.weight(1f), textAlign = TextAlign.Center, style = MaterialTheme.typography.titleMedium, maxLines = 1)
+            if (own) ExpandingIslandAction(Icons.Outlined.Edit, "Редагувати", listOf(
+                IslandMenuAction("Змінити фото", Icons.Outlined.AddPhotoAlternate) { picker.launch("image/*") },
+                IslandMenuAction("Імʼя та @нікнейм", Icons.Outlined.Person) { edit = true }))
+            else CircleAction(Icons.Outlined.QrCode, "QR-код", { open("qr:${profile.id}") })
         }
     }
     if (edit) AccountDialog(vm, state, { edit = false }, edit = true)
