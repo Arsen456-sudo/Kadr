@@ -90,7 +90,7 @@ import app.kadr.android.data.*
     var query by rememberSaveable { mutableStateOf("") }
     var mode by rememberSaveable { mutableIntStateOf(0) }
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
-        CenterAlignedTopAppBar(title = { Text("Вхідні") }, windowInsets = WindowInsets(0, 0, 0, 0), actions = { IconButton(onClick = search, shapes = IconButtonDefaults.shapes()) { Icon(Icons.Outlined.PersonSearch, "Новий чат") } })
+        FloatingHeader("Вхідні", actions = { Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) { CircleAction(Icons.Outlined.PersonSearch, "Новий чат", search, visualSize = 40.dp) } })
         if (state.active == null) { EmptyMessage("Розмови, що залишаються з тобою", "Увійди, щоб надсилати повідомлення авторам.", "Увійти", account); return }
         Choices(listOf("Повідомлення", "Активність"), mode, { mode = it }, Modifier.padding(horizontal = 20.dp))
         OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth().padding(16.dp), label = { Text("Пошук розмов") }, singleLine = true)
@@ -129,7 +129,7 @@ import app.kadr.android.data.*
     LaunchedEffect(messages.size) { if (messages.isNotEmpty()) list.animateScrollToItem(messages.lastIndex) }
     DisposableEffect(peer, owner) { onDispose { if (vm.repository.state.value.activeID == owner && vm.repository.ready.value) vm.repository.changeStudio { it.copy(chatDrafts = it.chatDrafts + (peer to input)) } } }
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding()) {
-        ScreenHeader(profile?.name ?: "Повідомлення", back) { IconButton(onClick = { vm.act { changeStudio { it.copy(pinnedChats = if (peer in it.pinnedChats) it.pinnedChats - peer else it.pinnedChats + peer) } } }, shapes = IconButtonDefaults.shapes()) { Icon(Icons.Outlined.PushPin, "Закріпити розмову") } }
+        ScreenHeader(profile?.name ?: "Повідомлення", back) { Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) { CircleAction(Icons.Outlined.PushPin, "Закріпити розмову", { vm.act { changeStudio { it.copy(pinnedChats = if (peer in it.pinnedChats) it.pinnedChats - peer else it.pinnedChats + peer) } } }, visualSize = 40.dp) } }
         OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth().padding(horizontal = 16.dp), placeholder = { Text("Знайти повідомлення") }, singleLine = true)
         LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = list, contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(messages, key = Message::id) { message ->

@@ -7,6 +7,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.animation.animateColorAsState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -24,8 +26,8 @@ import androidx.compose.ui.unit.sp
 /** Native toggle surfaces include the complete destination inside their selected container. */
 @Composable fun AppNavigation(selectedTab: Int, select: (Int) -> Unit, modifier: Modifier = Modifier, profileColor: Color? = null) {
     val ink = profileColor?.let { if (it.luminance() > .42f) Color.Black else Color.White } ?: MaterialTheme.colorScheme.onSurfaceVariant
-    val container = profileColor?.let { lerp(it, ink, .10f) } ?: MaterialTheme.colorScheme.surfaceContainer
-    val indicator = profileColor?.let { lerp(it, ink, .20f) } ?: MaterialTheme.colorScheme.secondaryContainer
+    val container by animateColorAsState(profileColor?.let { lerp(it, ink, .10f) } ?: MaterialTheme.colorScheme.surfaceContainer, MaterialTheme.motionScheme.defaultEffectsSpec(), label = "tab-container")
+    val indicator by animateColorAsState(profileColor?.let { lerp(it, ink, .20f) } ?: MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.motionScheme.defaultEffectsSpec(), label = "tab-selection")
     Surface(modifier.requiredHeight(60.dp).testTag("bottom-navigation"), shape = CircleShape, color = container, shadowElevation = 3.dp) {
         Row(Modifier.fillMaxWidth().padding(6.dp).selectableGroup(), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
             val labels = listOf("Стрічка", "Додати", "Вхідні", "Профіль")

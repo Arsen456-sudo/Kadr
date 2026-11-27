@@ -73,9 +73,13 @@ import java.io.File
     }, confirmButton = { Button(onClick = { focus.clearFocus(); keyboard?.hide(); vm.act { if (edit) editProfile(name, handle, bio) else createAccount(handle, name, bio = bio); photo?.let { setPhoto(it) }; onClose() } }, enabled = problem == null, shapes = ButtonDefaults.shapes()) { Text(if (edit) "Зберегти" else "Створити") } }, dismissButton = { TextButton(onClick = onClose, shapes = ButtonDefaults.shapes()) { Text("Скасувати") } })
 }
 
+private val profilePaletteCache = android.util.LruCache<String, Color>(16)
+
 @Composable internal fun ProfilePalette(file: File?, fallback: Color): Color {
-    val palette by produceState(fallback, file?.path) {
-        if (file != null) value = withContext(Dispatchers.IO) {
+    if (file == null) return fallback
+    val palette by produceState(profilePaletteCache[file.path] ?: fallback, file.path) {
+        profilePaletteCache[file.path]?.let { value = it; return@produceState }
+        value = withContext(Dispatchers.IO) {
             runCatching {
                 val options = BitmapFactory.Options().apply { inSampleSize = 8 }
                 val bitmap = BitmapFactory.decodeFile(file.path, options) ?: return@runCatching fallback
@@ -84,7 +88,7 @@ import java.io.File
                 for (x in 0 until bitmap.width step 2) { val pixel = bitmap.getPixel(x, y); r += AndroidColor.red(pixel); g += AndroidColor.green(pixel); b += AndroidColor.blue(pixel); count++ }
                 bitmap.recycle()
                 if (count == 0) fallback else Color((r / count).toInt(), (g / count).toInt(), (b / count).toInt())
-            }.getOrDefault(fallback)
+            }.getOrDefault(fallback).also { profilePaletteCache.put(file.path, it) }
         }
     }
     return palette

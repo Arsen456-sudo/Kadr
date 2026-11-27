@@ -58,6 +58,8 @@ import kotlinx.coroutines.launch
     fun goBack() { returning = true; route = backStack.lastOrNull() ?: "main"; backStack = backStack.dropLast(1) }
     fun account(action: () -> Unit) { if (state.active == null) auth = true else action() }
     KadrTheme(state.studio.appearance.accent) {
+        // Load once while the feed is visible; entering Profile reuses the cached palette.
+        val ownProfileColor = ProfilePalette(state.active?.portraitFile?.let { java.io.File(vm.repository.mediaDirectory, it) }, MaterialTheme.colorScheme.background)
         val activity = androidx.activity.compose.LocalActivity.current
         val view = LocalView.current
         SideEffect { view.isHapticFeedbackEnabled = state.studio.preferences.haptics }
@@ -104,7 +106,7 @@ import kotlinx.coroutines.launch
                     }
                 }
                 if (route == "main" && !(tab == 0 && immersive)) {
-                    val profileColor = if (tab == 3) ProfilePalette(state.active?.portraitFile?.let { java.io.File(vm.repository.mediaDirectory, it) }, MaterialTheme.colorScheme.background) else null
+                    val profileColor = if (tab == 3) ownProfileColor else null
                     AppNavigation(tab, { index -> if (index == 1) account { open("publish") } else tab = index }, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(horizontal = 24.dp, vertical = 10.dp).fillMaxWidth(), profileColor)
                 }
             }
@@ -119,7 +121,7 @@ import kotlinx.coroutines.launch
                 var pause by remember(post.id) { mutableStateOf(false) }
                 var mute by remember { mutableStateOf(!state.studio.preferences.autoSound) }
                 PostMediaView(post, vm.repository, true, mute, pause, Modifier.fillMaxSize()) { pause = !pause }
-                Row(Modifier.align(Alignment.TopStart).statusBarsPadding().padding(16.dp)) { CircleAction(Icons.AutoMirrored.Outlined.ArrowBack, "Назад", { openedPost = null }); CircleAction(if (mute) Icons.Outlined.VolumeOff else Icons.AutoMirrored.Outlined.VolumeUp, "Звук", { mute = !mute }) }
+                Row(Modifier.align(Alignment.TopStart).statusBarsPadding().padding(16.dp)) { CircleAction(Icons.AutoMirrored.Outlined.ArrowBack, "Назад", { openedPost = null }, visualSize = 40.dp); CircleAction(if (mute) Icons.Outlined.VolumeOff else Icons.AutoMirrored.Outlined.VolumeUp, "Звук", { mute = !mute }, visualSize = 40.dp) }
             }
         } }
         menuPost?.let { post -> PostActionsSheet(vm, state, post, { menuPost = null }, ::open, { auth = true }) }
@@ -136,7 +138,7 @@ import kotlinx.coroutines.launch
     }
 }
 @Composable fun ScreenHeader(title: String, onBack: () -> Unit, actions: @Composable RowScope.() -> Unit = {}) {
-    CenterAlignedTopAppBar(title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) }, windowInsets = WindowInsets(0, 0, 0, 0), navigationIcon = { IconButton(onClick = onBack, shapes = IconButtonDefaults.shapes()) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Назад") } }, actions = actions)
+    FloatingHeader(title, onBack, actions)
 }
 @Composable fun EmptyMessage(title: String, description: String, action: String? = null, onAction: () -> Unit = {}) {
     Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) { Icon(Icons.Outlined.AutoAwesome, null, Modifier.size(40.dp), tint = MaterialTheme.colorScheme.primary); Text(title, style = MaterialTheme.typography.headlineSmall, textAlign = androidx.compose.ui.text.style.TextAlign.Center); Text(description, style = MaterialTheme.typography.bodyMedium, textAlign = androidx.compose.ui.text.style.TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant); if (action != null) Button(onClick = onAction, shapes = ButtonDefaults.shapes()) { Text(action) } }

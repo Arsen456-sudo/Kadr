@@ -97,9 +97,9 @@ import kotlinx.coroutines.delay
         LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (page == "home") {
                 item { Text("Місце для твоїх ідей", style = MaterialTheme.typography.headlineMedium, modifier = Modifier.padding(12.dp)) }
-                listOf("Оформлення профілю" to "appearance", "Чернетки" to "drafts", "Колекції" to "collections", "Історія переглядів" to "history").forEach { (title, route) -> item { ListItem(headlineContent = { Text(title) }, leadingContent = { Icon(when (route) { "appearance" -> Icons.Outlined.Palette; "drafts" -> Icons.Outlined.EditNote; "collections" -> Icons.Outlined.CollectionsBookmark; else -> Icons.Outlined.History }, null) }, modifier = Modifier.clickable { page = route }) } }
-                item { ListItem(headlineContent = { Text("Налаштування") }, leadingContent = { Icon(Icons.Outlined.Settings, null) }, modifier = Modifier.clickable { open("settings") }) }
-                item { ListItem(headlineContent = { Text("QR-код профілю") }, leadingContent = { Icon(Icons.Outlined.QrCode, null) }, modifier = Modifier.clickable { state.activeID?.let { open("qr:$it") } }) }
+                listOf("Оформлення профілю" to "appearance", "Чернетки" to "drafts", "Колекції" to "collections", "Історія переглядів" to "history").forEach { (title, route) -> item { IslandListItem(headlineContent = { Text(title) }, leadingContent = { Icon(when (route) { "appearance" -> Icons.Outlined.Palette; "drafts" -> Icons.Outlined.EditNote; "collections" -> Icons.Outlined.CollectionsBookmark; else -> Icons.Outlined.History }, null) }, onClick = { page = route }) } }
+                item { IslandListItem(headlineContent = { Text("Налаштування") }, leadingContent = { Icon(Icons.Outlined.Settings, null) }, onClick = { open("settings") }) }
+                item { IslandListItem(headlineContent = { Text("QR-код профілю") }, leadingContent = { Icon(Icons.Outlined.QrCode, null) }, onClick = { state.activeID?.let { open("qr:$it") } }) }
             } else if (page == "appearance") {
                 item { Text("Акцентний колір", style = MaterialTheme.typography.titleMedium) }
                 itemsIndexed(listOf("peach", "mint", "violet", "blue", "rose")) { _, accent -> FilterChip(selected = state.studio.appearance.accent == accent, onClick = { vm.act { changeStudio { it.copy(appearance = it.appearance.copy(accent = accent)) } } }, label = { Text(mapOf("peach" to "Персиковий", "mint" to "Мʼятний", "violet" to "Фіолетовий", "blue" to "Блакитний", "rose" to "Рожевий").getValue(accent)) }) }
@@ -118,13 +118,13 @@ import kotlinx.coroutines.delay
             } else if (page == "drafts") {
                 val drafts = state.posts.filter { it.authorID == state.activeID && it.isDraft }
                 if (drafts.isEmpty()) item { EmptyMessage("Ідеї ще попереду", "Почни створювати кадр — він автоматично зʼявиться тут.") }
-                itemsIndexed(drafts, key = { _, it -> it.id }) { _, draft -> ListItem(headlineContent = { Text(draft.caption.ifBlank { "Чернетка" }) }, supportingContent = { Text("${draft.media.size} медіафайлів") }, modifier = Modifier.clickable { open("publish:${draft.id}") }) }
+                itemsIndexed(drafts, key = { _, it -> it.id }) { _, draft -> IslandListItem(headlineContent = { Text(draft.caption.ifBlank { "Чернетка" }) }, supportingContent = { Text("${draft.media.size} медіафайлів") }, onClick = { open("publish:${draft.id}") }) }
             } else if (page == "history") {
                 item { TextButton(onClick = { vm.act { changeStudio { it.copy(watches = emptyMap()) } } }, shapes = ButtonDefaults.shapes()) { Text("Очистити історію") } }
-                itemsIndexed(state.studio.watches.values.sortedByDescending { it.updatedAt }) { _, watch -> (state.posts + AppState.samples).find { it.id == watch.postID }?.let { item -> ListItem(headlineContent = { Text(item.caption) }, supportingContent = { Text("${watch.seconds.toInt()} с переглянуто") }, modifier = Modifier.clickable { post(item) }) } }
+                itemsIndexed(state.studio.watches.values.sortedByDescending { it.updatedAt }) { _, watch -> (state.posts + AppState.samples).find { it.id == watch.postID }?.let { item -> IslandListItem(headlineContent = { Text(item.caption) }, supportingContent = { Text("${watch.seconds.toInt()} с переглянуто") }, onClick = { post(item) }) } }
             } else if (page == "collections") {
                 item { Button(onClick = { value = ""; createCollection = true }, shapes = ButtonDefaults.shapes()) { Icon(Icons.Outlined.Add, null); Text("Створити колекцію") } }
-                itemsIndexed(state.studio.collections, key = { _, it -> it.id }) { _, collection -> ListItem(headlineContent = { Text(collection.title) }, supportingContent = { Text("${collection.posts.size} кадрів") }, modifier = Modifier.clickable { selectedCollection = collection }) }
+                itemsIndexed(state.studio.collections, key = { _, it -> it.id }) { _, collection -> IslandListItem(headlineContent = { Text(collection.title) }, supportingContent = { Text("${collection.posts.size} кадрів") }, onClick = { selectedCollection = collection }) }
             }
         }
     }
@@ -134,7 +134,7 @@ import kotlinx.coroutines.delay
             item { Text(collection.title, style = MaterialTheme.typography.titleLarge); Text("Оберіть збережені кадри для колекції", style = MaterialTheme.typography.bodySmall) }
             itemsIndexed((state.posts + AppState.samples).filter { state.activeID in state.bookmarks[it.id].orEmpty() }) { _, item ->
                 val checked = item.id in (state.studio.collections.find { it.id == collection.id }?.posts.orEmpty())
-                ListItem(headlineContent = { Text(item.caption.ifBlank { "Кадр" }) }, trailingContent = { Checkbox(checked, { vm.act { changeStudio { it.copy(collections = it.collections.map { saved -> if (saved.id == collection.id) saved.copy(posts = if (checked) saved.posts - item.id else saved.posts + item.id) else saved }) } } }) }, modifier = Modifier.clickable { post(item) })
+                IslandListItem(headlineContent = { Text(item.caption.ifBlank { "Кадр" }) }, trailingContent = { Checkbox(checked, { vm.act { changeStudio { it.copy(collections = it.collections.map { saved -> if (saved.id == collection.id) saved.copy(posts = if (checked) saved.posts - item.id else saved.posts + item.id) else saved }) } } }) }, onClick = { post(item) })
             }
             item { TextButton(onClick = { vm.act { changeStudio { it.copy(collections = it.collections.filterNot { it.id == collection.id }) } }; selectedCollection = null }, shapes = ButtonDefaults.shapes()) { Text("Видалити колекцію") } }
         }
