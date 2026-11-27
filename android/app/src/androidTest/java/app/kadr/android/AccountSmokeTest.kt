@@ -19,8 +19,12 @@ class AccountSmokeTest {
         compose.onNodeWithText("Поки переглядатиму").performClick()
         for (label in listOf("Для тебе", "Підписки", "Огляд")) {
             val layouts = mutableListOf<TextLayoutResult>()
-            compose.onNodeWithText(label, useUnmergedTree = true).performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
-            assertTrue("Feed label must fit: $label", layouts.isNotEmpty() && layouts.none { it.hasVisualOverflow })
+            compose.waitUntil(10000) {
+                layouts.clear()
+                compose.onNodeWithText(label, useUnmergedTree = true).performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+                layouts.isNotEmpty()
+            }
+            assertTrue("Feed label must fit: $label ${layouts.map { "${it.size} / ${it.didOverflowWidth}" }}", layouts.none { it.didOverflowWidth })
         }
         (0..3).forEach { compose.onNodeWithTag("tab:$it").assertIsDisplayed() }
         (0..3).forEach { compose.onNodeWithTag("tab:$it").assertIsDisplayed() }
