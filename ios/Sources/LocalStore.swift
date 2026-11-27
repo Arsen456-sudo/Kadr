@@ -469,12 +469,19 @@ final class LocalStore {
             guard let self else { return }
             do { try await self.flush() } catch { return }
             guard !self.isRestoringBackup else { return }
-            let referenced = Set(self.state.clips.flatMap { ($0.media ?? []).map(\.file) })
-                .union(self.state.profiles.compactMap(\.bannerFile))
-                .union(self.state.profiles.compactMap(\.portraitFile))
-                .union(self.state.profiles.compactMap(\.avatarVideoFile))
-                .union(self.state.messages?.compactMap(\.attachmentFile) ?? [])
-                .union(self.state.clips.compactMap { $0.extras?.coverFile })
+            var referenced = Set<String>()
+            for clip in self.state.clips {
+                for media in clip.media ?? [] { referenced.insert(media.file) }
+                if let file = clip.extras?.coverFile { referenced.insert(file) }
+            }
+            for profile in self.state.profiles {
+                if let file = profile.bannerFile { referenced.insert(file) }
+                if let file = profile.portraitFile { referenced.insert(file) }
+                if let file = profile.avatarVideoFile { referenced.insert(file) }
+            }
+            for message in self.state.messages ?? [] {
+                if let file = message.attachmentFile { referenced.insert(file) }
+            }
             let removable = candidates.subtracting(referenced).filter { !$0.isEmpty && URL(fileURLWithPath: $0).lastPathComponent == $0 && !$0.contains("..") }
             let previous = self.cleanupTask
             let task = Task.detached(priority: .utility) {

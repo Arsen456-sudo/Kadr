@@ -92,11 +92,18 @@ final class FeatureSyncEngine {
         let snapshot = store.state
         capturedRevision = store.localRevision
         let records = try await Task.detached(priority: .utility) { try Self.records(snapshot, owner: owner) }.value
-        let files = Set(snapshot.clips.filter { $0.authorID == owner }.flatMap { ($0.media ?? []).map(\.file) })
-            .union(snapshot.profiles.filter { $0.id == owner }.compactMap(\.bannerFile))
-            .union(snapshot.profiles.filter { $0.id == owner }.compactMap(\.portraitFile))
-            .union(snapshot.profiles.filter { $0.id == owner }.compactMap(\.avatarVideoFile))
-            .union(snapshot.messages?.filter { $0.senderID == owner }.compactMap(\.attachmentFile) ?? [])
+        var files = Set<String>()
+        for clip in snapshot.clips where clip.authorID == owner {
+            for media in clip.media ?? [] { files.insert(media.file) }
+        }
+        for profile in snapshot.profiles where profile.id == owner {
+            if let file = profile.bannerFile { files.insert(file) }
+            if let file = profile.portraitFile { files.insert(file) }
+            if let file = profile.avatarVideoFile { files.insert(file) }
+        }
+        for message in snapshot.messages ?? [] where message.senderID == owner {
+            if let file = message.attachmentFile { files.insert(file) }
+        }
         for file in files {
             guard URL(fileURLWithPath: file).lastPathComponent == file, !file.contains("..") else { throw SocialError.unavailable }
             try await transport.upload(file: LocalStore.directory.appendingPathComponent(file))
