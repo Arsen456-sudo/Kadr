@@ -28,7 +28,7 @@ import androidx.compose.ui.unit.sp
     val ink = profileColor?.let { if (it.luminance() > .42f) Color.Black else Color.White } ?: MaterialTheme.colorScheme.onSurfaceVariant
     val container by animateColorAsState(profileColor?.let { lerp(it, ink, .10f) } ?: MaterialTheme.colorScheme.surfaceContainer, MaterialTheme.motionScheme.defaultEffectsSpec(), label = "tab-container")
     val indicator by animateColorAsState(profileColor?.let { lerp(it, ink, .20f) } ?: MaterialTheme.colorScheme.secondaryContainer, MaterialTheme.motionScheme.defaultEffectsSpec(), label = "tab-selection")
-    Surface(modifier.requiredHeight(60.dp).testTag("bottom-navigation"), shape = CircleShape, color = container, shadowElevation = 3.dp) {
+    Surface(modifier.requiredHeight(60.dp).testTag("bottom-navigation"), shape = CircleShape, color = container, border = islandRim(), shadowElevation = 0.dp) {
         Row(Modifier.fillMaxWidth().padding(6.dp).selectableGroup(), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
             val labels = listOf("Стрічка", "Додати", "Вхідні", "Профіль")
             val icons = listOf(Icons.Outlined.Home, Icons.Outlined.Add, Icons.Outlined.Inbox, Icons.Outlined.Person)
@@ -38,6 +38,7 @@ import androidx.compose.ui.unit.sp
                     onCheckedChange = { select(index) },
                     modifier = Modifier.weight(1f).height(48.dp).testTag("tab:$index").semantics { role = Role.Tab; selected = selectedTab == index },
                     contentPadding = PaddingValues(horizontal = 2.dp, vertical = 2.dp),
+                    border = if (selectedTab == index) islandRim() else null,
                     shapes = ToggleButtonDefaults.shapesFor(48.dp).copy(shape = CircleShape, checkedShape = CircleShape, pressedShape = CircleShape),
                     colors = FilledTonalToggleButtonDefaults.colors(containerColor = Color.Transparent, contentColor = ink, checkedContainerColor = indicator, checkedContentColor = if (profileColor != null) ink else MaterialTheme.colorScheme.onSecondaryContainer)
                 ) {

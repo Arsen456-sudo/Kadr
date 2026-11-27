@@ -15,12 +15,15 @@ import androidx.compose.ui.unit.dp
 
 /** 44 dp visual islands in independent 48 dp touch targets, without a bar surface. */
 @Composable internal fun FloatingHeader(title: String, back: (() -> Unit)? = null, actions: @Composable RowScope.() -> Unit = {}) {
+    Box(Modifier.fillMaxWidth().height(64.dp)) {
+    TopIslandShade(Modifier.offset(y = -WindowInsets.statusBars.asPaddingValues().calculateTopPadding()))
     Row(Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
         Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
             if (back != null) CircleAction(Icons.AutoMirrored.Outlined.ArrowBack, "Назад", back, visualSize = 44.dp)
         }
         Text(title, Modifier.weight(1f), textAlign = TextAlign.Center, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleMedium)
         Row(Modifier.widthIn(min = 48.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp), content = actions)
+    }
     }
 }
 

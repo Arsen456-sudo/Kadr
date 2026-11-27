@@ -65,13 +65,13 @@ import java.io.File
             OutlinedTextField(handle, { handle = it }, label = { Text("Унікальний @нікнейм") }, prefix = { Text("@") }, singleLine = true)
             OutlinedTextField(bio, { bio = it }, label = { Text("Про себе") })
             if (name.isNotEmpty() && handle.isNotEmpty() && problem != null) Text(problem, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
-            OutlinedButton(onClick = { picker.launch("image/*") }, shapes = ButtonDefaults.shapes()) { Icon(Icons.Outlined.AddPhotoAlternate, null); Text(if (photo == null) "Фото профілю" else "Фото вибрано") }
+            OutlinedButton(onClick = { picker.launch("image/*") }, shapes = ButtonDefaults.shapes(), border = islandRim()) { Icon(Icons.Outlined.AddPhotoAlternate, null); Text(if (photo == null) "Фото профілю" else "Фото вибрано") }
             if (!edit && state.profiles.isNotEmpty()) {
                 Text("Увійти в локальний акаунт", style = MaterialTheme.typography.labelLarge)
                 state.profiles.forEach { profile -> TextButton(onClick = { vm.act { activate(profile.id); onClose() } }, shapes = ButtonDefaults.shapes()) { Text("@" + profile.handle) } }
             }
         }
-    }, confirmButton = { Button(onClick = { focus.clearFocus(); keyboard?.hide(); vm.act { if (edit) editProfile(name, handle, bio) else createAccount(handle, name, bio = bio); photo?.let { setPhoto(it) }; onClose() } }, enabled = problem == null, shapes = ButtonDefaults.shapes()) { Text(if (edit) "Зберегти" else "Створити") } }, dismissButton = { TextButton(onClick = onClose, shapes = ButtonDefaults.shapes()) { Text("Скасувати") } })
+    }, confirmButton = { Button(onClick = { focus.clearFocus(); keyboard?.hide(); vm.act { if (edit) editProfile(name, handle, bio) else createAccount(handle, name, bio = bio); photo?.let { setPhoto(it) }; onClose() } }, enabled = problem == null, shapes = ButtonDefaults.shapes(), border = islandRim()) { Text(if (edit) "Зберегти" else "Створити") } }, dismissButton = { TextButton(onClick = onClose, shapes = ButtonDefaults.shapes()) { Text("Скасувати") } })
 }
 
 private val profilePaletteCache = android.util.LruCache<String, Color>(16)
@@ -97,7 +97,7 @@ private val profilePaletteCache = android.util.LruCache<String, Color>(16)
 
 @Composable fun AuthorAvatarButton(profile: Profile?, onClick: () -> Unit) {
     val bytes = remember(profile?.avatar) { profile?.avatar?.let { runCatching { Base64.decode(it, Base64.DEFAULT) }.getOrNull() } }
-    FilledTonalIconButton(onClick = onClick, shapes = IconButtonDefaults.shapes(), modifier = Modifier.size(48.dp)) {
+    OutlinedIconButton(onClick = onClick, shapes = IconButtonDefaults.shapes(), modifier = Modifier.size(48.dp), border = islandRim(), colors = IconButtonDefaults.outlinedIconButtonColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh, contentColor = MaterialTheme.colorScheme.onSurface)) {
         if (bytes == null) Icon(Icons.Outlined.AccountCircle, "Автор")
         else AsyncImage(bytes, "Відкрити профіль автора", Modifier.size(34.dp).clip(androidx.compose.foundation.shape.CircleShape), contentScale = ContentScale.Crop)
     }

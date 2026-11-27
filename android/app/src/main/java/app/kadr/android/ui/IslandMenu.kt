@@ -9,6 +9,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.RoundRect
 import androidx.compose.ui.geometry.Size
@@ -43,6 +46,16 @@ internal data class IslandMenuAction(val title: String, val icon: ImageVector, v
                     shape = object : Shape {
                         override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline =
                             Outline.Rounded(RoundRect(size.width - visibleWidth, 0f, size.width, visibleHeight, CornerRadius(radius)))
+                    }
+                }.drawWithCache {
+                    val stroke = 1.dp.toPx()
+                    val brush = Brush.verticalGradient(listOf(Color.White.copy(alpha = .26f), Color.White.copy(alpha = .07f), Color.Black.copy(alpha = .28f), Color.White.copy(alpha = .12f)))
+                    onDrawWithContent {
+                        drawContent()
+                        val fraction = progress.value
+                        val width = visualSize.toPx() + (size.width - visualSize.toPx()) * fraction
+                        val height = visualSize.toPx() + (size.height - visualSize.toPx()) * fraction
+                        drawRoundRect(brush, topLeft = Offset(size.width - width + stroke / 2, stroke / 2), size = Size(width - stroke, height - stroke), cornerRadius = CornerRadius((visualSize / 2).toPx() - stroke / 2), style = Stroke(stroke))
                     }
                 }, shape = RoundedCornerShape(visualSize / 2), color = MaterialTheme.colorScheme.surfaceContainerHigh, contentColor = MaterialTheme.colorScheme.onSurface) {
                     Box {

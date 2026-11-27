@@ -105,6 +105,14 @@ import kotlinx.coroutines.launch
                         else -> SettingsScreen(vm, state, ::goBack)
                     }
                 }
+                if (!route.startsWith("publish") && !route.startsWith("chat:") && !(route == "main" && tab == 0 && immersive)) {
+                    val shadeColor = when {
+                        route == "main" && tab == 3 -> ownProfileColor
+                        route.startsWith("profile:") -> ProfilePalette(state.profiles.find { it.id == route.substringAfter(':') }?.portraitFile?.let { java.io.File(vm.repository.mediaDirectory, it) }, MaterialTheme.colorScheme.background)
+                        else -> MaterialTheme.colorScheme.background
+                    }
+                    BottomIslandShade(Modifier.align(Alignment.BottomCenter), color = shadeColor)
+                }
                 if (route == "main" && !(tab == 0 && immersive)) {
                     val profileColor = if (tab == 3) ownProfileColor else null
                     AppNavigation(tab, { index -> if (index == 1) account { open("publish") } else tab = index }, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(horizontal = 24.dp, vertical = 10.dp).fillMaxWidth(), profileColor)
@@ -130,18 +138,18 @@ import kotlinx.coroutines.launch
 
 @Composable fun CircleAction(icon: ImageVector, label: String, onClick: () -> Unit, modifier: Modifier = Modifier, selected: Boolean = false, visualSize: Dp = 48.dp, containerColor: Color? = null) {
     val view = LocalView.current
-    FilledTonalIconButton(onClick = { view.performHapticFeedback(android.view.HapticFeedbackConstants.CONTEXT_CLICK); onClick() }, shapes = IconButtonDefaults.shapes(), modifier = modifier.size(visualSize), colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = containerColor ?: if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh)) { Icon(icon, label, Modifier.size(if (visualSize < 48.dp) 20.dp else 24.dp)) }
+    OutlinedIconButton(onClick = { view.performHapticFeedback(android.view.HapticFeedbackConstants.CONTEXT_CLICK); onClick() }, shapes = IconButtonDefaults.shapes(), modifier = modifier.size(visualSize), border = islandRim(), colors = IconButtonDefaults.outlinedIconButtonColors(containerColor = containerColor ?: if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh, contentColor = MaterialTheme.colorScheme.onSurface)) { Icon(icon, label, Modifier.size(if (visualSize < 48.dp) 20.dp else 24.dp)) }
 }
 @Composable fun Choices(labels: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier, compact: Boolean = false) {
     Row(modifier.heightIn(min = 48.dp).selectableGroup(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-        labels.forEachIndexed { index, label -> ToggleButton(checked = selected == index, onCheckedChange = { onSelect(index) }, modifier = Modifier.weight(1f).height(if (compact) 40.dp else 48.dp), contentPadding = PaddingValues(horizontal = if (compact) 2.dp else 4.dp), shapes = when (index) { 0 -> ButtonGroupDefaults.connectedLeadingButtonShapes(); labels.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes(); else -> ButtonGroupDefaults.connectedMiddleButtonShapes() }) { Text(label, maxLines = 1, softWrap = false, style = if (compact) MaterialTheme.typography.labelMedium else MaterialTheme.typography.labelLarge) } }
+        labels.forEachIndexed { index, label -> ToggleButton(checked = selected == index, onCheckedChange = { onSelect(index) }, modifier = Modifier.weight(1f).height(if (compact) 40.dp else 48.dp), contentPadding = PaddingValues(horizontal = if (compact) 2.dp else 4.dp), shapes = when (index) { 0 -> ButtonGroupDefaults.connectedLeadingButtonShapes(); labels.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes(); else -> ButtonGroupDefaults.connectedMiddleButtonShapes() }, border = islandRim()) { Text(label, maxLines = 1, softWrap = false, style = if (compact) MaterialTheme.typography.labelMedium else MaterialTheme.typography.labelLarge) } }
     }
 }
 @Composable fun ScreenHeader(title: String, onBack: () -> Unit, actions: @Composable RowScope.() -> Unit = {}) {
     FloatingHeader(title, onBack, actions)
 }
 @Composable fun EmptyMessage(title: String, description: String, action: String? = null, onAction: () -> Unit = {}) {
-    Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) { Icon(Icons.Outlined.AutoAwesome, null, Modifier.size(40.dp), tint = MaterialTheme.colorScheme.primary); Text(title, style = MaterialTheme.typography.headlineSmall, textAlign = androidx.compose.ui.text.style.TextAlign.Center); Text(description, style = MaterialTheme.typography.bodyMedium, textAlign = androidx.compose.ui.text.style.TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant); if (action != null) Button(onClick = onAction, shapes = ButtonDefaults.shapes()) { Text(action) } }
+    Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) { Icon(Icons.Outlined.AutoAwesome, null, Modifier.size(40.dp), tint = MaterialTheme.colorScheme.primary); Text(title, style = MaterialTheme.typography.headlineSmall, textAlign = androidx.compose.ui.text.style.TextAlign.Center); Text(description, style = MaterialTheme.typography.bodyMedium, textAlign = androidx.compose.ui.text.style.TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant); if (action != null) Button(onClick = onAction, shapes = ButtonDefaults.shapes(), border = islandRim()) { Text(action) } }
 }
 
 @Composable fun FeedScreen(vm: KadrViewModel, state: AppState, active: Boolean, immersive: Boolean, onImmersive: (Boolean) -> Unit, onSearch: () -> Unit, onAccount: () -> Unit, onComments: (Post) -> Unit, onDescription: (Post) -> Unit, onProfile: (String) -> Unit, onMenu: (Post) -> Unit) {
@@ -219,7 +227,7 @@ import kotlinx.coroutines.launch
                     TextButton(onClick = { open("publish:${post.id}"); dismiss() }, shapes = ButtonDefaults.shapes()) { Text("Редагувати публікацію") }
                     TextButton(onClick = { vm.act { deletePost(post) }; dismiss() }, shapes = ButtonDefaults.shapes()) { Text("Видалити", color = MaterialTheme.colorScheme.error) }
                 }
-            } else Button(onClick = account, shapes = ButtonDefaults.shapes()) { Text("Увійти для інших дій") }
+            } else Button(onClick = account, shapes = ButtonDefaults.shapes(), border = islandRim()) { Text("Увійти для інших дій") }
             Spacer(Modifier.height(16.dp))
         }
     }

@@ -42,7 +42,7 @@ import kotlinx.coroutines.delay
                 Text("Поділись своїм поглядом", style = MaterialTheme.typography.headlineMedium)
                 Text("Фото, відео чи ціла історія — оригінали зберігаються без стискання.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            item { FilledTonalButton(onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)) }, modifier = Modifier.fillMaxWidth(), enabled = !importing, shapes = ButtonDefaults.shapes()) { Icon(Icons.Outlined.AddPhotoAlternate, null); Spacer(Modifier.width(8.dp)); Text(if (importing) "Додаю оригінали…" else "Додати фото або відео") } }
+            item { FilledTonalButton(onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)) }, modifier = Modifier.fillMaxWidth(), enabled = !importing, shapes = ButtonDefaults.shapes(), border = islandRim()) { Icon(Icons.Outlined.AddPhotoAlternate, null); Spacer(Modifier.width(8.dp)); Text(if (importing) "Додаю оригінали…" else "Додати фото або відео") } }
             itemsIndexed(draft.media, key = { _, media -> media.id }) { index, media ->
                 OutlinedCard {
                     Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -74,6 +74,7 @@ import kotlinx.coroutines.delay
             item { SettingSwitch("Приховати кількість уподобань", draft.extras.hideLikeCount) { draft = draft.copy(extras = draft.extras.copy(hideLikeCount = it)) } }
             item { Text("Чернетка зберігається автоматично на цьому пристрої.", style = MaterialTheme.typography.bodySmall) }
         }
+        BottomIslandShade(Modifier.align(Alignment.BottomCenter), controlHeight = 64.dp)
         Button(onClick = { vm.act {
             val from = start.toDoubleOrNull() ?: error("Некоректний початок відео")
             val until = if (end.isBlank()) null else end.toDoubleOrNull() ?: error("Некоректний кінець відео")
@@ -81,7 +82,7 @@ import kotlinx.coroutines.delay
             require(from.isFinite() && from >= 0 && poster.isFinite() && poster >= 0 && (until == null || (until.isFinite() && until > from))) { "Перевір діапазон відео." }
             publish(draft.copy(isDraft = false, extras = draft.extras.copy(trimStart = from, trimEnd = until, coverTime = poster)))
             published = true; back()
-        } }, modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().padding(16.dp), enabled = draft.media.isNotEmpty() && !importing, shapes = ButtonDefaults.shapes()) { Text(if (existing?.isDraft == false) "Зберегти зміни" else "Опублікувати") }
+        } }, modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth().navigationBarsPadding().padding(16.dp), enabled = draft.media.isNotEmpty() && !importing, shapes = ButtonDefaults.shapes(), border = islandRim()) { Text(if (existing?.isDraft == false) "Зберегти зміни" else "Опублікувати") }
         }
     }
 }
@@ -125,7 +126,7 @@ import kotlinx.coroutines.delay
                 item { TextButton(onClick = { vm.act { changeStudio { it.copy(watches = emptyMap()) } } }, shapes = ButtonDefaults.shapes()) { Text("Очистити історію") } }
                 itemsIndexed(state.studio.watches.values.sortedByDescending { it.updatedAt }) { _, watch -> (state.posts + AppState.samples).find { it.id == watch.postID }?.let { item -> IslandListItem(headlineContent = { Text(item.caption) }, supportingContent = { Text("${watch.seconds.toInt()} с переглянуто") }, onClick = { post(item) }) } }
             } else if (page == "collections") {
-                item { Button(onClick = { value = ""; createCollection = true }, shapes = ButtonDefaults.shapes()) { Icon(Icons.Outlined.Add, null); Text("Створити колекцію") } }
+                item { Button(onClick = { value = ""; createCollection = true }, shapes = ButtonDefaults.shapes(), border = islandRim()) { Icon(Icons.Outlined.Add, null); Text("Створити колекцію") } }
                 itemsIndexed(state.studio.collections, key = { _, it -> it.id }) { _, collection -> IslandListItem(headlineContent = { Text(collection.title) }, supportingContent = { Text("${collection.posts.size} кадрів") }, onClick = { selectedCollection = collection }) }
             }
         }

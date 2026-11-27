@@ -68,7 +68,7 @@ import app.kadr.android.data.*
                 }
             }
             reply?.let { Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) { Text("Відповідь: ${it.text.take(55)}", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall); IconButton(onClick = { reply = null }, shapes = IconButtonDefaults.shapes()) { Icon(Icons.Outlined.Close, "Скасувати відповідь") } } }
-            if (state.active == null) Button(onClick = account, modifier = Modifier.fillMaxWidth().padding(16.dp), shapes = ButtonDefaults.shapes()) { Text("Увійти, щоб коментувати") }
+            if (state.active == null) Button(onClick = account, modifier = Modifier.fillMaxWidth().padding(16.dp), shapes = ButtonDefaults.shapes(), border = islandRim()) { Text("Увійти, щоб коментувати") }
             else if (post.options.allowsComments) Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(input, { input = it }, modifier = Modifier.weight(1f), placeholder = { Text("Написати коментар…") }, shape = MaterialTheme.shapes.extraLarge, maxLines = 3)
                 IconButton(onClick = { vm.act { addComment(post, input, reply?.id); input = ""; reply = null } }, enabled = input.isNotBlank(), shapes = IconButtonDefaults.shapes()) { Icon(Icons.AutoMirrored.Outlined.Send, "Надіслати") }
@@ -142,7 +142,7 @@ import app.kadr.android.data.*
             }
         }
         reply?.let { Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) { Text("↳ ${it.text.take(70)}", Modifier.weight(1f)); IconButton(onClick = { reply = null }, shapes = IconButtonDefaults.shapes()) { Icon(Icons.Outlined.Close, "Скасувати відповідь") } } }
-        if (state.active == null) Button(onClick = account, shapes = ButtonDefaults.shapes()) { Text("Увійти") } else Row(Modifier.navigationBarsPadding().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (state.active == null) Button(onClick = account, shapes = ButtonDefaults.shapes(), border = islandRim()) { Text("Увійти") } else Row(Modifier.composerShade(MaterialTheme.colorScheme.background).navigationBarsPadding().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(input, { input = it }, Modifier.weight(1f), placeholder = { Text("Повідомлення…") }, shape = MaterialTheme.shapes.extraLarge, maxLines = 5)
             FilledIconButton({ vm.act { send(peer, input, reply?.id); input = ""; reply = null } }, enabled = input.isNotBlank()) { Icon(Icons.AutoMirrored.Outlined.Send, "Надіслати") }
         }
