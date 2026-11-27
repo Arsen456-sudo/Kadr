@@ -91,6 +91,7 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
     private var visible = false
     private var pickerOwner: UUID?
     var edgeScrollView: UIScrollView { grid }
+    func updateTopEdgeVisibility() { updateSectionPosition() }
     var onClip: ((Clip) -> Void)?
     var onAccount: (() -> Void)?
     var onChange: (() -> Void)?
@@ -122,7 +123,7 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
         grid.alwaysBounceVertical = true
         grid.contentInsetAdjustmentBehavior = .never
         grid.topEdgeEffect.style = .soft
-        grid.topEdgeEffect.isHidden = false
+        grid.topEdgeEffect.isHidden = true
         grid.accessibilityIdentifier = "profile.screen"
         NotificationCenter.default.addObserver(self, selector: #selector(contentSizeChanged), name: UIContentSizeCategory.didChangeNotification, object: nil)
         NotificationCenter.default.addObserver(self, selector: #selector(localAppearanceChanged), name: .kadrLocalDidChange, object: store)
@@ -210,6 +211,16 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
             return
         }
         let headerHeight = heroHeight(for: profile)
+        let identityTop = AtmosphereProfile.photoHeight(profile, width: view.bounds.width, top: view.safeAreaInsets.top) - 100 - grid.contentOffset.y
+        grid.topEdgeEffect.isHidden = atmosphere && identityTop > view.safeAreaInsets.top + 110
+        if atmosphere {
+            let progress = min(1, max(0, (view.safeAreaInsets.top + 110 - identityTop) / 88))
+            (sectionToolbarHost as? ProfileScrollTitle)?.setScrollProgress(progress)
+            sectionIsland.isHidden = true
+            islandOverlay?.isHidden = true
+            if compact { compact = false; onDocked?(false) }
+            return
+        }
         let naturalY = headerHeight - 50 - grid.contentOffset.y
         let pin = sectionPinTop ?? (navigationController == nil ? view.safeAreaInsets.top + 46 : view.safeAreaInsets.top + 2)
         let nowCompact = naturalY <= pin
@@ -423,6 +434,12 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
     }
 
     func select(_ section: ProfileSection) {
+        if atmosphere, section != .overview {
+            let page = ProfileMediaController(store: store, profileID: visibleProfile?.id, section: section)
+            page.onClip = onClip
+            showChild(page)
+            return
+        }
         guard section != selectedSection, let profile = visibleProfile else { return }
         selectedSection = section
         onSectionChange?(section)
@@ -484,6 +501,9 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
         guard let profile = visibleProfile else { return }
         let own = !preview && store.active?.id == profile.id
         switch destination {
+        case .posts: select(.posts)
+        case .liked: select(.liked)
+        case .comments: select(.comments)
         case .settings:
             if own { showChild(SettingsController(store: store)) }
         case .appearance:
@@ -873,7 +893,7 @@ private final class ProfileBackdrop: UIView {
         blurredBackdrop.contentMode = .scaleAspectFill; blurredBackdrop.clipsToBounds = true
         blurMask.colors = [UIColor.clear.cgColor, UIColor.clear.cgColor,
                            UIColor.black.withAlphaComponent(0.25).cgColor, UIColor.black.cgColor, UIColor.black.cgColor]
-        blurMask.locations = [0, 0.50, 0.59, 0.72, 1]
+        blurMask.locations = [0, 0.53, 0.62, 0.75, 1]
         blurredBackdrop.layer.mask = blurMask; addSubview(blurredBackdrop)
         let background = UIColor.systemBackground.resolvedColor(with: UITraitCollection(userInterfaceStyle: .dark))
         let alphas: [CGFloat] = [0, 0, 0.03, 0.10, 0.22, 0.38, 0.56, 0.73, 0.87, 0.96, 1]
@@ -955,7 +975,7 @@ private final class ProfileBackdrop: UIView {
     }
 }
 
-private final class ClipThumbnailCell: UICollectionViewCell {
+final class ClipThumbnailCell: UICollectionViewCell {
     private let image = UIImageView()
     private let play = UIImageView(image: AppSymbol.image( "play.fill"))
     private let caption = UILabel()

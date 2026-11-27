@@ -8,7 +8,12 @@ final class InboxController: LibraryController, UISearchResultsUpdating {
     private var rows: [ConversationSummary] = []
     private var query = ""
     private var activityMode = false
-    private var conversations: [ConversationSummary] { rows.filter { query.isEmpty || $0.profile.handle.localizedCaseInsensitiveContains(query) || $0.lastMessage.text.localizedCaseInsensitiveContains(query) }.sorted {
+    private var chatFilter = 0
+    private var conversations: [ConversationSummary] { rows.filter { row in
+        let matchesQuery = query.isEmpty || row.profile.handle.localizedCaseInsensitiveContains(query) || row.profile.name.localizedCaseInsensitiveContains(query) || row.lastMessage.text.localizedCaseInsensitiveContains(query)
+        let matchesFilter = chatFilter == 0 || (chatFilter == 1 && store.studio.pinnedChats.contains(row.id)) || (chatFilter == 2 && store.state.messages?.contains { ($0.senderID == row.id || $0.recipientID == row.id) && ($0.senderID == store.active?.id || $0.recipientID == store.active?.id) && ($0.attachmentFile != nil || $0.postID != nil) } == true)
+        return matchesQuery && matchesFilter
+    }.sorted {
         let a = store.studio.pinnedChats.contains($0.id), b = store.studio.pinnedChats.contains($1.id)
         return a != b ? a : $0.lastMessage.createdAt > $1.lastMessage.createdAt
     } }
@@ -35,11 +40,20 @@ final class InboxController: LibraryController, UISearchResultsUpdating {
         super.viewDidLoad()
         NotificationCenter.default.addObserver(self, selector: #selector(refresh), name: .kadrMessagesDidChange, object: store)
         let search = UISearchController(); search.searchResultsUpdater = self; search.obscuresBackgroundDuringPresentation = false
+        search.searchBar.placeholder = "Імʼя, @нікнейм або повідомлення"
         navigationItem.searchController = search
+        navigationItem.hidesSearchBarWhenScrolling = false
+        navigationItem.rightBarButtonItem = UIBarButtonItem(image: AppSymbol.image("square.and.pencil"), primaryAction: UIAction { [weak self] _ in self?.onSearch?() })
         let sections = UISegmentedControl(items: ["Повідомлення", "Активність"])
         sections.selectedSegmentIndex = 0
         sections.addAction(UIAction { [weak self, weak sections] _ in self?.activityMode = sections?.selectedSegmentIndex == 1; self?.showEmpty(nil); self?.tableView.reloadData() }, for: .valueChanged)
-        let header = UIView(frame: CGRect(x: 0, y: 0, width: 320, height: 52)); sections.pin(to: header, insets: .init(top: 4, leading: 16, bottom: 4, trailing: 16)); tableView.tableHeaderView = header
+        let filters = UISegmentedControl(items: ["Усі", "Закріплені", "Медіа"]); filters.selectedSegmentIndex = 0
+        filters.addAction(UIAction { [weak self, weak filters] _ in self?.chatFilter = filters?.selectedSegmentIndex ?? 0; self?.tableView.reloadData() }, for: .valueChanged)
+        let stack = UIStackView(arrangedSubviews: [sections, filters]); stack.axis = .vertical; stack.spacing = 12
+        let header = UIView(frame: CGRect(x: 0, y: 0, width: 320, height: 108)); stack.pin(to: header, insets: .init(top: 8, leading: 16, bottom: 12, trailing: 16)); tableView.tableHeaderView = header
+        tableView.rowHeight = UITableView.automaticDimension; tableView.estimatedRowHeight = 88
+        tableView.keyboardDismissMode = .onDrag; tableView.topEdgeEffect.style = .soft
+        tableView.separatorStyle = .none
         tableView.refreshControl = UIRefreshControl()
         tableView.refreshControl?.addAction(UIAction { [weak self] _ in self?.refresh() }, for: .valueChanged)
         refresh()
@@ -88,12 +102,16 @@ final class InboxController: LibraryController, UISearchResultsUpdating {
         let row = conversations[indexPath.row]
         let cell = tableView.dequeueReusableCell(withIdentifier: "conversation") ?? UITableViewCell(style: .subtitle, reuseIdentifier: "conversation")
         var content = cell.defaultContentConfiguration()
-        content.text = "@\(row.profile.handle)"
-        content.secondaryText = row.lastMessage.text
+        let pinned = store.studio.pinnedChats.contains(row.id)
+        let draft = store.studio.chatDrafts[row.id.uuidString] ?? ""
+        content.text = (pinned ? "📌 " : "") + row.profile.name
+        let preview = !draft.isEmpty ? "Чернетка: " + draft : row.lastMessage.text.isEmpty ? (row.lastMessage.postID != nil ? "Публікація" : "Вкладення") : row.lastMessage.text
+        content.secondaryText = "@\(row.profile.handle) · " + row.lastMessage.createdAt.formatted(date: .abbreviated, time: .shortened) + "\n" + preview
         content.secondaryTextProperties.numberOfLines = 2
         content.image = row.profile.avatar.flatMap { UIImage(data: $0) } ?? AppSymbol.image( "person.crop.circle.fill")
-        content.imageProperties.maximumSize = CGSize(width: 44, height: 44)
-        content.imageProperties.cornerRadius = 22
+        content.imageProperties.maximumSize = CGSize(width: 52, height: 52)
+        content.imageProperties.cornerRadius = 26
+        content.directionalLayoutMargins = .init(top: 16, leading: 16, bottom: 16, trailing: 16)
         cell.contentConfiguration = content
         cell.accessoryType = .disclosureIndicator
         return cell
@@ -106,6 +124,23 @@ final class InboxController: LibraryController, UISearchResultsUpdating {
         } else { onChat?(conversations[indexPath.row].profile) }
     }
     func updateSearchResults(for searchController: UISearchController) { query = searchController.searchBar.text ?? ""; showEmpty(nil); tableView.reloadData() }
+    override func tableView(_ tableView: UITableView, trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath) -> UISwipeActionsConfiguration? {
+        guard !activityMode else { return nil }
+        let id = conversations[indexPath.row].id
+        let pinned = store.studio.pinnedChats.contains(id)
+        let action = UIContextualAction(style: .normal, title: pinned ? "Відкріпити" : "Закріпити") { [weak self] _, _, done in
+            guard let self else { done(false); return }
+            self.store.changeStudio { account in if pinned { account.pinnedChats.remove(id) } else { account.pinnedChats.insert(id) } }
+            self.tableView.reloadData(); done(true)
+        }
+        action.image = AppSymbol.image(pinned ? "pin.slash" : "pin"); return UISwipeActionsConfiguration(actions: [action])
+    }
+    override func tableView(_ tableView: UITableView, contextMenuConfigurationForRowAt indexPath: IndexPath, point: CGPoint) -> UIContextMenuConfiguration? {
+        guard !activityMode else { return nil }; let peer = conversations[indexPath.row].profile
+        return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self] _ in
+            UIMenu(children: [UIAction(title: "Написати", image: AppSymbol.image("bubble.left")) { _ in self?.onChat?(peer) }, UIAction(title: "Відкрити профіль", image: AppSymbol.image("person.crop.circle")) { _ in self?.onProfile?(peer.id) }])
+        }
+    }
     deinit { request?.cancel() }
 
 }

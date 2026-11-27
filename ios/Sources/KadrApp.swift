@@ -283,6 +283,7 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
             scroll?.topEdgeEffect.style = .soft
             scroll?.bottomEdgeEffect.style = .soft
             scroll?.topEdgeEffect.isHidden = hidden
+            if controller === profile { profile.updateTopEdgeVisibility() }
             scroll?.bottomEdgeEffect.isHidden = hidden
         }
     }

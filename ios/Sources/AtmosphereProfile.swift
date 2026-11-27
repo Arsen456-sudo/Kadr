@@ -7,7 +7,7 @@ enum AtmosphereProfile {
         return 24 + (column - 56) / 2
     }
     static func photoHeight(_ profile: Profile, width: CGFloat, top: CGFloat) -> CGFloat {
-        return max(top + 260, min(520, width * 1.10))
+        return max(top + 280, min(548, width * 1.16))
     }
 
     static func header(_ profile: Profile, width: CGFloat, top: CGFloat, appearance: CreatorAppearance, own: Bool,
@@ -17,7 +17,7 @@ enum AtmosphereProfile {
                        onShare: @escaping () -> Void) -> UIStackView {
         let stack = UIStackView(); stack.axis = .vertical; stack.spacing = 12
         let space = UIView()
-        space.heightAnchor.constraint(equalToConstant: max(top + 52, photoHeight(profile, width: width, top: top) - 110)).isActive = true
+        space.heightAnchor.constraint(equalToConstant: max(top + 52, photoHeight(profile, width: width, top: top) - 100)).isActive = true
         stack.addArrangedSubview(space)
 
         let identity = UIStackView(); identity.axis = .vertical; identity.spacing = 6
@@ -97,7 +97,7 @@ enum AtmosphereProfile {
                 if let url = URL(string: link), url.scheme == "https" { UIApplication.shared.open(url) }
             })
         }
-        let footer = UIView(); footer.heightAnchor.constraint(equalToConstant: 48).isActive = true; stack.addArrangedSubview(footer)
+        let footer = UIView(); footer.heightAnchor.constraint(equalToConstant: 12).isActive = true; stack.addArrangedSubview(footer)
         return stack
     }
 

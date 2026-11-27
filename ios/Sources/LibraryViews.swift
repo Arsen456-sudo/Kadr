@@ -72,7 +72,7 @@ final class SavedController: LibraryController {
     }
 }
 
-final class SearchController: UITableViewController, UISearchResultsUpdating {
+final class SearchController: UITableViewController, UISearchResultsUpdating, UISearchBarDelegate {
     private let store: LocalStore
     private let repository: any SocialRepository
     private var searchTask: Task<Void, Never>?
@@ -80,6 +80,8 @@ final class SearchController: UITableViewController, UISearchResultsUpdating {
     private var matches: [Profile] = []
     private var posts: [Clip] = []
     private var term = ""
+    private var filter = 0
+    private var tags: [String] = []
     var onChange: (() -> Void)?
     var onClip: ((Clip) -> Void)?
 
@@ -93,21 +95,29 @@ final class SearchController: UITableViewController, UISearchResultsUpdating {
 
     override func viewDidLoad() {
         super.viewDidLoad()
-        title = "Пошук профілів"
+        title = "Пошук"
         let search = UISearchController()
-        search.searchBar.placeholder = "@нікнейм"
+        search.searchBar.placeholder = "Люди, публікації та #теги"
+        search.searchBar.delegate = self
+        search.searchBar.scopeButtonTitles = ["Усе", "Люди", "Публікації"]
+        search.scopeBarActivation = .always
         search.searchResultsUpdater = self
         search.obscuresBackgroundDuringPresentation = false
         search.searchBar.autocapitalizationType = .none
         navigationItem.searchController = search
         navigationItem.hidesSearchBarWhenScrolling = false
         definesPresentationContext = true
+        tableView.keyboardDismissMode = .onDrag
+        tableView.topEdgeEffect.style = .soft
+        navigationItem.rightBarButtonItem = UIBarButtonItem(image: AppSymbol.image("clock.arrow.circlepath"), menu: UIMenu(children: [UIAction(title: "Очистити історію", image: AppSymbol.image("trash"), attributes: .destructive) { [weak self] _ in
+            self?.store.changeStudio { $0.searches.removeAll() }; self?.tableView.reloadData()
+        }]))
         updateSearchResults(for: search)
     }
 
     func updateSearchResults(for searchController: UISearchController) {
         let term = (searchController.searchBar.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            .lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "@"))
+            .lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "@#"))
         self.term = term
         searchTask?.cancel()
         searchTask = Task { [weak self] in
@@ -122,11 +132,20 @@ final class SearchController: UITableViewController, UISearchResultsUpdating {
                     let second = Set(self.store.state.studio?.accounts[b.id.uuidString]?.appearance.interests ?? []).intersection(interests).count
                     return first != second ? first > second : a.handle < b.handle
                 }
-                self.posts = term.isEmpty ? [] : self.store.allClips.filter { $0.caption.localizedCaseInsensitiveContains(term) || $0.settings.tags.localizedCaseInsensitiveContains(term) }
+                let preferences = self.store.studio.preferences
+                self.matches.removeAll { preferences.blocked.contains($0.id) }
+                self.posts = self.store.allClips.filter { clip in
+                    (!clip.settings.onlyMe || clip.authorID == self.store.active?.id) &&
+                    !(clip.authorID.map { preferences.blocked.contains($0) || preferences.hiddenAuthors.contains($0) } ?? false) && !preferences.hiddenPosts.contains(clip.id) &&
+                    !preferences.mutedWords.contains { !$0.isEmpty && clip.caption.localizedCaseInsensitiveContains($0) } &&
+                    (term.isEmpty || clip.caption.localizedCaseInsensitiveContains(term) || clip.settings.tags.localizedCaseInsensitiveContains(term) || self.store.profile(clip.authorID)?.handle.localizedCaseInsensitiveContains(term) == true)
+                }
+                self.tags = Array(Set(self.posts.flatMap { $0.settings.tags.components(separatedBy: .whitespacesAndNewlines) }.filter { !$0.isEmpty })).sorted()
                 self.contentUnavailableConfiguration = nil
                 if matches.isEmpty && self.posts.isEmpty && self.store.studio.searches.isEmpty {
                     var empty = UIContentUnavailableConfiguration.search()
-                    empty.text = "Немає профілів"
+                    empty.text = "Нічого не знайдено"
+                    empty.secondaryText = "Спробуй інше імʼя, опис або #тег."
                     self.contentUnavailableConfiguration = empty
                 } else { self.contentUnavailableConfiguration = nil }
                 self.tableView.reloadData()
@@ -135,16 +154,37 @@ final class SearchController: UITableViewController, UISearchResultsUpdating {
         }
     }
 
-    override func numberOfSections(in tableView: UITableView) -> Int { 3 }
+    func searchBar(_ searchBar: UISearchBar, selectedScopeButtonIndexDidChange selectedScope: Int) { filter = selectedScope; tableView.reloadData() }
+    func searchBarSearchButtonClicked(_ searchBar: UISearchBar) {
+        rememberQuery(); searchBar.resignFirstResponder()
+    }
+    private func rememberQuery() {
+        guard !term.isEmpty else { return }
+        store.changeStudio { account in account.searches.removeAll { $0 == term }; account.searches.insert(term, at: 0); account.searches = Array(account.searches.prefix(30)) }
+    }
+    override func numberOfSections(in tableView: UITableView) -> Int { 4 }
     override func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-        section == 0 ? matches.count : section == 1 ? posts.count : term.isEmpty ? store.studio.searches.count : 0
+        if section == 0 { return filter == 2 ? 0 : matches.count }
+        if section == 1 { return filter == 1 ? 0 : (posts.count + 1) / 2 }
+        if section == 2 { return term.isEmpty ? store.studio.searches.count : 0 }
+        return term.isEmpty ? min(tags.count, 6) : 0
     }
     override func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-        section == 0 ? (term.isEmpty ? "Автори за твоїми інтересами" : "Користувачі") : section == 1 ? (posts.isEmpty ? nil : "Публікації та теги") : (term.isEmpty && !store.studio.searches.isEmpty ? "Історія пошуку" : nil)
+        if self.tableView(tableView, numberOfRowsInSection: section) == 0 { return nil }
+        return ["Автори", "Фото та відео", "Недавні запити", "Теми у кадрах"][section]
     }
 
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
-        if indexPath.section == 1 { return clipCell(in: tableView, clip: posts[indexPath.row], store: store) }
+        if indexPath.section == 1 {
+            let cell = tableView.dequeueReusableCell(withIdentifier: "media-pair") as? SearchMediaPairCell ?? SearchMediaPairCell(style: .default, reuseIdentifier: "media-pair")
+            let start = indexPath.row * 2
+            cell.show(Array(posts[start..<min(start + 2, posts.count)])) { [weak self] clip in self?.openPost(clip) }
+            return cell
+        }
+        if indexPath.section == 3 {
+            let cell = UITableViewCell(style: .default, reuseIdentifier: nil)
+            cell.textLabel?.text = tags[indexPath.row]; cell.imageView?.image = AppSymbol.image("number"); cell.accessoryType = .disclosureIndicator; return cell
+        }
         if indexPath.section == 2 {
             let cell = UITableViewCell(style: .default, reuseIdentifier: nil); cell.textLabel?.text = store.studio.searches[indexPath.row]; cell.imageView?.image = AppSymbol.image("clock"); return cell
         }
@@ -165,13 +205,17 @@ final class SearchController: UITableViewController, UISearchResultsUpdating {
 
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
         tableView.deselectRow(at: indexPath, animated: true)
+        if indexPath.section == 3 {
+            navigationItem.searchController?.searchBar.text = tags[indexPath.row]
+            if let search = navigationItem.searchController { updateSearchResults(for: search) }; return
+        }
         if indexPath.section == 2 {
             navigationItem.searchController?.searchBar.text = store.studio.searches[indexPath.row]
             if let search = navigationItem.searchController { updateSearchResults(for: search) }; return
         }
         if !term.isEmpty { store.changeStudio { account in account.searches.removeAll { $0 == term }; account.searches.insert(term, at: 0); account.searches = Array(account.searches.prefix(30)) } }
         if indexPath.section == 1 {
-            if let onClip { onClip(posts[indexPath.row]) } else { navigationController?.pushViewController(ClipPreviewController(clip: posts[indexPath.row], store: store), animated: true) }; return
+            return
         }
         let profile = ProfileController(store: store, profileID: matches[indexPath.row].id, repository: repository)
         profile.onClip = onClip
@@ -179,6 +223,11 @@ final class SearchController: UITableViewController, UISearchResultsUpdating {
         profile.onChange = onChange
         navigationController?.pushViewController(profile, animated: true)
     }
+    private func openPost(_ clip: Clip) {
+        rememberQuery()
+        if let onClip { onClip(clip) } else { navigationController?.pushViewController(ClipPreviewController(clip: clip, store: store), animated: true) }
+    }
+    deinit { searchTask?.cancel() }
     override func tableView(_ tableView: UITableView, trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath) -> UISwipeActionsConfiguration? {
         guard indexPath.section == 2 else { return nil }
         let term = store.studio.searches[indexPath.row]

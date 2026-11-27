@@ -1,7 +1,7 @@
 import UIKit
 
 struct ProfileDashboardRow {
-    enum Destination { case statistics, community, library, settings, appearance, about }
+    enum Destination { case statistics, community, library, settings, appearance, about, posts, liked, comments }
     let title: String
     let detail: String
     let symbol: String
@@ -11,12 +11,15 @@ struct ProfileDashboardRow {
     @MainActor static func rows(profile: Profile, store: LocalStore, own: Bool) -> [ProfileDashboardRow] {
         let posts = store.allClips.filter { $0.authorID == profile.id && (own || !$0.settings.onlyMe) }
         var rows = [
-            ProfileDashboardRow(title: "Публікації", detail: "\(posts.reduce(0) { $0 + store.likes($1) }) уподобань", symbol: "chart.bar.xaxis", destination: .statistics, value: "\(posts.count)"),
+            ProfileDashboardRow(title: "Усі публікації", detail: "Фото, відео та фотоісторії", symbol: "square.grid.2x2", destination: .posts, value: "\(posts.count)"),
+            ProfileDashboardRow(title: "Статистика", detail: "\(posts.reduce(0) { $0 + store.likes($1) }) уподобань", symbol: "chart.bar.xaxis", destination: .statistics, value: "\(posts.count)"),
             ProfileDashboardRow(title: "Підписники", detail: "\(store.people(followedBy: profile.id).count) підписок", symbol: "person.2", destination: .community, value: "\(store.people(followersOf: profile.id).count)")
         ]
         if own {
             rows += [
                 ProfileDashboardRow(title: "Твоя бібліотека", detail: "\(store.feed(.saved).count) збережених · \(store.drafts.count) чернеток", symbol: "square.stack", destination: .library),
+                ProfileDashboardRow(title: "Уподобання", detail: "Кадри, які тобі сподобались", symbol: "heart", destination: .liked),
+                ProfileDashboardRow(title: "Твої коментарі", detail: "Повернися до обговорень", symbol: "bubble.left.and.bubble.right", destination: .comments),
                 ProfileDashboardRow(title: "Налаштування", detail: "Приватність, відтворення та повідомлення", symbol: "gearshape", destination: .settings),
                 ProfileDashboardRow(title: "Оформлення", detail: "Стиль профілю та твої акценти", symbol: "paintpalette", destination: .appearance)
             ]
@@ -90,8 +93,8 @@ final class ProfileDashboardCell: UICollectionViewCell {
         let light = red * 0.2126 + green * 0.7152 + blue * 0.0722 > 0.55
         CATransaction.begin(); CATransaction.setDisableActions(true)
         material.backgroundColor = color
-        material.layer.borderWidth = 0.75
-        material.layer.borderColor = (light ? UIColor.black.withAlphaComponent(0.16) : UIColor.white.withAlphaComponent(0.12)).cgColor
+        material.backgroundColor = (light ? UIColor.black : UIColor.white).withAlphaComponent(0.065)
+        material.layer.borderWidth = 0
         CATransaction.commit()
     }
 }
