@@ -21,7 +21,7 @@ import androidx.compose.ui.unit.sp
 
 /** Native toggle surfaces include the complete destination inside their selected container. */
 @Composable fun AppNavigation(selectedTab: Int, select: (Int) -> Unit, modifier: Modifier = Modifier) {
-    Surface(modifier.testTag("bottom-navigation"), shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainer, shadowElevation = 3.dp) {
+    Surface(modifier.requiredHeight(68.dp).testTag("bottom-navigation"), shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainer, shadowElevation = 3.dp) {
         Row(Modifier.fillMaxWidth().padding(6.dp).selectableGroup(), horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
             val labels = listOf("Стрічка", "Додати", "Вхідні", "Профіль")
             val icons = listOf(Icons.Outlined.Home, Icons.Outlined.Add, Icons.Outlined.Inbox, Icons.Outlined.Person)
@@ -31,7 +31,7 @@ import androidx.compose.ui.unit.sp
                     onCheckedChange = { select(index) },
                     modifier = Modifier.weight(1f).height(56.dp).testTag("tab:$index").semantics { role = Role.Tab; selected = selectedTab == index },
                     contentPadding = PaddingValues(horizontal = 2.dp, vertical = 4.dp),
-                    shapes = ToggleButtonDefaults.shapesFor(56.dp).copy(shape = CircleShape, checkedShape = CircleShape),
+                    shapes = ToggleButtonDefaults.shapesFor(56.dp).copy(shape = CircleShape, checkedShape = CircleShape, pressedShape = CircleShape),
                     colors = FilledTonalToggleButtonDefaults.colors(containerColor = Color.Transparent, contentColor = MaterialTheme.colorScheme.onSurfaceVariant, checkedContainerColor = MaterialTheme.colorScheme.secondaryContainer, checkedContentColor = MaterialTheme.colorScheme.onSecondaryContainer)
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(1.dp)) {

@@ -24,6 +24,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -57,6 +59,15 @@ import java.io.File
     val list = rememberLazyListState()
     val photo = profile.portraitFile?.let { File(vm.repository.mediaDirectory, it) }
     val background = ProfilePalette(photo, MaterialTheme.colorScheme.background)
+    val ink = if (background.luminance() > .42f) Color.Black else Color.White
+    val island = lerp(background, ink, .10f)
+    val selectedIsland = lerp(background, ink, .20f)
+    val islandScheme = MaterialTheme.colorScheme.copy(
+        background = background, onBackground = ink, onSurface = ink, onSurfaceVariant = ink.copy(alpha = .78f),
+        surface = background, surfaceContainerLow = lerp(background, ink, .05f),
+        surfaceContainer = island, surfaceContainerHigh = island,
+        primary = ink, onPrimary = background, primaryContainer = selectedIsland, onPrimaryContainer = ink,
+        secondaryContainer = selectedIsland, onSecondaryContainer = ink)
     val image: Any? = photo ?: remember(profile.avatar) { profile.avatar?.let { runCatching { Base64.decode(it, Base64.DEFAULT) }.getOrNull() } }
     val appearance = state.studios[profile.id]?.appearance ?: Appearance()
     val mine = remember(state.posts, profile.id, own, appearance.pinnedPosts) {
@@ -74,23 +85,20 @@ import java.io.File
         }
     }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.GetContent()) { uri -> uri?.let { vm.act { setPhoto(it) } } }
+    MaterialTheme(colorScheme = islandScheme) {
     Scaffold(containerColor = background, topBar = {
-        CenterAlignedTopAppBar(
-            title = { Text("Профіль", maxLines = 1) },
-            colors = TopAppBarDefaults.topAppBarColors(containerColor = background),
-            navigationIcon = {
-                IconButton(onClick = { if (own) open("qr:${profile.id}") else onBack() }, shapes = IconButtonDefaults.shapes()) { Icon(if (own) Icons.Outlined.QrCode else Icons.AutoMirrored.Outlined.ArrowBack, if (own) "QR-код" else "Назад") }
-            },
-            actions = {
-                if (own) Box {
-                    IconButton(onClick = { editMenu = true }, shapes = IconButtonDefaults.shapes()) { Icon(Icons.Outlined.Edit, "Редагувати") }
-                    DropdownMenu(editMenu, { editMenu = false }) {
-                        DropdownMenuItem(text = { Text("Змінити фото") }, leadingIcon = { Icon(Icons.Outlined.AddPhotoAlternate, null) }, onClick = { editMenu = false; picker.launch("image/*") })
-                        DropdownMenuItem(text = { Text("Імʼя та @нікнейм") }, leadingIcon = { Icon(Icons.Outlined.Person, null) }, onClick = { editMenu = false; edit = true })
-                    }
-                } else IconButton(onClick = { open("qr:${profile.id}") }, shapes = IconButtonDefaults.shapes()) { Icon(Icons.Outlined.QrCode, "QR-код") }
+        Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            CircleAction(if (own) Icons.Outlined.QrCode else Icons.AutoMirrored.Outlined.ArrowBack, if (own) "QR-код" else "Назад", { if (own) open("qr:${profile.id}") else onBack() })
+            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                Surface(shape = androidx.compose.foundation.shape.CircleShape, color = island) { Text("Профіль", Modifier.padding(horizontal = 20.dp, vertical = 10.dp), style = MaterialTheme.typography.titleMedium, maxLines = 1) }
             }
-        )
+                if (own) Box {
+                    CircleAction(Icons.Outlined.Edit, "Редагувати", { editMenu = true })
+                    IslandMenu(editMenu, { editMenu = false }, listOf(
+                        IslandMenuAction("Змінити фото", Icons.Outlined.AddPhotoAlternate) { picker.launch("image/*") },
+                        IslandMenuAction("Імʼя та @нікнейм", Icons.Outlined.Person) { edit = true }))
+                } else CircleAction(Icons.Outlined.QrCode, "QR-код", { open("qr:${profile.id}") })
+        }
     }) { padding ->
         LazyColumn(Modifier.fillMaxSize().padding(top = padding.calculateTopPadding()).navigationBarsPadding().testTag("profile-scroll"), state = list, contentPadding = PaddingValues(bottom = 120.dp)) {
             item(key = "identity") {
@@ -130,10 +138,9 @@ import java.io.File
                     CircleAction(Icons.Outlined.Share, "Поділитися", { context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, "kadr://profile/${profile.handle}"), "Поділитися")) })
                     Box {
                         CircleAction(Icons.Outlined.MoreHoriz, "Ще", { more = true })
-                        DropdownMenu(more, { more = false }) {
-                            if (own) DropdownMenuItem(text = { Text("Вийти з акаунта") }, leadingIcon = { Icon(Icons.Outlined.Logout, null) }, onClick = { vm.act { activate(null) }; more = false })
-                            else DropdownMenuItem(text = { Text("Заблокувати") }, onClick = { vm.act { requireAccount(); changeStudio { it.copy(preferences = it.preferences.copy(blocked = it.preferences.blocked + profile.id)) } }; more = false; onBack() })
-                        }
+                        IslandMenu(more, { more = false }, listOf(
+                            if (own) IslandMenuAction("Вийти з акаунта", Icons.Outlined.Logout) { vm.act { activate(null) } }
+                            else IslandMenuAction("Заблокувати", Icons.Outlined.Block) { vm.act { requireAccount(); changeStudio { it.copy(preferences = it.preferences.copy(blocked = it.preferences.blocked + profile.id)) } }; onBack() }))
                     }
                 }
             }
@@ -183,6 +190,7 @@ import java.io.File
         }
     }
     if (edit) AccountDialog(vm, state, { edit = false }, edit = true)
+    }
 }
 
 @Composable private fun ProfilePill(icon: ImageVector, text: String, click: () -> Unit, modifier: Modifier) {
