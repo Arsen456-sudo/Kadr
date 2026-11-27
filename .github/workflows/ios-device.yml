@@ -3,6 +3,7 @@ name: iOS device build
 on:
   push:
     branches: [main]
+    paths: ['ios/**', '.github/workflows/ios-device.yml']
   workflow_dispatch:
     inputs:
       runner:
@@ -20,6 +21,7 @@ permissions:
 
 jobs:
   package:
+    if: github.event_name != 'push' || !contains(github.event.head_commit.message, '[android only]')
     runs-on: ${{ inputs.runner || 'macos-26' }}
     timeout-minutes: 20
     steps:

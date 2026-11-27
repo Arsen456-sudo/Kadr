@@ -1,0 +1,64 @@
+name: Android APK
+
+on:
+  push:
+    branches: [main]
+    paths: ['android/**', 'ios/Media/**', 'backend/**', '.github/workflows/android.yml']
+  pull_request:
+    paths: ['android/**', 'ios/Media/**', 'backend/**', '.github/workflows/android.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    defaults:
+      run:
+        working-directory: android
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: android-actions/setup-android@v3
+      - uses: gradle/actions/setup-gradle@v4
+      - name: Install Android SDK
+        run: sdkmanager 'platforms;android-37.0' 'build-tools;36.0.0'
+      - name: Restore private development signing key
+        if: github.event_name != 'pull_request'
+        env:
+          KADR_DEVELOPMENT_KEY: ${{ secrets.ANDROID_DEBUG_KEYSTORE_B64 }}
+        run: |
+          test -n "$KADR_DEVELOPMENT_KEY"
+          mkdir -p .signing
+          printf '%s' "$KADR_DEVELOPMENT_KEY" | base64 --decode > .signing/debug.keystore
+      - name: Build and check Android app
+        run: |
+          chmod +x gradlew
+          ./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug --no-daemon
+      - name: Check shared API
+        working-directory: .
+        run: python3 -m unittest discover -s backend -p test_social_server.py -v
+      - name: Package installable APK
+        run: |
+          mkdir -p build/apk
+          cp app/build/outputs/apk/debug/app-debug.apk build/apk/Kadr-android.apk
+          sha256sum build/apk/Kadr-android.apk > build/apk/SHA256SUMS.txt
+      - name: Upload APK and reports
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: Kadr-Android-APK
+          path: |
+            android/build/apk/
+            android/app/build/reports/tests/testDebugUnitTest/
+            android/app/build/reports/lint-results-debug.html
+          if-no-files-found: error
+          retention-days: 14

@@ -2,7 +2,9 @@ name: iOS simulator build
 
 on:
   push:
+    paths: ['ios/**', '.github/workflows/ios.yml']
   pull_request:
+    paths: ['ios/**', '.github/workflows/ios.yml']
   workflow_dispatch:
 
 permissions:
@@ -10,7 +12,7 @@ permissions:
 
 jobs:
   build:
-    if: github.event_name != 'push' || !contains(github.event.head_commit.message, '[ipa only]')
+    if: github.event_name != 'push' || (!contains(github.event.head_commit.message, '[ipa only]') && !contains(github.event.head_commit.message, '[android only]'))
     runs-on: macos-26
     timeout-minutes: 25
     steps:

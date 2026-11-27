@@ -18,3 +18,18 @@ backend/*.sqlite3*
 backend/__pycache__/
 
 backend/assets/
+
+# Android local toolchains and generated output
+/android/.gradle/
+/android/.kotlin/
+/android/local.properties
+/android/*.log
+/android/.device/
+/android/.signing/
+/android/.tools/
+/android/emulator*.png
+/android/**/build/
+*.apk
+*.aab
+*.jks
+*.keystore
