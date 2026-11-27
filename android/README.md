@@ -4,7 +4,7 @@
 
 ## Запуск
 
-Відкрити цю папку в Android Studio. Потрібні JDK 17, Android SDK Platform 37.0 та Build Tools 36.0.0. Локальний шлях SDK задається в `local.properties`, який виключено з Git.
+Відкрити цю папку в Android Studio. Потрібні JDK 17, Android SDK Platform 37.2 та Build Tools 36.0.0. Локальний шлях SDK задається в `local.properties`, який виключено з Git.
 
 ```powershell
 .\gradlew.bat :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
@@ -45,3 +45,7 @@ APK: `app/build/outputs/apk/debug/app-debug.apk`. Після GitHub Actions за
 У AGP 9.2.1 спостерігалося зависання `BidiSpoofing` у `KotlinUFile.getAllCommentsInFile` (підтверджено дампами потоків). Лише цей аналізатор замінений перевіркою `checkSourceText`, яка відхиляє керівні символи bidi у вихідних файлах; решта lint працює. Системний ефект `Modifier.blur` доступний на Android 12+; на старіших системах розмиття потребує окремого резервного способу.
 
 APK для розробки підписуються постійним приватним ключем із repository secret `ANDROID_DEBUG_KEYSTORE_B64`. Файл `.signing/debug.keystore` не входить у Git. Для Google Play потрібен окремий production-ключ.
+
+## 0.1.1 — оформлення
+
+Material 3 1.6.0-alpha01 (найновіший preview на момент оновлення), AGP 9.4.0 і Gradle 9.6.0. Нативний NavigationBar з його індикатором вибору, круглий зовнішній контейнер, expressive shapes у кнопок по всьому застосунку. Профіль використовує один LazyColumn зі стабільною шириною stickyHeader, трьома колонками медіа та нативними верхніми панелями. Нижня частина фото профілю розмивається також на Android 9.

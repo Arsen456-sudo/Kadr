@@ -42,14 +42,14 @@ import kotlinx.coroutines.delay
                 Text("Поділись своїм поглядом", style = MaterialTheme.typography.headlineMedium)
                 Text("Фото, відео чи ціла історія — оригінали зберігаються без стискання.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            item { FilledTonalButton({ picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)) }, Modifier.fillMaxWidth(), enabled = !importing) { Icon(Icons.Outlined.AddPhotoAlternate, null); Spacer(Modifier.width(8.dp)); Text(if (importing) "Додаю оригінали…" else "Додати фото або відео") } }
+            item { FilledTonalButton(onClick = { picker.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageAndVideo)) }, modifier = Modifier.fillMaxWidth(), enabled = !importing, shapes = ButtonDefaults.shapes()) { Icon(Icons.Outlined.AddPhotoAlternate, null); Spacer(Modifier.width(8.dp)); Text(if (importing) "Додаю оригінали…" else "Додати фото або відео") } }
             itemsIndexed(draft.media, key = { _, media -> media.id }) { index, media ->
                 OutlinedCard {
                     Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                         MediaPoster(media, vm.repository, Modifier.size(76.dp))
                         Column(Modifier.weight(1f).padding(start = 12.dp)) {
                             Text("${index + 1}. ${if (media.kind == "photo") "Фото" else "Відео"}", style = MaterialTheme.typography.titleSmall)
-                            TextButton({ draft = draft.copy(options = draft.options.copy(coverIndex = index)) }) { Text(if (draft.options.coverIndex == index) "✓ Обкладинка" else "Зробити обкладинкою") }
+                            TextButton(onClick = { draft = draft.copy(options = draft.options.copy(coverIndex = index)) }, shapes = ButtonDefaults.shapes()) { Text(if (draft.options.coverIndex == index) "✓ Обкладинка" else "Зробити обкладинкою") }
                         }
                         IconButton({ if (index > 0) { val items = draft.media.toMutableList(); java.util.Collections.swap(items, index, index - 1); draft = draft.copy(media = items) } }, enabled = index > 0) { Icon(Icons.Outlined.KeyboardArrowUp, "Перемістити вище") }
                         IconButton({ draft = draft.copy(media = draft.media.filterNot { it.id == media.id }, options = draft.options.copy(coverIndex = 0)) }) { Icon(Icons.Outlined.Close, "Прибрати") }
@@ -74,14 +74,14 @@ import kotlinx.coroutines.delay
             item { SettingSwitch("Приховати кількість уподобань", draft.extras.hideLikeCount) { draft = draft.copy(extras = draft.extras.copy(hideLikeCount = it)) } }
             item { Text("Чернетка зберігається автоматично на цьому пристрої.", style = MaterialTheme.typography.bodySmall) }
         }
-        Button({ vm.act {
+        Button(onClick = { vm.act {
             val from = start.toDoubleOrNull() ?: error("Некоректний початок відео")
             val until = if (end.isBlank()) null else end.toDoubleOrNull() ?: error("Некоректний кінець відео")
             val poster = cover.toDoubleOrNull() ?: error("Некоректний час обкладинки")
             require(from.isFinite() && from >= 0 && poster.isFinite() && poster >= 0 && (until == null || (until.isFinite() && until > from))) { "Перевір діапазон відео." }
             publish(draft.copy(isDraft = false, extras = draft.extras.copy(trimStart = from, trimEnd = until, coverTime = poster)))
             published = true; back()
-        } }, Modifier.fillMaxWidth().padding(16.dp), enabled = draft.media.isNotEmpty() && !importing) { Text(if (existing?.isDraft == false) "Зберегти зміни" else "Опублікувати") }
+        } }, modifier = Modifier.fillMaxWidth().padding(16.dp), enabled = draft.media.isNotEmpty() && !importing, shapes = ButtonDefaults.shapes()) { Text(if (existing?.isDraft == false) "Зберегти зміни" else "Опублікувати") }
     }
 }
 
@@ -106,12 +106,12 @@ import kotlinx.coroutines.delay
                 item {
                     var intro by remember { mutableStateOf(state.studio.appearance.introduction) }
                     OutlinedTextField(intro, { intro = it }, Modifier.fillMaxWidth(), label = { Text("Закріплене знайомство") })
-                    TextButton({ vm.act { changeStudio { it.copy(appearance = it.appearance.copy(introduction = intro)) } } }) { Text("Зберегти знайомство") }
+                    TextButton(onClick = { vm.act { changeStudio { it.copy(appearance = it.appearance.copy(introduction = intro)) } } }, shapes = ButtonDefaults.shapes()) { Text("Зберегти знайомство") }
                 }
                 item {
                     var links by remember { mutableStateOf(state.studio.appearance.links.joinToString(" ")) }
                     OutlinedTextField(links, { links = it }, Modifier.fillMaxWidth(), label = { Text("HTTPS-посилання через пробіл") })
-                    TextButton({ vm.act { val urls = links.split(Regex("\\s+")).filter { it.startsWith("https://") }; changeStudio { it.copy(appearance = it.appearance.copy(links = urls)) } } }) { Text("Зберегти посилання") }
+                    TextButton(onClick = { vm.act { val urls = links.split(Regex("\\s+")).filter { it.startsWith("https://") }; changeStudio { it.copy(appearance = it.appearance.copy(links = urls)) } } }, shapes = ButtonDefaults.shapes()) { Text("Зберегти посилання") }
                 }
                 item { Text("Закріпити до трьох публікацій", style = MaterialTheme.typography.titleMedium) }
                 itemsIndexed(state.posts.filter { it.authorID == state.activeID && !it.isDraft }, key = { _, it -> it.id }) { _, item -> FilterChip(selected = item.id in state.studio.appearance.pinnedPosts, onClick = { vm.act { changeStudio { val pins = it.appearance.pinnedPosts; it.copy(appearance = it.appearance.copy(pinnedPosts = if (item.id in pins) pins - item.id else (pins + item.id).take(3))) } } }, label = { Text(item.caption.ifBlank { "Кадр" }.take(50)) }) }
@@ -120,15 +120,15 @@ import kotlinx.coroutines.delay
                 if (drafts.isEmpty()) item { EmptyMessage("Ідеї ще попереду", "Почни створювати кадр — він автоматично зʼявиться тут.") }
                 itemsIndexed(drafts, key = { _, it -> it.id }) { _, draft -> ListItem(headlineContent = { Text(draft.caption.ifBlank { "Чернетка" }) }, supportingContent = { Text("${draft.media.size} медіафайлів") }, modifier = Modifier.clickable { open("publish:${draft.id}") }) }
             } else if (page == "history") {
-                item { TextButton({ vm.act { changeStudio { it.copy(watches = emptyMap()) } } }) { Text("Очистити історію") } }
+                item { TextButton(onClick = { vm.act { changeStudio { it.copy(watches = emptyMap()) } } }, shapes = ButtonDefaults.shapes()) { Text("Очистити історію") } }
                 itemsIndexed(state.studio.watches.values.sortedByDescending { it.updatedAt }) { _, watch -> (state.posts + AppState.samples).find { it.id == watch.postID }?.let { item -> ListItem(headlineContent = { Text(item.caption) }, supportingContent = { Text("${watch.seconds.toInt()} с переглянуто") }, modifier = Modifier.clickable { post(item) }) } }
             } else if (page == "collections") {
-                item { Button({ value = ""; createCollection = true }) { Icon(Icons.Outlined.Add, null); Text("Створити колекцію") } }
+                item { Button(onClick = { value = ""; createCollection = true }, shapes = ButtonDefaults.shapes()) { Icon(Icons.Outlined.Add, null); Text("Створити колекцію") } }
                 itemsIndexed(state.studio.collections, key = { _, it -> it.id }) { _, collection -> ListItem(headlineContent = { Text(collection.title) }, supportingContent = { Text("${collection.posts.size} кадрів") }, modifier = Modifier.clickable { selectedCollection = collection }) }
             }
         }
     }
-    if (createCollection) AlertDialog(onDismissRequest = { createCollection = false }, title = { Text("Нова колекція") }, text = { OutlinedTextField(value, { value = it }, label = { Text("Назва") }) }, confirmButton = { TextButton({ vm.act { changeStudio { it.copy(collections = it.collections + SavedCollection(title = value.trim())) }; createCollection = false } }, enabled = value.isNotBlank()) { Text("Створити") } }, dismissButton = { TextButton({ createCollection = false }) { Text("Скасувати") } })
+    if (createCollection) AlertDialog(onDismissRequest = { createCollection = false }, title = { Text("Нова колекція") }, text = { OutlinedTextField(value, { value = it }, label = { Text("Назва") }) }, confirmButton = { TextButton(onClick = { vm.act { changeStudio { it.copy(collections = it.collections + SavedCollection(title = value.trim())) }; createCollection = false } }, enabled = value.isNotBlank(), shapes = ButtonDefaults.shapes()) { Text("Створити") } }, dismissButton = { TextButton(onClick = { createCollection = false }, shapes = ButtonDefaults.shapes()) { Text("Скасувати") } })
     selectedCollection?.let { collection -> ModalBottomSheet(onDismissRequest = { selectedCollection = null }) {
         LazyColumn(Modifier.padding(16.dp)) {
             item { Text(collection.title, style = MaterialTheme.typography.titleLarge); Text("Оберіть збережені кадри для колекції", style = MaterialTheme.typography.bodySmall) }
@@ -136,7 +136,7 @@ import kotlinx.coroutines.delay
                 val checked = item.id in (state.studio.collections.find { it.id == collection.id }?.posts.orEmpty())
                 ListItem(headlineContent = { Text(item.caption.ifBlank { "Кадр" }) }, trailingContent = { Checkbox(checked, { vm.act { changeStudio { it.copy(collections = it.collections.map { saved -> if (saved.id == collection.id) saved.copy(posts = if (checked) saved.posts - item.id else saved.posts + item.id) else saved }) } } }) }, modifier = Modifier.clickable { post(item) })
             }
-            item { TextButton({ vm.act { changeStudio { it.copy(collections = it.collections.filterNot { it.id == collection.id }) } }; selectedCollection = null }) { Text("Видалити колекцію") } }
+            item { TextButton(onClick = { vm.act { changeStudio { it.copy(collections = it.collections.filterNot { it.id == collection.id }) } }; selectedCollection = null }, shapes = ButtonDefaults.shapes()) { Text("Видалити колекцію") } }
         }
     } }
 }

@@ -53,7 +53,7 @@ import app.kadr.android.data.*
     val comments = state.comments[post.id].orEmpty().filter { comment -> state.studio.preferences.mutedWords.none { it.isNotBlank() && comment.text.contains(it, true) } }.sortedWith(compareByDescending<Comment> { it.pinned }.thenByDescending { if (popular) it.likes.size.toDouble() else it.createdAt })
     ModalBottomSheet(onDismissRequest = close) {
         Column(Modifier.fillMaxWidth().imePadding().navigationBarsPadding()) {
-            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) { Text("Коментарі · ${comments.size}", style = MaterialTheme.typography.titleLarge); Spacer(Modifier.weight(1f)); TextButton({ popular = !popular }) { Text(if (popular) "Популярні" else "Нові") } }
+            Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) { Text("Коментарі · ${comments.size}", style = MaterialTheme.typography.titleLarge); Spacer(Modifier.weight(1f)); TextButton(onClick = { popular = !popular }, shapes = ButtonDefaults.shapes()) { Text(if (popular) "Популярні" else "Нові") } }
             LazyColumn(Modifier.fillMaxWidth().heightIn(min = 120.dp, max = 390.dp), contentPadding = PaddingValues(16.dp)) {
                 if (comments.isEmpty()) item { EmptyMessage("Почни розмову", "Перший коментар може надихнути автора.") }
                 items(comments, key = { it.id }) { comment ->
@@ -63,12 +63,12 @@ import app.kadr.android.data.*
                         if (comment.pinned) Text("Закріплено автором", style = MaterialTheme.typography.labelSmall)
                         comment.parentID?.let { parent -> comments.find { it.id == parent }?.let { Text("↳ ${it.text.take(70)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } }
                         Text(comment.text)
-                        Row(verticalAlignment = Alignment.CenterVertically) { TextButton({ reply = comment }) { Text("Відповісти") }; Spacer(Modifier.weight(1f)); IconButton({ if (state.active == null) account() else vm.act { updateComment(post, comment) } }) { Icon(if (state.activeID in comment.likes) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder, "Лайк коментаря") }; Text("${comment.likes.size}") }
+                        Row(verticalAlignment = Alignment.CenterVertically) { TextButton(onClick = { reply = comment }, shapes = ButtonDefaults.shapes()) { Text("Відповісти") }; Spacer(Modifier.weight(1f)); IconButton({ if (state.active == null) account() else vm.act { updateComment(post, comment) } }) { Icon(if (state.activeID in comment.likes) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder, "Лайк коментаря") }; Text("${comment.likes.size}") }
                     }
                 }
             }
             reply?.let { Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) { Text("Відповідь: ${it.text.take(55)}", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall); IconButton({ reply = null }) { Icon(Icons.Outlined.Close, "Скасувати відповідь") } } }
-            if (state.active == null) Button(account, Modifier.fillMaxWidth().padding(16.dp)) { Text("Увійти, щоб коментувати") }
+            if (state.active == null) Button(onClick = account, modifier = Modifier.fillMaxWidth().padding(16.dp), shapes = ButtonDefaults.shapes()) { Text("Увійти, щоб коментувати") }
             else if (post.options.allowsComments) Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(input, { input = it }, modifier = Modifier.weight(1f), placeholder = { Text("Написати коментар…") }, shape = MaterialTheme.shapes.extraLarge, maxLines = 3)
                 IconButton({ vm.act { addComment(post, input, reply?.id); input = ""; reply = null } }, enabled = input.isNotBlank()) { Icon(Icons.AutoMirrored.Outlined.Send, "Надіслати") }
@@ -76,21 +76,21 @@ import app.kadr.android.data.*
         }
     }
     selected?.let { comment -> AlertDialog(onDismissRequest = { selected = null }, title = { Text("Коментар") }, text = { Column {
-        TextButton({ reply = comment; selected = null }) { Text("Відповісти") }
+        TextButton(onClick = { reply = comment; selected = null }, shapes = ButtonDefaults.shapes()) { Text("Відповісти") }
         if (comment.authorID == state.activeID) {
-            TextButton({ editing = comment; editText = comment.text; selected = null }) { Text("Редагувати") }
-            TextButton({ vm.act { updateComment(post, comment, delete = true) }; selected = null }) { Text("Видалити") }
+            TextButton(onClick = { editing = comment; editText = comment.text; selected = null }, shapes = ButtonDefaults.shapes()) { Text("Редагувати") }
+            TextButton(onClick = { vm.act { updateComment(post, comment, delete = true) }; selected = null }, shapes = ButtonDefaults.shapes()) { Text("Видалити") }
         }
-        if (post.authorID == state.activeID) TextButton({ vm.act { updateComment(post, comment, pin = true) }; selected = null }) { Text(if (comment.pinned) "Відкріпити" else "Закріпити") }
-    } }, confirmButton = { TextButton({ selected = null }) { Text("Закрити") } }) }
-    editing?.let { comment -> AlertDialog(onDismissRequest = { editing = null }, title = { Text("Редагувати коментар") }, text = { OutlinedTextField(editText, { editText = it }) }, confirmButton = { TextButton({ vm.act { updateComment(post, comment, text = editText); editing = null } }, enabled = editText.isNotBlank()) { Text("Зберегти") } }, dismissButton = { TextButton({ editing = null }) { Text("Скасувати") } }) }
+        if (post.authorID == state.activeID) TextButton(onClick = { vm.act { updateComment(post, comment, pin = true) }; selected = null }, shapes = ButtonDefaults.shapes()) { Text(if (comment.pinned) "Відкріпити" else "Закріпити") }
+    } }, confirmButton = { TextButton(onClick = { selected = null }, shapes = ButtonDefaults.shapes()) { Text("Закрити") } }) }
+    editing?.let { comment -> AlertDialog(onDismissRequest = { editing = null }, title = { Text("Редагувати коментар") }, text = { OutlinedTextField(editText, { editText = it }) }, confirmButton = { TextButton(onClick = { vm.act { updateComment(post, comment, text = editText); editing = null } }, enabled = editText.isNotBlank(), shapes = ButtonDefaults.shapes()) { Text("Зберегти") } }, dismissButton = { TextButton(onClick = { editing = null }, shapes = ButtonDefaults.shapes()) { Text("Скасувати") } }) }
 }
 
 @Composable fun InboxScreen(vm: KadrViewModel, state: AppState, account: () -> Unit, chat: (String) -> Unit, search: () -> Unit) {
     var query by rememberSaveable { mutableStateOf("") }
     var mode by rememberSaveable { mutableIntStateOf(0) }
     Column(Modifier.fillMaxSize().statusBarsPadding()) {
-        Row(Modifier.fillMaxWidth().padding(20.dp), verticalAlignment = Alignment.CenterVertically) { Text("Вхідні", style = MaterialTheme.typography.headlineLarge); Spacer(Modifier.weight(1f)); CircleAction(Icons.Outlined.PersonSearch, "Новий чат", search) }
+        CenterAlignedTopAppBar(title = { Text("Вхідні") }, windowInsets = WindowInsets(0, 0, 0, 0), actions = { IconButton(search) { Icon(Icons.Outlined.PersonSearch, "Новий чат") } })
         if (state.active == null) { EmptyMessage("Розмови, що залишаються з тобою", "Увійди, щоб надсилати повідомлення авторам.", "Увійти", account); return }
         Choices(listOf("Повідомлення", "Активність"), mode, { mode = it }, Modifier.padding(horizontal = 20.dp))
         OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth().padding(16.dp), label = { Text("Пошук розмов") }, singleLine = true)
@@ -142,18 +142,18 @@ import app.kadr.android.data.*
             }
         }
         reply?.let { Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) { Text("↳ ${it.text.take(70)}", Modifier.weight(1f)); IconButton({ reply = null }) { Icon(Icons.Outlined.Close, "Скасувати відповідь") } } }
-        if (state.active == null) Button(account) { Text("Увійти") } else Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (state.active == null) Button(onClick = account, shapes = ButtonDefaults.shapes()) { Text("Увійти") } else Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(input, { input = it }, Modifier.weight(1f), placeholder = { Text("Повідомлення…") }, shape = MaterialTheme.shapes.extraLarge, maxLines = 5)
             FilledIconButton({ vm.act { send(peer, input, reply?.id); input = ""; reply = null } }, enabled = input.isNotBlank()) { Icon(Icons.AutoMirrored.Outlined.Send, "Надіслати") }
         }
     }
     selected?.let { message -> AlertDialog(onDismissRequest = { selected = null }, title = { Text("Повідомлення") }, text = { Column {
-        TextButton({ reply = message; selected = null }) { Text("Відповісти") }
-        Row { listOf("❤️", "🔥", "😂", "👍").forEach { emoji -> TextButton({ vm.act { editMessage(message, emoji = emoji) }; selected = null }) { Text(emoji) } } }
+        TextButton(onClick = { reply = message; selected = null }, shapes = ButtonDefaults.shapes()) { Text("Відповісти") }
+        Row { listOf("❤️", "🔥", "😂", "👍").forEach { emoji -> TextButton(onClick = { vm.act { editMessage(message, emoji = emoji) }; selected = null }, shapes = ButtonDefaults.shapes()) { Text(emoji) } } }
         if (message.senderID == owner) {
-            TextButton({ editing = message; editText = message.text; selected = null }) { Text("Редагувати") }
-            TextButton({ vm.act { editMessage(message, delete = true) }; selected = null }) { Text("Видалити") }
+            TextButton(onClick = { editing = message; editText = message.text; selected = null }, shapes = ButtonDefaults.shapes()) { Text("Редагувати") }
+            TextButton(onClick = { vm.act { editMessage(message, delete = true) }; selected = null }, shapes = ButtonDefaults.shapes()) { Text("Видалити") }
         }
-    } }, confirmButton = { TextButton({ selected = null }) { Text("Закрити") } }) }
-    editing?.let { message -> AlertDialog(onDismissRequest = { editing = null }, title = { Text("Редагувати повідомлення") }, text = { OutlinedTextField(editText, { editText = it }) }, confirmButton = { TextButton({ vm.act { editMessage(message, text = editText); editing = null } }, enabled = editText.isNotBlank()) { Text("Зберегти") } }, dismissButton = { TextButton({ editing = null }) { Text("Скасувати") } }) }
+    } }, confirmButton = { TextButton(onClick = { selected = null }, shapes = ButtonDefaults.shapes()) { Text("Закрити") } }) }
+    editing?.let { message -> AlertDialog(onDismissRequest = { editing = null }, title = { Text("Редагувати повідомлення") }, text = { OutlinedTextField(editText, { editText = it }) }, confirmButton = { TextButton(onClick = { vm.act { editMessage(message, text = editText); editing = null } }, enabled = editText.isNotBlank(), shapes = ButtonDefaults.shapes()) { Text("Зберегти") } }, dismissButton = { TextButton(onClick = { editing = null }, shapes = ButtonDefaults.shapes()) { Text("Скасувати") } }) }
 }

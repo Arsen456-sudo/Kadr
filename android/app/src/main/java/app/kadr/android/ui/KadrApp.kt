@@ -6,6 +6,8 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -100,20 +102,18 @@ import kotlinx.coroutines.launch
                         else -> SettingsScreen(vm, state, ::goBack)
                     }
                 }
-                if (route == "main" && !(tab == 0 && immersive)) Surface(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(horizontal = 16.dp, vertical = 10.dp).fillMaxWidth(), shape = MaterialTheme.shapes.extraLarge, tonalElevation = 3.dp) {
-                    // Surface propagates its minimum width. Reset it before the native bar
-                    // measures individual destinations, otherwise every item gets full width.
-                    ShortNavigationBar(modifier = Modifier.wrapContentWidth(), windowInsets = WindowInsets(0, 0, 0, 0)) {
+                if (route == "main" && !(tab == 0 && immersive)) Surface(Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(horizontal = 16.dp, vertical = 10.dp).fillMaxWidth().testTag("bottom-navigation"), shape = CircleShape, color = MaterialTheme.colorScheme.surfaceContainer, shadowElevation = 3.dp) {
+                    NavigationBar(containerColor = Color.Transparent, tonalElevation = 0.dp, windowInsets = WindowInsets(0, 0, 0, 0)) {
                         listOf("Стрічка", "Додати", "Вхідні", "Профіль").forEachIndexed { index, title ->
                             val icon = listOf(Icons.Outlined.Home, Icons.Outlined.Add, Icons.Outlined.Inbox, Icons.Outlined.Person)[index]
-                            ShortNavigationBarItem(selected = tab == index, onClick = { if (index == 1) account { open("publish") } else tab = index }, modifier = Modifier.testTag("tab:$index"), icon = { Icon(icon, title) }, label = { Text(title) })
+                            NavigationBarItem(selected = tab == index, onClick = { if (index == 1) account { open("publish") } else tab = index }, modifier = Modifier.testTag("tab:$index"), icon = { Icon(icon, null) }, label = { Text(title, maxLines = 1, softWrap = false, style = MaterialTheme.typography.labelMedium) })
                         }
                     }
                 }
             }
             SnackbarHost(notices, Modifier.align(Alignment.BottomCenter).navigationBarsPadding().padding(bottom = 94.dp))
         }
-        if (ready && !state.welcomed && entryPrompt) AlertDialog(onDismissRequest = { entryPrompt = false; vm.act { welcome() } }, title = { Text("Твій новий кадр") }, text = { Text("Дивись без акаунта. Для публікацій, реакцій і повідомлень створи свій локальний профіль.") }, confirmButton = { TextButton(onClick = { entryPrompt = false; auth = true; vm.act { welcome() } }) { Text("Створити профіль") } }, dismissButton = { TextButton(onClick = { entryPrompt = false; vm.act { welcome() } }) { Text("Поки переглядатиму") } })
+        if (ready && !state.welcomed && entryPrompt) AlertDialog(onDismissRequest = { entryPrompt = false; vm.act { welcome() } }, title = { Text("Твій новий кадр") }, text = { Text("Дивись без акаунта. Для публікацій, реакцій і повідомлень створи свій локальний профіль.") }, confirmButton = { TextButton(onClick = { entryPrompt = false; auth = true; vm.act { welcome() } }, shapes = ButtonDefaults.shapes()) { Text("Створити профіль") } }, dismissButton = { TextButton(onClick = { entryPrompt = false; vm.act { welcome() } }, shapes = ButtonDefaults.shapes()) { Text("Поки переглядатиму") } })
         if (auth) AccountDialog(vm, state, onClose = { auth = false })
         comments?.let { post -> CommentsSheet(vm, state, post, { comments = null }, { auth = true }) }
         description?.let { post -> ModalBottomSheet(onDismissRequest = { description = null }) { Column(Modifier.padding(24.dp).navigationBarsPadding()) { Text("Повний опис", style = MaterialTheme.typography.titleLarge); Spacer(Modifier.height(16.dp)); Text(post.caption); if (post.options.tags.isNotBlank()) Text(post.options.tags, color = MaterialTheme.colorScheme.primary); if (post.options.location.isNotBlank()) Text(post.options.location); Text(post.credit, style = MaterialTheme.typography.labelSmall) } } }
@@ -131,18 +131,18 @@ import kotlinx.coroutines.launch
 
 @Composable fun CircleAction(icon: ImageVector, label: String, onClick: () -> Unit, modifier: Modifier = Modifier, selected: Boolean = false) {
     val view = LocalView.current
-    FilledTonalIconButton({ view.performHapticFeedback(android.view.HapticFeedbackConstants.CONTEXT_CLICK); onClick() }, modifier.size(48.dp), colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh)) { Icon(icon, label, Modifier.size(22.dp)) }
+    FilledTonalIconButton(onClick = { view.performHapticFeedback(android.view.HapticFeedbackConstants.CONTEXT_CLICK); onClick() }, shapes = IconButtonDefaults.shapes(), modifier = modifier.size(48.dp), colors = IconButtonDefaults.filledTonalIconButtonColors(containerColor = if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh)) { Icon(icon, label, Modifier.size(24.dp)) }
 }
 @Composable fun Choices(labels: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
-    Row(modifier, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-        labels.forEachIndexed { index, label -> ToggleButton(checked = selected == index, onCheckedChange = { onSelect(index) }, modifier = Modifier.weight(1f), shapes = when (index) { 0 -> ButtonGroupDefaults.connectedLeadingButtonShapes(); labels.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes(); else -> ButtonGroupDefaults.connectedMiddleButtonShapes() }) { Text(label, maxLines = 1, style = MaterialTheme.typography.labelMedium) } }
+    Row(modifier.selectableGroup(), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+        labels.forEachIndexed { index, label -> ToggleButton(checked = selected == index, onCheckedChange = { onSelect(index) }, modifier = Modifier.weight(1f).heightIn(min = 48.dp), contentPadding = PaddingValues(horizontal = 8.dp), shapes = when (index) { 0 -> ButtonGroupDefaults.connectedLeadingButtonShapes(); labels.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes(); else -> ButtonGroupDefaults.connectedMiddleButtonShapes() }) { Text(label, maxLines = 1, softWrap = false, style = MaterialTheme.typography.labelLarge) } }
     }
 }
 @Composable fun ScreenHeader(title: String, onBack: () -> Unit, actions: @Composable RowScope.() -> Unit = {}) {
-    TopAppBar(title = { Text(title) }, navigationIcon = { IconButton(onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Назад") } }, actions = actions)
+    CenterAlignedTopAppBar(title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) }, windowInsets = WindowInsets(0, 0, 0, 0), navigationIcon = { IconButton(onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Назад") } }, actions = actions)
 }
 @Composable fun EmptyMessage(title: String, description: String, action: String? = null, onAction: () -> Unit = {}) {
-    Column(Modifier.fillMaxWidth().padding(28.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) { Icon(Icons.Outlined.AutoAwesome, null, Modifier.size(38.dp), tint = MaterialTheme.colorScheme.primary); Text(title, style = MaterialTheme.typography.headlineSmall); Text(description, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant); if (action != null) Button(onAction) { Text(action) } }
+    Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) { Icon(Icons.Outlined.AutoAwesome, null, Modifier.size(40.dp), tint = MaterialTheme.colorScheme.primary); Text(title, style = MaterialTheme.typography.headlineSmall, textAlign = androidx.compose.ui.text.style.TextAlign.Center); Text(description, style = MaterialTheme.typography.bodyMedium, textAlign = androidx.compose.ui.text.style.TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant); if (action != null) Button(onClick = onAction, shapes = ButtonDefaults.shapes()) { Text(action) } }
 }
 
 @Composable fun FeedScreen(vm: KadrViewModel, state: AppState, active: Boolean, immersive: Boolean, onImmersive: (Boolean) -> Unit, onSearch: () -> Unit, onAccount: () -> Unit, onComments: (Post) -> Unit, onDescription: (Post) -> Unit, onProfile: (String) -> Unit, onMenu: (Post) -> Unit) {
@@ -187,6 +187,7 @@ import kotlinx.coroutines.launch
                             IconButton({ if (state.active == null) onAccount() else vm.act { toggleReaction(post, true) } }) { Icon(if (state.activeID in state.bookmarks[post.id].orEmpty()) Icons.Outlined.Bookmark else Icons.Outlined.BookmarkBorder, "Зберегти") }
                         } }
                         CircleAction(if (muted) Icons.Outlined.VolumeOff else Icons.AutoMirrored.Outlined.VolumeUp, "Звук", { muted = !muted })
+                        CircleAction(Icons.Outlined.Fullscreen, "Повноекранний режим", { onImmersive(true) })
                         CircleAction(Icons.Outlined.MoreHoriz, "Дії з кадром", { onMenu(post) })
                     }
                     Column(Modifier.align(Alignment.BottomStart).navigationBarsPadding().padding(start = 20.dp, end = 88.dp, bottom = 122.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -198,8 +199,8 @@ import kotlinx.coroutines.launch
             }
         }
         Row(Modifier.fillMaxWidth().statusBarsPadding().padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            CircleAction(if (immersive) Icons.Outlined.FullscreenExit else Icons.Outlined.Fullscreen, "Повноекранний режим", { onImmersive(!immersive) })
-            if (!immersive) { Choices(listOf("Для тебе", "Підписки", "Огляд"), section, { if (it == 1 && state.active == null) onAccount() else section = it }, Modifier.weight(1f)); CircleAction(Icons.Outlined.Search, "Пошук", onSearch) }
+            if (immersive) CircleAction(Icons.Outlined.FullscreenExit, "Вийти з повноекранного режиму", { onImmersive(false) })
+            else { Choices(listOf("Для тебе", "Підписки", "Огляд"), section, { if (it == 1 && state.active == null) onAccount() else section = it }, Modifier.weight(1f)); CircleAction(Icons.Outlined.Search, "Пошук", onSearch) }
         }
     }
 }
@@ -215,12 +216,12 @@ import kotlinx.coroutines.launch
             ListItem(headlineContent = { Text("Не цікаво") }, leadingContent = { Icon(Icons.Outlined.VisibilityOff, null) }, modifier = Modifier.clickable { vm.act { changeStudio { it.copy(preferences = it.preferences.copy(hiddenPosts = it.preferences.hiddenPosts + post.id)) } }; dismiss() })
             if (state.active != null) {
                 OutlinedTextField(note, { note = it }, label = { Text("Приватна нотатка") }, modifier = Modifier.fillMaxWidth())
-                TextButton({ vm.act { changeStudio { it.copy(notes = it.notes + (post.id to note)) } }; dismiss() }) { Text("Зберегти нотатку") }
+                TextButton(onClick = { vm.act { changeStudio { it.copy(notes = it.notes + (post.id to note)) } }; dismiss() }, shapes = ButtonDefaults.shapes()) { Text("Зберегти нотатку") }
                 if (post.authorID == state.activeID) {
-                    TextButton({ open("publish:${post.id}"); dismiss() }) { Text("Редагувати публікацію") }
-                    TextButton({ vm.act { deletePost(post) }; dismiss() }) { Text("Видалити", color = MaterialTheme.colorScheme.error) }
+                    TextButton(onClick = { open("publish:${post.id}"); dismiss() }, shapes = ButtonDefaults.shapes()) { Text("Редагувати публікацію") }
+                    TextButton(onClick = { vm.act { deletePost(post) }; dismiss() }, shapes = ButtonDefaults.shapes()) { Text("Видалити", color = MaterialTheme.colorScheme.error) }
                 }
-            } else Button(account) { Text("Увійти для інших дій") }
+            } else Button(onClick = account, shapes = ButtonDefaults.shapes()) { Text("Увійти для інших дій") }
             Spacer(Modifier.height(16.dp))
         }
     }

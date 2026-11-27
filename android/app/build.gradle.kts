@@ -5,13 +5,13 @@ plugins {
 }
 android {
     namespace = "app.kadr.android"
-    compileSdk = 37
+    compileSdk { version = release(37) { minorApiLevel = 2 } }
     defaultConfig {
         applicationId = "app.kadr.android"
         minSdk = 26
         targetSdk = 37
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = 2
+        versionName = "0.1.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
     buildFeatures { compose = true }
@@ -45,7 +45,7 @@ dependencies {
     implementation("androidx.compose.ui:ui:1.10.6")
     implementation("androidx.compose.foundation:foundation:1.10.6")
     implementation("androidx.compose.animation:animation:1.10.6")
-    implementation("androidx.compose.material3:material3:1.5.0")
+    implementation("androidx.compose.material3:material3:1.6.0-alpha01")
     implementation("androidx.compose.material:material-icons-extended:1.7.8")
     implementation("androidx.media3:media3-exoplayer:1.11.1")
     implementation("androidx.media3:media3-ui:1.11.1")
