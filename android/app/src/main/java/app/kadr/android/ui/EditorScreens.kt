@@ -51,8 +51,8 @@ import kotlinx.coroutines.delay
                             Text("${index + 1}. ${if (media.kind == "photo") "Фото" else "Відео"}", style = MaterialTheme.typography.titleSmall)
                             TextButton(onClick = { draft = draft.copy(options = draft.options.copy(coverIndex = index)) }, shapes = ButtonDefaults.shapes()) { Text(if (draft.options.coverIndex == index) "✓ Обкладинка" else "Зробити обкладинкою") }
                         }
-                        IconButton({ if (index > 0) { val items = draft.media.toMutableList(); java.util.Collections.swap(items, index, index - 1); draft = draft.copy(media = items) } }, enabled = index > 0) { Icon(Icons.Outlined.KeyboardArrowUp, "Перемістити вище") }
-                        IconButton({ draft = draft.copy(media = draft.media.filterNot { it.id == media.id }, options = draft.options.copy(coverIndex = 0)) }) { Icon(Icons.Outlined.Close, "Прибрати") }
+                        IconButton(onClick = { if (index > 0) { val items = draft.media.toMutableList(); java.util.Collections.swap(items, index, index - 1); draft = draft.copy(media = items) } }, enabled = index > 0, shapes = IconButtonDefaults.shapes()) { Icon(Icons.Outlined.KeyboardArrowUp, "Перемістити вище") }
+                        IconButton(onClick = { draft = draft.copy(media = draft.media.filterNot { it.id == media.id }, options = draft.options.copy(coverIndex = 0)) }, shapes = IconButtonDefaults.shapes()) { Icon(Icons.Outlined.Close, "Прибрати") }
                     }
                     if (media.kind == "photo") OutlinedTextField(draft.extras.photoCaptions[index.toString()].orEmpty(), { text -> draft = draft.copy(extras = draft.extras.copy(photoCaptions = draft.extras.photoCaptions + (index.toString() to text))) }, Modifier.fillMaxWidth().padding(12.dp), label = { Text("Підпис до фото") })
                 }

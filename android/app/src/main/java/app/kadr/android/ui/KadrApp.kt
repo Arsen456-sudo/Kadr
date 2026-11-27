@@ -139,7 +139,7 @@ import kotlinx.coroutines.launch
     }
 }
 @Composable fun ScreenHeader(title: String, onBack: () -> Unit, actions: @Composable RowScope.() -> Unit = {}) {
-    CenterAlignedTopAppBar(title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) }, windowInsets = WindowInsets(0, 0, 0, 0), navigationIcon = { IconButton(onBack) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Назад") } }, actions = actions)
+    CenterAlignedTopAppBar(title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) }, windowInsets = WindowInsets(0, 0, 0, 0), navigationIcon = { IconButton(onClick = onBack, shapes = IconButtonDefaults.shapes()) { Icon(Icons.AutoMirrored.Outlined.ArrowBack, "Назад") } }, actions = actions)
 }
 @Composable fun EmptyMessage(title: String, description: String, action: String? = null, onAction: () -> Unit = {}) {
     Column(Modifier.fillMaxWidth().padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) { Icon(Icons.Outlined.AutoAwesome, null, Modifier.size(40.dp), tint = MaterialTheme.colorScheme.primary); Text(title, style = MaterialTheme.typography.headlineSmall, textAlign = androidx.compose.ui.text.style.TextAlign.Center); Text(description, style = MaterialTheme.typography.bodyMedium, textAlign = androidx.compose.ui.text.style.TextAlign.Center, color = MaterialTheme.colorScheme.onSurfaceVariant); if (action != null) Button(onClick = onAction, shapes = ButtonDefaults.shapes()) { Text(action) } }
@@ -159,10 +159,10 @@ import kotlinx.coroutines.launch
                 items(posts, key = { it.id }) { post -> Column {
                     PostMediaView(post, vm.repository, active && visible == post.id, !state.studio.preferences.autoSound, false, Modifier.fillMaxWidth().heightIn(min = 240.dp, max = 560.dp).aspectRatio(if (post.photo) 1f else 0.8f))
                     Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                        IconButton({ if (state.active == null) onAccount() else vm.act { toggleReaction(post) } }) { Icon(if (state.activeID in state.likes[post.id].orEmpty()) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder, "Уподобати") }
-                        Text("${state.likes[post.id]?.size ?: 0}"); IconButton({ onComments(post) }) { Icon(Icons.Outlined.ChatBubbleOutline, "Коментарі") }
-                        IconButton({ onMenu(post) }) { Icon(Icons.Outlined.MoreHoriz, "Дії з кадром") }
-                        Spacer(Modifier.weight(1f)); IconButton({ if (state.active == null) onAccount() else vm.act { toggleReaction(post, true) } }) { Icon(Icons.Outlined.BookmarkBorder, "Зберегти") }
+                        IconButton(onClick = { if (state.active == null) onAccount() else vm.act { toggleReaction(post) } }, shapes = IconButtonDefaults.shapes()) { Icon(if (state.activeID in state.likes[post.id].orEmpty()) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder, "Уподобати") }
+                        Text("${state.likes[post.id]?.size ?: 0}"); IconButton(onClick = { onComments(post) }, shapes = IconButtonDefaults.shapes()) { Icon(Icons.Outlined.ChatBubbleOutline, "Коментарі") }
+                        IconButton(onClick = { onMenu(post) }, shapes = IconButtonDefaults.shapes()) { Icon(Icons.Outlined.MoreHoriz, "Дії з кадром") }
+                        Spacer(Modifier.weight(1f)); IconButton(onClick = { if (state.active == null) onAccount() else vm.act { toggleReaction(post, true) } }, shapes = IconButtonDefaults.shapes()) { Icon(Icons.Outlined.BookmarkBorder, "Зберегти") }
                     }
                     if (post.caption.isNotBlank()) Text(post.caption, Modifier.padding(horizontal = 20.dp).clickable { onDescription(post) }, maxLines = 3, overflow = TextOverflow.Ellipsis)
                 } }
@@ -175,16 +175,16 @@ import kotlinx.coroutines.launch
             LaunchedEffect(showPause, paused) { if (showPause) { delay(2000); showPause = false } }
             Box(Modifier.fillMaxSize()) {
                 PostMediaView(post, vm.repository, active && index == pager.currentPage, muted, paused, Modifier.fillMaxSize()) { paused = !paused; showPause = true }
-                AnimatedVisibility(showPause, Modifier.align(Alignment.Center)) { FilledTonalIconButton({ paused = !paused; showPause = true }, Modifier.size(76.dp)) { Icon(if (paused) Icons.Outlined.PlayArrow else Icons.Outlined.Pause, "Пауза / відтворення", Modifier.size(38.dp)) } }
+                AnimatedVisibility(showPause, Modifier.align(Alignment.Center)) { FilledTonalIconButton(onClick = { paused = !paused; showPause = true }, modifier = Modifier.size(76.dp), shapes = IconButtonDefaults.shapes()) { Icon(if (paused) Icons.Outlined.PlayArrow else Icons.Outlined.Pause, "Пауза / відтворення", Modifier.size(38.dp)) } }
                 if (!immersive) {
                     Column(Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 16.dp, bottom = 116.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         post.authorID?.let { id -> AuthorAvatarButton(state.profiles.find { it.id == id }, { onProfile(id) }) }
                         Surface(shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.surfaceContainerHigh) { Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            IconButton({ if (state.active == null) onAccount() else vm.act { toggleReaction(post) } }) { Icon(if (state.activeID in state.likes[post.id].orEmpty()) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder, "Уподобати", tint = if (state.activeID in state.likes[post.id].orEmpty()) MaterialTheme.colorScheme.primary else LocalContentColor.current) }
+                            IconButton(onClick = { if (state.active == null) onAccount() else vm.act { toggleReaction(post) } }, shapes = IconButtonDefaults.shapes()) { Icon(if (state.activeID in state.likes[post.id].orEmpty()) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder, "Уподобати", tint = if (state.activeID in state.likes[post.id].orEmpty()) MaterialTheme.colorScheme.primary else LocalContentColor.current) }
                             if (!post.extras.hideLikeCount) Text("${state.likes[post.id]?.size ?: 0}", style = MaterialTheme.typography.labelSmall)
-                            IconButton({ onComments(post) }) { Icon(Icons.Outlined.ChatBubbleOutline, "Коментарі") }
+                            IconButton(onClick = { onComments(post) }, shapes = IconButtonDefaults.shapes()) { Icon(Icons.Outlined.ChatBubbleOutline, "Коментарі") }
                             Text("${state.comments[post.id]?.size ?: 0}", style = MaterialTheme.typography.labelSmall)
-                            IconButton({ if (state.active == null) onAccount() else vm.act { toggleReaction(post, true) } }) { Icon(if (state.activeID in state.bookmarks[post.id].orEmpty()) Icons.Outlined.Bookmark else Icons.Outlined.BookmarkBorder, "Зберегти") }
+                            IconButton(onClick = { if (state.active == null) onAccount() else vm.act { toggleReaction(post, true) } }, shapes = IconButtonDefaults.shapes()) { Icon(if (state.activeID in state.bookmarks[post.id].orEmpty()) Icons.Outlined.Bookmark else Icons.Outlined.BookmarkBorder, "Зберегти") }
                         } }
                         CircleAction(if (muted) Icons.Outlined.VolumeOff else Icons.AutoMirrored.Outlined.VolumeUp, "Звук", { muted = !muted })
                         CircleAction(Icons.Outlined.Fullscreen, "Повноекранний режим", { onImmersive(true) })

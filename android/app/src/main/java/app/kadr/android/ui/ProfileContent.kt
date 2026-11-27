@@ -79,16 +79,16 @@ import java.io.File
             title = { Text("Профіль", maxLines = 1) },
             colors = TopAppBarDefaults.topAppBarColors(containerColor = background),
             navigationIcon = {
-                IconButton({ if (own) open("qr:${profile.id}") else onBack() }) { Icon(if (own) Icons.Outlined.QrCode else Icons.AutoMirrored.Outlined.ArrowBack, if (own) "QR-код" else "Назад") }
+                IconButton(onClick = { if (own) open("qr:${profile.id}") else onBack() }, shapes = IconButtonDefaults.shapes()) { Icon(if (own) Icons.Outlined.QrCode else Icons.AutoMirrored.Outlined.ArrowBack, if (own) "QR-код" else "Назад") }
             },
             actions = {
                 if (own) Box {
-                    IconButton({ editMenu = true }) { Icon(Icons.Outlined.Edit, "Редагувати") }
+                    IconButton(onClick = { editMenu = true }, shapes = IconButtonDefaults.shapes()) { Icon(Icons.Outlined.Edit, "Редагувати") }
                     DropdownMenu(editMenu, { editMenu = false }) {
                         DropdownMenuItem(text = { Text("Змінити фото") }, leadingIcon = { Icon(Icons.Outlined.AddPhotoAlternate, null) }, onClick = { editMenu = false; picker.launch("image/*") })
                         DropdownMenuItem(text = { Text("Імʼя та @нікнейм") }, leadingIcon = { Icon(Icons.Outlined.Person, null) }, onClick = { editMenu = false; edit = true })
                     }
-                } else IconButton({ open("qr:${profile.id}") }) { Icon(Icons.Outlined.QrCode, "QR-код") }
+                } else IconButton(onClick = { open("qr:${profile.id}") }, shapes = IconButtonDefaults.shapes()) { Icon(Icons.Outlined.QrCode, "QR-код") }
             }
         )
     }) { padding ->

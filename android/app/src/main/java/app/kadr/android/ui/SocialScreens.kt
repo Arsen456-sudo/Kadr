@@ -32,7 +32,7 @@ import app.kadr.android.data.*
         LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
             if (term.isEmpty() && state.studio.searches.isNotEmpty()) {
                 item { Text("Недавні запити", Modifier.padding(20.dp), style = MaterialTheme.typography.titleSmall) }
-                items(state.studio.searches.take(8)) { text -> ListItem(headlineContent = { Text(text) }, modifier = Modifier.clickable { query = text }, trailingContent = { IconButton({ vm.act { changeStudio { it.copy(searches = it.searches - text) } } }) { Icon(Icons.Outlined.Close, "Прибрати") } }) }
+                items(state.studio.searches.take(8)) { text -> ListItem(headlineContent = { Text(text) }, modifier = Modifier.clickable { query = text }, trailingContent = { IconButton(onClick = { vm.act { changeStudio { it.copy(searches = it.searches - text) } } }, shapes = IconButtonDefaults.shapes()) { Icon(Icons.Outlined.Close, "Прибрати") } }) }
             }
             item { Text("Користувачі", Modifier.padding(20.dp), style = MaterialTheme.typography.titleMedium) }
             items(profiles, key = { it.id }) { person -> ListItem(headlineContent = { Text(person.name) }, supportingContent = { Text("@" + person.handle) }, leadingContent = { Icon(Icons.Outlined.AccountCircle, null) }, modifier = Modifier.clickable { if (query.isNotBlank()) vm.act { changeStudio { it.copy(searches = (listOf(query) + it.searches).distinct().take(30)) } }; profile(person.id) }) }
@@ -63,15 +63,15 @@ import app.kadr.android.data.*
                         if (comment.pinned) Text("Закріплено автором", style = MaterialTheme.typography.labelSmall)
                         comment.parentID?.let { parent -> comments.find { it.id == parent }?.let { Text("↳ ${it.text.take(70)}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } }
                         Text(comment.text)
-                        Row(verticalAlignment = Alignment.CenterVertically) { TextButton(onClick = { reply = comment }, shapes = ButtonDefaults.shapes()) { Text("Відповісти") }; Spacer(Modifier.weight(1f)); IconButton({ if (state.active == null) account() else vm.act { updateComment(post, comment) } }) { Icon(if (state.activeID in comment.likes) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder, "Лайк коментаря") }; Text("${comment.likes.size}") }
+                        Row(verticalAlignment = Alignment.CenterVertically) { TextButton(onClick = { reply = comment }, shapes = ButtonDefaults.shapes()) { Text("Відповісти") }; Spacer(Modifier.weight(1f)); IconButton(onClick = { if (state.active == null) account() else vm.act { updateComment(post, comment) } }, shapes = IconButtonDefaults.shapes()) { Icon(if (state.activeID in comment.likes) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder, "Лайк коментаря") }; Text("${comment.likes.size}") }
                     }
                 }
             }
-            reply?.let { Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) { Text("Відповідь: ${it.text.take(55)}", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall); IconButton({ reply = null }) { Icon(Icons.Outlined.Close, "Скасувати відповідь") } } }
+            reply?.let { Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) { Text("Відповідь: ${it.text.take(55)}", Modifier.weight(1f), style = MaterialTheme.typography.bodySmall); IconButton(onClick = { reply = null }, shapes = IconButtonDefaults.shapes()) { Icon(Icons.Outlined.Close, "Скасувати відповідь") } } }
             if (state.active == null) Button(onClick = account, modifier = Modifier.fillMaxWidth().padding(16.dp), shapes = ButtonDefaults.shapes()) { Text("Увійти, щоб коментувати") }
             else if (post.options.allowsComments) Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
                 OutlinedTextField(input, { input = it }, modifier = Modifier.weight(1f), placeholder = { Text("Написати коментар…") }, shape = MaterialTheme.shapes.extraLarge, maxLines = 3)
-                IconButton({ vm.act { addComment(post, input, reply?.id); input = ""; reply = null } }, enabled = input.isNotBlank()) { Icon(Icons.AutoMirrored.Outlined.Send, "Надіслати") }
+                IconButton(onClick = { vm.act { addComment(post, input, reply?.id); input = ""; reply = null } }, enabled = input.isNotBlank(), shapes = IconButtonDefaults.shapes()) { Icon(Icons.AutoMirrored.Outlined.Send, "Надіслати") }
             } else Text("Автор вимкнув коментарі", Modifier.padding(24.dp))
         }
     }
@@ -90,7 +90,7 @@ import app.kadr.android.data.*
     var query by rememberSaveable { mutableStateOf("") }
     var mode by rememberSaveable { mutableIntStateOf(0) }
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
-        CenterAlignedTopAppBar(title = { Text("Вхідні") }, windowInsets = WindowInsets(0, 0, 0, 0), actions = { IconButton(search) { Icon(Icons.Outlined.PersonSearch, "Новий чат") } })
+        CenterAlignedTopAppBar(title = { Text("Вхідні") }, windowInsets = WindowInsets(0, 0, 0, 0), actions = { IconButton(onClick = search, shapes = IconButtonDefaults.shapes()) { Icon(Icons.Outlined.PersonSearch, "Новий чат") } })
         if (state.active == null) { EmptyMessage("Розмови, що залишаються з тобою", "Увійди, щоб надсилати повідомлення авторам.", "Увійти", account); return }
         Choices(listOf("Повідомлення", "Активність"), mode, { mode = it }, Modifier.padding(horizontal = 20.dp))
         OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth().padding(16.dp), label = { Text("Пошук розмов") }, singleLine = true)
@@ -129,7 +129,7 @@ import app.kadr.android.data.*
     LaunchedEffect(messages.size) { if (messages.isNotEmpty()) list.animateScrollToItem(messages.lastIndex) }
     DisposableEffect(peer, owner) { onDispose { if (vm.repository.state.value.activeID == owner && vm.repository.ready.value) vm.repository.changeStudio { it.copy(chatDrafts = it.chatDrafts + (peer to input)) } } }
     Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().imePadding()) {
-        ScreenHeader(profile?.name ?: "Повідомлення", back) { IconButton({ vm.act { changeStudio { it.copy(pinnedChats = if (peer in it.pinnedChats) it.pinnedChats - peer else it.pinnedChats + peer) } } }) { Icon(Icons.Outlined.PushPin, "Закріпити розмову") } }
+        ScreenHeader(profile?.name ?: "Повідомлення", back) { IconButton(onClick = { vm.act { changeStudio { it.copy(pinnedChats = if (peer in it.pinnedChats) it.pinnedChats - peer else it.pinnedChats + peer) } } }, shapes = IconButtonDefaults.shapes()) { Icon(Icons.Outlined.PushPin, "Закріпити розмову") } }
         OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth().padding(horizontal = 16.dp), placeholder = { Text("Знайти повідомлення") }, singleLine = true)
         LazyColumn(Modifier.weight(1f).fillMaxWidth(), state = list, contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             items(messages, key = Message::id) { message ->
@@ -141,7 +141,7 @@ import app.kadr.android.data.*
                 }
             }
         }
-        reply?.let { Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) { Text("↳ ${it.text.take(70)}", Modifier.weight(1f)); IconButton({ reply = null }) { Icon(Icons.Outlined.Close, "Скасувати відповідь") } } }
+        reply?.let { Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) { Text("↳ ${it.text.take(70)}", Modifier.weight(1f)); IconButton(onClick = { reply = null }, shapes = IconButtonDefaults.shapes()) { Icon(Icons.Outlined.Close, "Скасувати відповідь") } } }
         if (state.active == null) Button(onClick = account, shapes = ButtonDefaults.shapes()) { Text("Увійти") } else Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(input, { input = it }, Modifier.weight(1f), placeholder = { Text("Повідомлення…") }, shape = MaterialTheme.shapes.extraLarge, maxLines = 5)
             FilledIconButton({ vm.act { send(peer, input, reply?.id); input = ""; reply = null } }, enabled = input.isNotBlank()) { Icon(Icons.AutoMirrored.Outlined.Send, "Надіслати") }

@@ -1,6 +1,6 @@
 # Кадр для Android
 
-Нативний Android-клієнт на Kotlin, Jetpack Compose, офіційному Material 3 Expressive 1.5.0 та Media3. Мінімальна версія — Android 8.0 / API 26. Скляні поверхні UIKit не імітуються: плаваючі елементи, форми, кольори, кнопки й фізика руху реалізовані компонентами Material.
+Нативний Android-клієнт на Kotlin, Jetpack Compose, офіційному Material 3 Expressive 1.6.0-alpha01 та Media3. Мінімальна версія — Android 8.0 / API 26. Скляні поверхні UIKit не імітуються: плаваючі елементи, форми, кольори, кнопки й фізика руху реалізовані компонентами Material.
 
 ## Запуск
 
