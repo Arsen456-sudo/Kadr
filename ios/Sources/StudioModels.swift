@@ -3,6 +3,7 @@ import Foundation
 struct CreatorAppearance: Codable, Equatable {
     var theme = "minimal"
     var accent = "peach"
+    var accentMode: String? = nil
     var introduction = ""
     var links: [String] = []
     var pinnedPosts: [String] = []

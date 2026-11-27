@@ -47,6 +47,14 @@ jobs:
         run: |
           set -euo pipefail
           app=ios/build/device/Build/Products/Release-iphoneos/Kadr.app
+          python3 - "$app" <<'PY'
+          import json, pathlib, plistlib, sys
+          app = pathlib.Path(sys.argv[1])
+          version = plistlib.loads((app / 'Info.plist').read_bytes())['CFBundleShortVersionString']
+          notes = json.loads((app / 'Updates.json').read_text())
+          assert notes and notes[0]['version'] == version, 'Release notes must match the installed app version'
+          assert notes[0]['summary'] and notes[0]['sections'], 'Release notes must include summary and full details'
+          PY
           test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleSupportedPlatforms:0' "$app/Info.plist")" = iPhoneOS
           lipo "$app/Kadr" -verify_arch arm64
           test -s "$app/bunny.mp4"

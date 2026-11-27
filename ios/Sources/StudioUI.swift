@@ -15,6 +15,10 @@ struct StudioRow {
 }
 
 class ActionListController: UITableViewController {
+    override func viewDidLoad() {
+        super.viewDidLoad(); tableView.topEdgeEffect.style = .soft; tableView.bottomEdgeEffect.style = .soft
+        setContentScrollView(tableView, for: .all)
+    }
     var rows: [StudioRow] = []
     var reloadRows: (() -> [StudioRow])?
     init(_ title: String) { super.init(style: .insetGrouped); self.title = title }
@@ -96,7 +100,7 @@ final class StudioController: ActionListController {
         reloadRows = { [weak self] in self?.homeRows() ?? [] }
     }
     private func homeRows() -> [StudioRow] {
-        [StudioRow(title: "Оформлення профілю", icon: "paintpalette", action: { [weak self] in self?.appearance() }),
+        [StudioRow(title: "Оновлення", detail: AppUpdates.current.version, icon: "sparkles", action: { [weak self] in self?.push(UpdatesController()) }), StudioRow(title: "Оформлення профілю", icon: "paintpalette", action: { [weak self] in self?.appearance() }),
          StudioRow(title: "Чернетки", detail: "\(store.drafts.count)", icon: "square.and.pencil", action: { [weak self] in self?.drafts() }),
          StudioRow(title: "Колекції та збережене", icon: "bookmark", action: { [weak self] in self?.collections() }),
          StudioRow(title: "Історія переглядів", icon: "clock", action: { [weak self] in self?.history(false) }),
@@ -131,9 +135,9 @@ final class StudioController: ActionListController {
             guard let self, let page else { return [] }
             let appearance = self.store.studio.appearance
             return [StudioRow(title: "Стиль", detail: StudioLabels.title(appearance.theme), icon: "rectangle.3.group", action: {
-                page.options("Стиль профілю", values: ["minimal", "cinema", "vivid", "atmosphere"].map(StudioLabels.title)) { value in self.store.changeStudio { $0.appearance.theme = StudioLabels.key(value, among: ["minimal", "cinema", "vivid", "atmosphere"]) }; page.reload() }
+                page.push(ProfileStyleController(store: self.store))
             }), StudioRow(title: "Акцент", detail: StudioLabels.title(appearance.accent), icon: "paintpalette", action: {
-                page.options("Акцент", values: ["peach", "mint", "violet", "blue", "rose"].map(StudioLabels.title)) { value in self.store.changeStudio { $0.appearance.accent = StudioLabels.key(value, among: ["peach", "mint", "violet", "blue", "rose"]) }; page.reload() }
+                page.push(AccentSettingsController(store: self.store))
             }), StudioRow(title: "Знайомство з автором", detail: appearance.introduction, icon: "person.text.rectangle", action: {
                 page.prompt("Текст знайомства", value: appearance.introduction) { value in self.store.changeStudio { $0.appearance.introduction = value }; page.reload() }
             }), StudioRow(title: "Посилання", detail: "\(appearance.links.count)", icon: "link", action: {

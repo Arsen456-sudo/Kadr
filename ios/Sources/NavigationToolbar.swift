@@ -34,6 +34,7 @@ final class KadrToolbarState: ObservableObject {
     @Published var compactTitle: String?
     @Published var profileDocked = false
     @Published var profileSection = ProfileSection.posts
+    @Published var accentRevision = 0
     var onSection: ((FeedSection) -> Void)?
     var onOverview: (() -> Void)?
     var onStudio: (() -> Void)?
@@ -64,7 +65,7 @@ struct KadrNavigationShell: View {
         .statusBarHidden(state.immersive)
         .symbolRenderingMode(.monochrome)
         .buttonStyle(.automatic)
-        .tint(Color(uiColor: .label))
+        .tint(Color(uiColor: .kadrPeach))
     }
 
     private var navigationTitle: String {

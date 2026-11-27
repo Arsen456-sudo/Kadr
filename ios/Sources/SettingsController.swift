@@ -16,7 +16,7 @@ final class SettingsController: ActionListController, UISearchResultsUpdating, U
     }
     private func settingsRows() -> [StudioRow] {
         let preferences = store.studio.preferences
-        let rows = [StudioRow(title: "Тактильні відгуки", detail: preferences.haptics ? "Увімкнено" : "Вимкнено", icon: "hand.tap", action: { [weak self] in
+        let rows = [StudioRow(title: "Акцент застосунку", detail: "Колір активних кнопок та іконок", icon: "paintpalette", action: { [weak self] in guard let self else { return }; self.push(AccentSettingsController(store: self.store)) }), StudioRow(title: "Оновлення", detail: AppUpdates.current.version, icon: "sparkles", action: { [weak self] in self?.push(UpdatesController()) }), StudioRow(title: "Тактильні відгуки", detail: preferences.haptics ? "Увімкнено" : "Вимкнено", icon: "hand.tap", action: { [weak self] in
             self?.store.changeStudio { $0.preferences.haptics.toggle() }; self?.reload()
         }), StudioRow(title: "Автоматичний звук", detail: preferences.autoSound ? "Увімкнено" : "Вимкнено", icon: "speaker.wave.2", action: { [weak self] in
             self?.store.changeStudio { $0.preferences.autoSound.toggle() }; self?.reload()
@@ -92,6 +92,7 @@ extension LocalStore {
             var files = Set(snapshot.clips.flatMap { ($0.media ?? []).map(\.file) })
             snapshot.profiles.compactMap(\.bannerFile).forEach { files.insert($0) }
             snapshot.profiles.compactMap(\.portraitFile).forEach { files.insert($0) }
+            snapshot.profiles.compactMap(\.avatarVideoFile).forEach { files.insert($0) }
             snapshot.clips.compactMap { $0.extras?.coverFile }.forEach { files.insert($0) }
             snapshot.messages?.compactMap(\.attachmentFile).forEach { files.insert($0) }
             guard files.allSatisfy({ !$0.isEmpty && URL(fileURLWithPath: $0).lastPathComponent == $0 && !$0.contains("..") }) else { throw CocoaError(.fileReadCorruptFile) }

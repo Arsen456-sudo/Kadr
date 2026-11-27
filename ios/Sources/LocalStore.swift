@@ -10,6 +10,7 @@ struct Profile: Codable, Identifiable {
     var portraitFile: String? = nil
     var avatarRemoteURL: URL? = nil
     var avatarRevision: UUID? = nil
+    var avatarVideoFile: String? = nil
 
     var bannerURL: URL? { bannerFile.map { LocalStore.directory.appending(path: $0) } }
 }
@@ -274,9 +275,12 @@ final class LocalStore {
         guard state.activeID == id, let index = state.profiles.firstIndex(where: { $0.id == id }) else { return false }
         var next = state
         next.profiles[index].avatar = data
+        let oldVideo = next.profiles[index].avatarVideoFile
+        next.profiles[index].avatarVideoFile = nil
         next.profiles[index].avatarRemoteURL = nil
         next.profiles[index].avatarRevision = UUID()
         guard save(next) else { return false }
+        if let oldVideo { cleanUnreferenced([oldVideo]) }
         NotificationCenter.default.post(name: .kadrProfileDidChange, object: self, userInfo: ["profileID": id])
         return true
     }
@@ -285,18 +289,42 @@ final class LocalStore {
     func setPortrait(_ photo: Data, avatar: Data, for id: UUID) -> Bool {
         guard state.activeID == id, let index = state.profiles.firstIndex(where: { $0.id == id }) else { return false }
         let old = state.profiles[index].portraitFile
+        let oldVideo = state.profiles[index].avatarVideoFile
         let file = "portrait-" + UUID().uuidString + ".jpg"
         do {
             try FileManager.default.createDirectory(at: Self.directory, withIntermediateDirectories: true)
             try photo.write(to: Self.directory.appendingPathComponent(file), options: .atomic)
             var next = state
             next.profiles[index].portraitFile = file; next.profiles[index].avatar = avatar; next.profiles[index].avatarRevision = UUID()
+            next.profiles[index].avatarVideoFile = nil
             next.profiles[index].avatarRemoteURL = nil
             guard save(next) else { try? FileManager.default.removeItem(at: Self.directory.appendingPathComponent(file)); return false }
             if let old { cleanUnreferenced([old]) }
+            if let oldVideo { cleanUnreferenced([oldVideo]) }
             NotificationCenter.default.post(name: .kadrProfileDidChange, object: self, userInfo: ["profileID": id])
             return true
         } catch { errorMessage = "Не вдалося зберегти фото профілю."; return false }
+    }
+
+    @discardableResult
+    func setAvatarVideo(_ source: URL, suffix: String, poster: Data, portrait: Bool, for id: UUID) -> Bool {
+        guard state.activeID == id, let index = state.profiles.firstIndex(where: { $0.id == id }) else { return false }
+        let file = "avatar-" + UUID().uuidString + "." + suffix
+        let target = Self.directory.appendingPathComponent(file)
+        let old = [state.profiles[index].avatarVideoFile, portrait ? state.profiles[index].portraitFile : nil].compactMap { $0 }
+        do {
+            try FileManager.default.createDirectory(at: Self.directory, withIntermediateDirectories: true)
+            try FileManager.default.moveItem(at: source, to: target)
+            var next = state
+            next.profiles[index].avatarVideoFile = file
+            next.profiles[index].avatar = poster; next.profiles[index].avatarRemoteURL = nil
+            next.profiles[index].avatarRevision = UUID()
+            if portrait { next.profiles[index].portraitFile = file }
+            guard save(next) else { try? FileManager.default.removeItem(at: target); return false }
+            cleanUnreferenced(Set(old))
+            NotificationCenter.default.post(name: .kadrProfileDidChange, object: self, userInfo: ["profileID": id])
+            return true
+        } catch { try? FileManager.default.removeItem(at: target); errorMessage = "Не вдалося зберегти відеоаватарку."; return false }
     }
 
     @discardableResult
@@ -444,6 +472,7 @@ final class LocalStore {
             let referenced = Set(self.state.clips.flatMap { ($0.media ?? []).map(\.file) })
                 .union(self.state.profiles.compactMap(\.bannerFile))
                 .union(self.state.profiles.compactMap(\.portraitFile))
+                .union(self.state.profiles.compactMap(\.avatarVideoFile))
                 .union(self.state.messages?.compactMap(\.attachmentFile) ?? [])
                 .union(self.state.clips.compactMap { $0.extras?.coverFile })
             let removable = candidates.subtracting(referenced).filter { !$0.isEmpty && URL(fileURLWithPath: $0).lastPathComponent == $0 && !$0.contains("..") }

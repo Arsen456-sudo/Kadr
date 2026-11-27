@@ -123,11 +123,14 @@ final class PhotoCropController: UIViewController, UIScrollViewDelegate {
 final class AvatarMenuController: UIViewController {
     private let data: Data?
     private let editable: Bool
+    private let videoFile: String?
+    private let video = VideoSurface(frame: .zero)
     var onChoose: (() -> Void)?
 
-    init(data: Data?, editable: Bool) {
+    init(data: Data?, editable: Bool, videoFile: String? = nil) {
         self.data = data
         self.editable = editable
+        self.videoFile = videoFile
         super.init(nibName: nil, bundle: nil)
     }
     required init?(coder: NSCoder) { fatalError("Use init(data:editable:)") }
@@ -139,9 +142,13 @@ final class AvatarMenuController: UIViewController {
         image.contentMode = .scaleAspectFit
         image.tintColor = .secondaryLabel
         image.pin(to: view, insets: .init(top: 100, leading: 16, bottom: 120, trailing: 16))
+        if let videoFile {
+            video.pin(to: view, insets: .init(top: 100, leading: 16, bottom: 120, trailing: 16))
+            video.load(LocalStore.directory.appendingPathComponent(videoFile), fitsAllMedia: true)
+        }
         navigationItem.leftBarButtonItem = UIBarButtonItem(systemItem: .close, primaryAction: UIAction { [weak self] _ in self?.dismiss(animated: true) })
         if editable {
-            let choose = textButton("Вибрати фотографію", symbol: "photo", prominent: true) { [weak self] in
+            let choose = textButton("Вибрати фото або відео", symbol: "photo", prominent: true) { [weak self] in
                 guard let self else { return }
                 let callback = self.onChoose
                 self.dismiss(animated: true) { callback?() }
@@ -154,4 +161,6 @@ final class AvatarMenuController: UIViewController {
             ])
         }
     }
+    override func viewDidAppear(_ animated: Bool) { super.viewDidAppear(animated); video.setPlaying(videoFile != nil, muted: true) }
+    override func viewWillDisappear(_ animated: Bool) { super.viewWillDisappear(animated); video.setPlaying(false) }
 }

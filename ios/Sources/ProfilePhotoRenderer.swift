@@ -7,7 +7,7 @@ enum ProfilePhotoRenderer {
     private static let queue = DispatchQueue(label: "kadr.profile-photo", qos: .userInitiated)
     private static let context = CIContext(options: [.cacheIntermediates: false])
 
-    static func render(_ image: UIImage, completion: @escaping @MainActor (UIImage?, UIColor) -> Void) {
+    static func render(_ image: UIImage, includeBlur: Bool = true, completion: @escaping @MainActor (UIImage?, UIColor) -> Void) {
         queue.async {
             var background = UIColor.secondarySystemBackground
             let result: UIImage? = autoreleasepool {
@@ -22,6 +22,7 @@ enum ProfilePhotoRenderer {
                 var pixel = [UInt8](repeating: 0, count: 4)
                 context.render(average, toBitmap: &pixel, rowBytes: 4, bounds: CGRect(x: 0, y: 0, width: 1, height: 1), format: .RGBA8, colorSpace: CGColorSpaceCreateDeviceRGB())
                 background = UIColor(red: CGFloat(pixel[0]) / 255, green: CGFloat(pixel[1]) / 255, blue: CGFloat(pixel[2]) / 255, alpha: 1)
+                guard includeBlur else { return nil }
                 let scale = max(extent.width, extent.height) / 1024
                 let output = input.clampedToExtent().applyingFilter("CIGaussianBlur", parameters: [
                     kCIInputRadiusKey: 16 * scale

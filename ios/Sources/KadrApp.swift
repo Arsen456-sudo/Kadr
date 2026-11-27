@@ -14,6 +14,8 @@ final class AppDelegate: UIResponder, UIApplicationDelegate {
 final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
     var window: UIWindow?
     private var tabs: KadrTabs?
+    private var accentCoordinator: AppAccentCoordinator?
+    private var updateCoordinator: UpdateAnnouncementCoordinator?
 
     func scene(_ scene: UIScene, willConnectTo session: UISceneSession, options: UIScene.ConnectionOptions) {
         guard let scene = scene as? UIWindowScene else { return }
@@ -25,6 +27,8 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
         window.rootViewController = UIHostingController(rootView: KadrNavigationShell(tabs: tabs, state: tabs.toolbarState))
         self.window = window
         window.makeKeyAndVisible()
+        accentCoordinator = AppAccentCoordinator(store: tabs.store, window: window)
+        updateCoordinator = UpdateAnnouncementCoordinator(window: window, store: tabs.store)
         if let url = options.urlContexts.first?.url { DispatchQueue.main.async { tabs.open(link: url) } }
     }
 
@@ -43,11 +47,11 @@ final class SceneDelegate: UIResponder, UIWindowSceneDelegate {
 }
 
 extension UIColor {
-    static let kadrPeach = UIColor(red: 1, green: 0.69, blue: 0.51, alpha: 1)
+    static let kadrPeach = UIColor { _ in AppAccent.current }
 }
 
 final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPresentationControllerDelegate {
-    private let store = LocalStore()
+    let store = LocalStore()
     private lazy var feed = FeedController(store: store)
     private lazy var profile = ProfileController(store: store, profileID: nil)
     let toolbarState = KadrToolbarState()
@@ -81,6 +85,7 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
         view.backgroundColor = .black
         delegate = self
         NotificationCenter.default.addObserver(self, selector: #selector(synchronizeIfConfigured), name: .kadrLocalDidChange, object: store)
+        NotificationCenter.default.addObserver(self, selector: #selector(accentDidChange), name: .kadrAccentDidChange, object: nil)
         tabBar.tintColor = .kadrPeach
         feed.tabBarItem = UITabBarItem(title: "Стрічка", image: AppSymbol.image( "house"),
                                        selectedImage: AppSymbol.image( "house.fill"))
@@ -357,6 +362,8 @@ final class KadrTabs: UITabBarController, UITabBarControllerDelegate, UISheetPre
             item.setRightBarButtonItems(nativeTrailing.map { [$0] } ?? [], animated: animate)
         }
     }
+
+    @objc private func accentDidChange() { toolbarState.accentRevision += 1; tabBar.tintColor = .kadrPeach }
 
     @objc private func synchronizeIfConfigured() {
         guard let engine = services.sync else { return }

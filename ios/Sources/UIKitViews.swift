@@ -269,6 +269,8 @@ class FormController: UIViewController {
         super.viewDidLoad()
         view.backgroundColor = .systemBackground
         let scroll = UIScrollView()
+        scroll.topEdgeEffect.style = .soft; scroll.bottomEdgeEffect.style = .soft
+        setContentScrollView(scroll, for: .all)
         scroll.keyboardDismissMode = .interactive
         scroll.translatesAutoresizingMaskIntoConstraints = false
         view.addSubview(scroll)

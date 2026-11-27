@@ -8,6 +8,11 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
     private let store: LocalStore
     private let profileID: UUID?
     private let preview: Bool
+    var isPreview: Bool { preview }
+    private let appearanceOverride: CreatorAppearance?
+    private func appearance(for profile: Profile?) -> CreatorAppearance {
+        appearanceOverride ?? profile.flatMap { store.state.studio?.accounts[$0.id.uuidString]?.appearance } ?? CreatorAppearance()
+    }
     private let repository: any SocialRepository
     private var followTask: Task<Void, Never>?
     private var selectedSection = ProfileSection.posts
@@ -101,8 +106,9 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
     private var displayedAppearance: CreatorAppearance?
     private var displayedTheme: String?
 
-    init(store: LocalStore, profileID: UUID?, repository: (any SocialRepository)? = nil, preview: Bool = false) {
+    init(store: LocalStore, profileID: UUID?, repository: (any SocialRepository)? = nil, preview: Bool = false, appearanceOverride: CreatorAppearance? = nil) {
         self.preview = preview
+        self.appearanceOverride = appearanceOverride
         self.repository = repository ?? store.services.social
         self.store = store
         self.profileID = profileID
@@ -146,7 +152,7 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
 
     @objc private func localAppearanceChanged() {
         let profile = profileID.flatMap { store.profile($0) } ?? (profileID == nil ? store.active : nil)
-        let appearance = profile.flatMap { store.state.studio?.accounts[$0.id.uuidString]?.appearance } ?? CreatorAppearance()
+        let appearance = appearance(for: profile)
         guard appearance != displayedAppearance else { return }
         refresh()
         onChange?()
@@ -165,7 +171,7 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
     private func heroHeight(for profile: Profile) -> CGFloat {
         if let height = cachedHeroHeight { return height }
         let height = ProfileHero.height(for: profile, width: view.bounds.width, top: view.safeAreaInsets.top,
-                                        showsFollow: followState != nil, appearance: store.state.studio?.accounts[profile.id.uuidString]?.appearance ?? CreatorAppearance(), own: profile.id == store.active?.id && !preview)
+                                        showsFollow: followState != nil, appearance: appearance(for: profile), own: profile.id == store.active?.id && (!preview || appearanceOverride != nil))
         cachedHeroHeight = height
         return height
     }
@@ -182,7 +188,6 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
     }
 
     private func setAmbientColor(_ color: UIColor) {
-        guard atmosphere else { return }
         paletteColor = color
         view.backgroundColor = color
         CATransaction.begin(); CATransaction.setDisableActions(true)
@@ -193,7 +198,7 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
 
     private func updateBackdropPosition() {
         guard let profile = visibleProfile else { return }
-        let height = ProfileHero.coverSize(for: profile, width: view.bounds.width, top: view.safeAreaInsets.top, theme: store.state.studio?.accounts[profile.id.uuidString]?.appearance.theme ?? "minimal") + 100
+        let height = ProfileHero.coverSize(for: profile, width: view.bounds.width, top: view.safeAreaInsets.top, theme: appearance(for: profile).theme) + 100
         let offset = grid.contentOffset.y
         let frame = CGRect(x: 0, y: 0, width: view.bounds.width, height: max(0, height - offset))
         if backdrop.frame != frame { backdrop.frame = frame }
@@ -308,7 +313,7 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
         guard isViewLoaded else { return }
         configureBannerMenu()
         let profile = profileID.flatMap { store.profile($0) } ?? (profileID == nil ? store.active : nil)
-        let appearance = profile.flatMap { store.state.studio?.accounts[$0.id.uuidString]?.appearance } ?? CreatorAppearance()
+        let appearance = appearance(for: profile)
         let changedAppearance = appearance != displayedAppearance
         displayedAppearance = appearance
         let changedTheme = displayedTheme != appearance.theme
@@ -456,7 +461,7 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
         guard let profile = visibleProfile else { return view }
         let follow = followState
         view.setCover(for: profile, width: collectionView.bounds.width, top: self.view.safeAreaInsets.top)
-        view.show(profile, store: store, own: profile.id == store.active?.id && !preview, following: follow, onPeople: { [weak self] followers in
+        view.show(profile, store: store, appearanceOverride: appearanceOverride, own: profile.id == store.active?.id && (!preview || appearanceOverride != nil), following: follow, onPeople: { [weak self] followers in
             guard let self else { return }; self.showChild(PeopleListController(store: self.store, profile: profile, followers: followers))
         }, onStudio: { [weak self] in
             guard let self else { return }; self.showChild(StudioController(store: self.store))
@@ -627,7 +632,7 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
     private func openPortraitPicker(for id: UUID) {
         pickerOwner = id; pickerDestination = .portrait
         var configuration = PHPickerConfiguration()
-        configuration.filter = .images; configuration.preferredAssetRepresentationMode = .current
+        configuration.filter = .any(of: [.images, .videos]); configuration.preferredAssetRepresentationMode = .current
         let picker = PHPickerViewController(configuration: configuration)
         picker.delegate = self; present(picker, animated: true)
     }
@@ -636,13 +641,13 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
         guard let profile = visibleProfile else { return }
         if store.state.studio?.accounts[profile.id.uuidString]?.appearance.theme == "atmosphere",
            !preview, store.active?.id == profile.id { openPortraitPicker(for: profile.id); return }
-        let menu = AvatarMenuController(data: profile.avatar, editable: !preview && store.active?.id == profile.id)
+        let menu = AvatarMenuController(data: profile.avatar, editable: !preview && store.active?.id == profile.id, videoFile: profile.avatarVideoFile)
         menu.onChoose = { [weak self] in
             guard let self, self.store.active?.id == profile.id else { return }
             self.pickerOwner = profile.id
             self.pickerDestination = .avatar
             var configuration = PHPickerConfiguration()
-            configuration.filter = .images
+            configuration.filter = .any(of: [.images, .videos])
             configuration.preferredAssetRepresentationMode = .current
             let picker = PHPickerViewController(configuration: configuration)
             picker.delegate = self
@@ -664,7 +669,7 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
     }
 
     private func importMedia(_ provider: NSItemProvider, owner id: UUID, destination: PhotoDestination) {
-        if destination == .banner, let format = provider.registeredTypeIdentifiers.first(where: { UTType($0)?.conforms(to: .movie) == true }) {
+        if let format = provider.registeredTypeIdentifiers.first(where: { UTType($0)?.conforms(to: .movie) == true }) {
             provider.loadFileRepresentation(forTypeIdentifier: format) { [weak self] url, _ in
                 guard let url else {
                     DispatchQueue.main.async { self?.showMessage("Не вдалося відкрити відео для банера.") }
@@ -687,7 +692,14 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
                         self?.showMessage("Це відео не можна відтворити.")
                         return
                     }
-                    self?.saveBanner(temporary, suffix: suffix, owner: id)
+                    if destination == .banner { self?.saveBanner(temporary, suffix: suffix, owner: id) }
+                    else {
+                        guard let self, self.store.active?.id == id,
+                              let poster = await VideoPoster.image(for: temporary, at: 0),
+                              let data = UIImage(cgImage: poster).jpegData(compressionQuality: 0.95) else { self?.showMessage("Не вдалося створити превʼю відео."); return }
+                        if self.store.setAvatarVideo(temporary, suffix: suffix, poster: data, portrait: destination == .portrait, for: id) { self.refresh(); self.onChange?() }
+                        else { self.showStorageErrorIfNeeded() }
+                    }
                 }
             }
         } else {
@@ -758,7 +770,7 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
     }
 }
 
-private final class ProfileHero: UICollectionReusableView {
+final class ProfileHero: UICollectionReusableView {
     private let content = UIStackView()
     private var cover: NSLayoutConstraint?
     private var appearance = CreatorAppearance()
@@ -772,7 +784,12 @@ private final class ProfileHero: UICollectionReusableView {
     required init?(coder: NSCoder) { fatalError("Use init(frame:)") }
     static func coverSize(for profile: Profile, width: CGFloat, top: CGFloat, theme: String = "minimal") -> CGFloat {
         if theme == "atmosphere" { return AtmosphereProfile.photoHeight(profile, width: width, top: top) }
-        return profile.bannerURL == nil ? top + 90 : max(top + 140, min(270, width * 0.62))
+        if profile.bannerURL == nil { return theme == "cinema" ? top + 150 : top + 90 }
+        switch theme {
+        case "cinema": return max(top + 220, min(420, width * 0.95))
+        case "vivid": return max(top + 120, min(230, width * 0.52))
+        default: return max(top + 140, min(270, width * 0.62))
+        }
     }
     static func bannerSize(width: CGFloat, top: CGFloat) -> CGFloat { max(top + 140, min(270, width * 0.62)) }
     func setCover(for profile: Profile, width: CGFloat, top: CGFloat) {
@@ -784,9 +801,9 @@ private final class ProfileHero: UICollectionReusableView {
                                 counts: (0,0,0), onAvatar: {}, onPeople: { _ in }, onStudio: {}, onMessage: {}, onFollow: {}, onShare: {})
         return ceil(stack.systemLayoutSizeFitting(CGSize(width: width, height: 0), withHorizontalFittingPriority: .required, verticalFittingPriority: .fittingSizeLevel).height)
     }
-    func show(_ profile: Profile, store: LocalStore, own: Bool, following: Bool?, onPeople: @escaping (Bool) -> Void, onStudio: @escaping () -> Void,
+    func show(_ profile: Profile, store: LocalStore, appearanceOverride: CreatorAppearance? = nil, own: Bool, following: Bool?, onPeople: @escaping (Bool) -> Void, onStudio: @escaping () -> Void,
               onAvatar: @escaping () -> Void, onMessage: @escaping () -> Void, onFollow: @escaping () -> Void) {
-        appearance = store.state.studio?.accounts[profile.id.uuidString]?.appearance ?? CreatorAppearance()
+        appearance = appearanceOverride ?? store.state.studio?.accounts[profile.id.uuidString]?.appearance ?? CreatorAppearance()
         content.arrangedSubviews.forEach { $0.removeFromSuperview() }
         let counts = (store.allClips.filter { $0.authorID == profile.id }.count, store.people(followersOf: profile.id).count, store.people(followedBy: profile.id).count)
         let stack = Self.makeContent(profile, width: width, top: top, appearance: appearance, own: own, following: following, counts: counts,
@@ -805,51 +822,9 @@ private final class ProfileHero: UICollectionReusableView {
                 following: following, counts: counts, onPhoto: onAvatar, onPeople: onPeople,
                 onStudio: onStudio, onMessage: onMessage, onFollow: onFollow, onShare: onShare)
         }
-        let stack = UIStackView(); stack.axis = .vertical; stack.spacing = 12
-        let spacer = UIView(); spacer.heightAnchor.constraint(equalToConstant: max(0, coverSize(for: profile, width: width, top: top) - 56)).isActive = true
-        stack.addArrangedSubview(spacer)
-        let identity = UIStackView(); identity.axis = .vertical; identity.alignment = .center; identity.spacing = 8
-        let avatar = avatarView(profile.avatar); avatar.layer.cornerRadius = 56; avatar.clipsToBounds = true
-        avatar.widthAnchor.constraint(equalToConstant: 112).isActive = true; avatar.heightAnchor.constraint(equalToConstant: 112).isActive = true
-        let avatarButton = UIButton(type: .custom); avatar.pin(to: avatarButton)
-        avatarButton.accessibilityLabel = "Фото @" + profile.handle; avatarButton.addAction(UIAction { _ in onAvatar() }, for: .primaryActionTriggered)
-        identity.addArrangedSubview(avatarButton)
-        let name = makeLabel(appearance.theme == "cinema" ? .largeTitle : .title1, text: profile.name)
-        name.font = name.font.withTraits(.traitBold); name.textAlignment = .center
-        let handle = makeLabel(.headline, text: "@" + profile.handle, color: accent(appearance.accent)); handle.textAlignment = .center
-        identity.addArrangedSubview(name); identity.addArrangedSubview(handle)
-        if !profile.bio.isEmpty { let bio = makeLabel(.body, text: profile.bio, color: .secondaryLabel); bio.textAlignment = .center; identity.addArrangedSubview(bio) }
-        let inset = UIView(); identity.pin(to: inset, insets: .init(top: 0, leading: 20, bottom: 0, trailing: 20)); stack.addArrangedSubview(inset)
-        let stats = UIStackView(); stats.distribution = .fillEqually; stats.spacing = 8
-        for (index, text) in ["Публікації", "Підписники", "Підписки"].enumerated() {
-            var style = appearance.theme == "vivid" ? UIButton.Configuration.prominentGlass() : .glass()
-            style.title = String([counts.0,counts.1,counts.2][index]); style.subtitle = text; style.baseForegroundColor = .label; style.baseBackgroundColor = accent(appearance.accent)
-            let button = UIButton(configuration: style); button.heightAnchor.constraint(greaterThanOrEqualToConstant: 56).isActive = true
-            button.addAction(UIAction { [weak button] _ in
-                if index > 0 { onPeople(index == 1) }
-                else { (button?.nearestController as? ProfileController)?.scrollToPublications() }
-            }, for: .primaryActionTriggered)
-            stats.addArrangedSubview(button)
-        }
-        let statInset = UIView(); stats.pin(to: statInset, insets: .init(top: 0, leading: 16, bottom: 0, trailing: 16)); stack.addArrangedSubview(statInset)
-        if !appearance.introduction.isEmpty {
-            let card = glassIsland(style: .clear, interactive: false); let text = makeLabel(.body, text: appearance.introduction)
-            text.pin(to: card.contentView, insets: .init(top: 16, leading: 20, bottom: 16, trailing: 20)); stack.addArrangedSubview(card)
-        }
-        for link in appearance.links {
-            let button = textButton(link, symbol: "link") { if let url = URL(string: link), url.scheme == "https" { UIApplication.shared.open(url) } }
-            stack.addArrangedSubview(button)
-        }
-        let actions = UIStackView(); actions.distribution = .fillEqually; actions.spacing = 8
-        if let following {
-            actions.addArrangedSubview(textButton(following ? "Відписатися" : "Підписатися", prominent: !following, action: onFollow))
-            if following { actions.addArrangedSubview(textButton("Повідомлення", symbol: "bubble.left", action: onMessage)) }
-        }
-        if own { actions.addArrangedSubview(textButton("Студія", symbol: "slider.horizontal.3", action: onStudio)) }
-        actions.addArrangedSubview(textButton("Поділитися", symbol: "square.and.arrow.up", action: onShare))
-        let actionInset = UIView(); actions.pin(to: actionInset, insets: .init(top: 0, leading: 16, bottom: 0, trailing: 16)); stack.addArrangedSubview(actionInset)
-        let footer = UIView(); footer.heightAnchor.constraint(equalToConstant: 48).isActive = true; stack.addArrangedSubview(footer)
-        return stack
+        return LegacyProfileDesign.header(profile, width: width, top: top, appearance: appearance, own: own,
+            following: following, counts: counts, onAvatar: onAvatar, onPeople: onPeople, onStudio: onStudio,
+            onMessage: onMessage, onFollow: onFollow, onShare: onShare)
     }
     private static func accent(_ value: String) -> UIColor {
         switch value { case "mint": return .systemMint; case "violet": return .systemPurple; case "blue": return .systemBlue; case "rose": return .systemPink; default: return .kadrPeach }
@@ -930,7 +905,7 @@ private final class ProfileBackdrop: UIView {
         self.portrait = portrait
         layer.mask = portrait ? edgeMask : nil
         let url = portrait ? profile?.portraitFile.map { LocalStore.directory.appendingPathComponent($0) } : profile?.bannerURL
-        isVideo = !portrait && url.flatMap { UTType(filenameExtension: $0.pathExtension) }?.conforms(to: .movie) == true
+        isVideo = url.flatMap { UTType(filenameExtension: $0.pathExtension) }?.conforms(to: .movie) == true
         artwork.image = nil
         blurredBackdrop.image = nil; blurredBackdrop.isHidden = !portrait
         updateShade(color: portrait ? UIColor(white: 0.16, alpha: 1) : .systemBackground, portrait: portrait)
@@ -947,17 +922,28 @@ private final class ProfileBackdrop: UIView {
                 else { image = nil }
                 guard !Task.isCancelled, let self, self.artworkRevision == revision else { return }
                 self.artwork.image = image
-                if portrait, let image {
-                    ProfilePhotoRenderer.render(image) { [weak self] rendered, color in
+                if let image {
+                    ProfilePhotoRenderer.render(image, includeBlur: portrait) { [weak self] rendered, color in
                         guard let self, self.artworkRevision == revision else { return }
                         if let rendered { self.blurredBackdrop.image = rendered }
-                        self.updateShade(color: color, portrait: true)
+                        self.updateShade(color: color, portrait: portrait)
                         self.onPalette?(color)
                     }
                 }
             }
         }
         video.isHidden = !isVideo; video.load(isVideo ? url : nil)
+        if isVideo, portrait, let url {
+            artworkTask = Task { [weak self] in
+                guard let poster = await VideoPoster.image(for: url, at: 0), !Task.isCancelled,
+                      let self, self.artworkRevision == revision else { return }
+                let image = UIImage(cgImage: poster)
+                ProfilePhotoRenderer.render(image) { [weak self] rendered, color in
+                    guard let self, self.artworkRevision == revision else { return }
+                    self.blurredBackdrop.image = rendered; self.updateShade(color: color, portrait: true); self.onPalette?(color)
+                }
+            }
+        }
         if isVideo { video.seek(to: max(0, start)) }
         setNeedsLayout()
     }

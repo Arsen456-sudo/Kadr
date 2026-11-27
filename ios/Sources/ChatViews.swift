@@ -5,21 +5,31 @@ import AVFoundation
 final class InboxController: LibraryController, UISearchResultsUpdating {
     private let store: LocalStore
     private let repository: any SocialRepository
-    private var rows: [ConversationSummary] = []
+    private var rows: [ConversationSummary] = [] { didSet { conversationKey = "" } }
+    private var conversationKey = ""
+    private var conversationSnapshot: [ConversationSummary] = []
     private var query = ""
     private var activityMode = false
     private var chatFilter = 0
     private let filterButton = UIButton(configuration: .glass())
     private let header = UIView()
     private let sectionHeading = makeLabel(.title2, text: "Твої розмови")
-    private var conversations: [ConversationSummary] { rows.filter { row in
+    private var conversations: [ConversationSummary] {
+        let key = "\(store.localRevision):\(store.active?.id.uuidString ?? "guest"):\(chatFilter):\(query)"
+        if key == conversationKey { return conversationSnapshot }
+        let owner = store.active?.id
+        let mediaPeers = Set((store.state.messages ?? []).filter { ($0.senderID == owner || $0.recipientID == owner) && ($0.attachmentFile != nil || $0.postID != nil) }.map { $0.senderID == owner ? $0.recipientID : $0.senderID })
+        conversationSnapshot = rows.filter { row in
         let matchesQuery = query.isEmpty || row.profile.handle.localizedCaseInsensitiveContains(query) || row.profile.name.localizedCaseInsensitiveContains(query) || row.lastMessage.text.localizedCaseInsensitiveContains(query)
-        let matchesFilter = chatFilter == 0 || (chatFilter == 1 && store.studio.pinnedChats.contains(row.id)) || (chatFilter == 2 && store.state.messages?.contains { ($0.senderID == row.id || $0.recipientID == row.id) && ($0.senderID == store.active?.id || $0.recipientID == store.active?.id) && ($0.attachmentFile != nil || $0.postID != nil) } == true)
+        let matchesFilter = chatFilter == 0 || (chatFilter == 1 && store.studio.pinnedChats.contains(row.id)) || (chatFilter == 2 && mediaPeers.contains(row.id))
         return matchesQuery && matchesFilter
     }.sorted {
         let a = store.studio.pinnedChats.contains($0.id), b = store.studio.pinnedChats.contains($1.id)
         return a != b ? a : $0.lastMessage.createdAt > $1.lastMessage.createdAt
-    } }
+        }
+        conversationKey = key
+        return conversationSnapshot
+    }
     private var activities: [ActivityEntry] { (store.state.activity ?? []).filter { $0.recipientID == store.active?.id }.sorted { $0.createdAt > $1.createdAt } }
     var onProfile: ((UUID) -> Void)?
     var onPost: ((Clip) -> Void)?
