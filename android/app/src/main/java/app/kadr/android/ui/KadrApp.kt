@@ -106,12 +106,7 @@ import kotlinx.coroutines.launch
                     }
                 }
                 if (!route.startsWith("publish") && !route.startsWith("chat:") && !(route == "main" && tab == 0 && immersive)) {
-                    val shadeColor = when {
-                        route == "main" && tab == 3 -> ownProfileColor
-                        route.startsWith("profile:") -> ProfilePalette(state.profiles.find { it.id == route.substringAfter(':') }?.portraitFile?.let { java.io.File(vm.repository.mediaDirectory, it) }, MaterialTheme.colorScheme.background)
-                        else -> MaterialTheme.colorScheme.background
-                    }
-                    BottomIslandShade(Modifier.align(Alignment.BottomCenter), color = shadeColor)
+                    BottomIslandShade(Modifier.align(Alignment.BottomCenter))
                 }
                 if (route == "main" && !(tab == 0 && immersive)) {
                     val profileColor = if (tab == 3) ownProfileColor else null
@@ -138,11 +133,12 @@ import kotlinx.coroutines.launch
 
 @Composable fun CircleAction(icon: ImageVector, label: String, onClick: () -> Unit, modifier: Modifier = Modifier, selected: Boolean = false, visualSize: Dp = 48.dp, containerColor: Color? = null) {
     val view = LocalView.current
-    OutlinedIconButton(onClick = { view.performHapticFeedback(android.view.HapticFeedbackConstants.CONTEXT_CLICK); onClick() }, shapes = IconButtonDefaults.shapes(), modifier = modifier.size(visualSize), border = islandRim(), colors = IconButtonDefaults.outlinedIconButtonColors(containerColor = containerColor ?: if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh, contentColor = MaterialTheme.colorScheme.onSurface)) { Icon(icon, label, Modifier.size(if (visualSize < 48.dp) 20.dp else 24.dp)) }
+    val fill = containerColor ?: if (selected) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerHigh
+    OutlinedIconButton(onClick = { view.performHapticFeedback(android.view.HapticFeedbackConstants.CONTEXT_CLICK); onClick() }, shapes = IconButtonDefaults.shapes(), modifier = modifier.size(visualSize), border = islandRim(fill), colors = IconButtonDefaults.outlinedIconButtonColors(containerColor = fill, contentColor = MaterialTheme.colorScheme.onSurface)) { Icon(icon, label, Modifier.size(if (visualSize < 48.dp) 20.dp else 24.dp)) }
 }
 @Composable fun Choices(labels: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier, compact: Boolean = false) {
     Row(modifier.heightIn(min = 48.dp).selectableGroup(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-        labels.forEachIndexed { index, label -> ToggleButton(checked = selected == index, onCheckedChange = { onSelect(index) }, modifier = Modifier.weight(1f).height(if (compact) 40.dp else 48.dp), contentPadding = PaddingValues(horizontal = if (compact) 2.dp else 4.dp), shapes = when (index) { 0 -> ButtonGroupDefaults.connectedLeadingButtonShapes(); labels.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes(); else -> ButtonGroupDefaults.connectedMiddleButtonShapes() }, border = islandRim()) { Text(label, maxLines = 1, softWrap = false, style = if (compact) MaterialTheme.typography.labelMedium else MaterialTheme.typography.labelLarge) } }
+        labels.forEachIndexed { index, label -> ToggleButton(checked = selected == index, onCheckedChange = { onSelect(index) }, modifier = Modifier.weight(1f).height(if (compact) 40.dp else 48.dp), contentPadding = PaddingValues(horizontal = if (compact) 2.dp else 4.dp), shapes = when (index) { 0 -> ButtonGroupDefaults.connectedLeadingButtonShapes(); labels.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes(); else -> ButtonGroupDefaults.connectedMiddleButtonShapes() }, border = null) { Text(label, maxLines = 1, softWrap = false, style = if (compact) MaterialTheme.typography.labelMedium else MaterialTheme.typography.labelLarge) } }
     }
 }
 @Composable fun ScreenHeader(title: String, onBack: () -> Unit, actions: @Composable RowScope.() -> Unit = {}) {

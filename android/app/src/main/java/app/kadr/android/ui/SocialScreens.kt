@@ -142,7 +142,7 @@ import app.kadr.android.data.*
             }
         }
         reply?.let { Row(Modifier.padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) { Text("↳ ${it.text.take(70)}", Modifier.weight(1f)); IconButton(onClick = { reply = null }, shapes = IconButtonDefaults.shapes()) { Icon(Icons.Outlined.Close, "Скасувати відповідь") } } }
-        if (state.active == null) Button(onClick = account, shapes = ButtonDefaults.shapes(), border = islandRim()) { Text("Увійти") } else Row(Modifier.composerShade(MaterialTheme.colorScheme.background).navigationBarsPadding().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+        if (state.active == null) Button(onClick = account, shapes = ButtonDefaults.shapes(), border = islandRim()) { Text("Увійти") } else Row(Modifier.composerShade().navigationBarsPadding().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(input, { input = it }, Modifier.weight(1f), placeholder = { Text("Повідомлення…") }, shape = MaterialTheme.shapes.extraLarge, maxLines = 5)
             FilledIconButton({ vm.act { send(peer, input, reply?.id); input = ""; reply = null } }, enabled = input.isNotBlank()) { Icon(Icons.AutoMirrored.Outlined.Send, "Надіслати") }
         }

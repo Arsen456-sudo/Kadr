@@ -181,13 +181,13 @@ import java.io.File
                         }.padding(horizontal = 16.dp, vertical = 8.dp).selectableGroup().testTag("profile-categories"), horizontalArrangement = Arrangement.spacedBy(2.dp)) {
                         val icons = listOf(Icons.Outlined.Person, Icons.Outlined.GridView, Icons.Outlined.BookmarkBorder, Icons.Outlined.FavoriteBorder, Icons.Outlined.ChatBubbleOutline).take(if (own) 5 else 2)
                         icons.forEachIndexed { index, icon ->
-                            ToggleButton(checked = category == index, onCheckedChange = { category = index }, modifier = Modifier.weight(1f).heightIn(min = 44.dp).testTag("profile-category:$index"), contentPadding = PaddingValues(0.dp), shapes = when (index) { 0 -> ButtonGroupDefaults.connectedLeadingButtonShapes(); icons.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes(); else -> ButtonGroupDefaults.connectedMiddleButtonShapes() }, border = islandRim()) {
+                            ToggleButton(checked = category == index, onCheckedChange = { category = index }, modifier = Modifier.weight(1f).heightIn(min = 44.dp).testTag("profile-category:$index"), contentPadding = PaddingValues(0.dp), shapes = when (index) { 0 -> ButtonGroupDefaults.connectedLeadingButtonShapes(); icons.lastIndex -> ButtonGroupDefaults.connectedTrailingButtonShapes(); else -> ButtonGroupDefaults.connectedMiddleButtonShapes() }, border = null) {
                                 Icon(icon, listOf("Профіль", "Публікації", "Збережені", "Уподобання", "Коментарі")[index], Modifier.size(24.dp))
                             }
                         }
                     }
         }
-        TopIslandShade(color = background)
+        TopIslandShade()
         Row(Modifier.fillMaxWidth().statusBarsPadding().padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) { CircleAction(if (own) Icons.Outlined.QrCode else Icons.AutoMirrored.Outlined.ArrowBack, if (own) "QR-код" else "Назад", { if (own) open("qr:${profile.id}") else onBack() }, visualSize = 44.dp) }
             Text("Профіль", Modifier.weight(1f), textAlign = TextAlign.Center, style = MaterialTheme.typography.titleMedium, maxLines = 1)
@@ -202,7 +202,7 @@ import java.io.File
 }
 
 @Composable private fun ProfilePill(icon: ImageVector, text: String, click: () -> Unit, modifier: Modifier) {
-    FilledTonalButton(onClick = click, modifier = modifier.heightIn(min = 48.dp), contentPadding = PaddingValues(horizontal = 12.dp), shapes = ButtonDefaults.shapes(), border = islandRim()) {
+    FilledTonalButton(onClick = click, modifier = modifier.heightIn(min = 48.dp), contentPadding = PaddingValues(horizontal = 12.dp), shapes = ButtonDefaults.shapes(), border = islandRim(MaterialTheme.colorScheme.secondaryContainer)) {
         Icon(icon, null, Modifier.size(20.dp)); Spacer(Modifier.width(8.dp)); Text(text, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }

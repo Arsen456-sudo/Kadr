@@ -29,6 +29,7 @@ internal data class IslandMenuAction(val title: String, val icon: ImageVector, v
     val visible = remember { MutableTransitionState(false) }
     val transition = rememberTransition(visible, label = "expanding-action")
     val progress = transition.animateFloat(transitionSpec = { tween(460, easing = FastOutSlowInEasing) }, label = "capsule") { if (it) 1f else 0f }
+    val rimSurface = MaterialTheme.colorScheme.surfaceContainerHigh
     val density = LocalDensity.current
     val popupOffset = with(density) { IntOffset(-((48.dp - visualSize) / 2).roundToPx(), ((48.dp - visualSize) / 2).roundToPx()) }
     val popupHeight = (actions.size * 48).dp
@@ -48,14 +49,13 @@ internal data class IslandMenuAction(val title: String, val icon: ImageVector, v
                             Outline.Rounded(RoundRect(size.width - visibleWidth, 0f, size.width, visibleHeight, CornerRadius(radius)))
                     }
                 }.drawWithCache {
-                    val stroke = 1.dp.toPx()
-                    val brush = Brush.verticalGradient(listOf(Color.White.copy(alpha = .26f), Color.White.copy(alpha = .07f), Color.Black.copy(alpha = .28f), Color.White.copy(alpha = .12f)))
+                    val stroke = .9.dp.toPx()
                     onDrawWithContent {
                         drawContent()
                         val fraction = progress.value
                         val width = visualSize.toPx() + (size.width - visualSize.toPx()) * fraction
                         val height = visualSize.toPx() + (size.height - visualSize.toPx()) * fraction
-                        drawRoundRect(brush, topLeft = Offset(size.width - width + stroke / 2, stroke / 2), size = Size(width - stroke, height - stroke), cornerRadius = CornerRadius((visualSize / 2).toPx() - stroke / 2), style = Stroke(stroke))
+                        drawRoundRect(islandRimBrush(rimSurface, height), topLeft = Offset(size.width - width + stroke / 2, stroke / 2), size = Size(width - stroke, height - stroke), cornerRadius = CornerRadius((visualSize / 2).toPx() - stroke / 2), style = Stroke(stroke))
                     }
                 }, shape = RoundedCornerShape(visualSize / 2), color = MaterialTheme.colorScheme.surfaceContainerHigh, contentColor = MaterialTheme.colorScheme.onSurface) {
                     Box {
