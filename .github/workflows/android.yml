@@ -7,6 +7,11 @@ on:
   pull_request:
     paths: ['android/**', 'ios/Media/**', 'backend/**', '.github/workflows/android.yml']
   workflow_dispatch:
+    inputs:
+      run_checks:
+        description: Run tests and lint
+        type: boolean
+        default: false
 
 concurrency:
   group: android-${{ github.ref }}
@@ -43,11 +48,15 @@ jobs:
           test -n "$KADR_DEVELOPMENT_KEY"
           mkdir -p .signing
           printf '%s' "$KADR_DEVELOPMENT_KEY" | base64 --decode > .signing/debug.keystore
-      - name: Build and check Android app
+      - name: Build Android app
         run: |
           chmod +x gradlew
-          ./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug --no-daemon
+          ./gradlew :app:assembleDebug --no-daemon
+      - name: Check Android app
+        if: github.event_name != 'workflow_dispatch' || inputs.run_checks
+        run: ./gradlew :app:testDebugUnitTest :app:lintDebug --no-daemon
       - name: Check shared API
+        if: github.event_name != 'workflow_dispatch' || inputs.run_checks
         working-directory: .
         run: python3 -m unittest discover -s backend -p test_social_server.py -v
       - name: Package installable APK
