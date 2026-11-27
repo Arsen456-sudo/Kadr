@@ -62,7 +62,7 @@ struct KadrNavigationShell: View {
         }
         .overlay(alignment: .topLeading) { immersiveOverlay }
         .statusBarHidden(state.immersive)
-        .symbolRenderingMode(.hierarchical)
+        .symbolRenderingMode(.monochrome)
         .buttonStyle(.automatic)
         .tint(Color(uiColor: .label))
     }

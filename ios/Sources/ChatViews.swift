@@ -9,6 +9,9 @@ final class InboxController: LibraryController, UISearchResultsUpdating {
     private var query = ""
     private var activityMode = false
     private var chatFilter = 0
+    private let filterButton = UIButton(configuration: .glass())
+    private let header = UIView()
+    private let sectionHeading = makeLabel(.title2, text: "Твої розмови")
     private var conversations: [ConversationSummary] { rows.filter { row in
         let matchesQuery = query.isEmpty || row.profile.handle.localizedCaseInsensitiveContains(query) || row.profile.name.localizedCaseInsensitiveContains(query) || row.lastMessage.text.localizedCaseInsensitiveContains(query)
         let matchesFilter = chatFilter == 0 || (chatFilter == 1 && store.studio.pinnedChats.contains(row.id)) || (chatFilter == 2 && store.state.messages?.contains { ($0.senderID == row.id || $0.recipientID == row.id) && ($0.senderID == store.active?.id || $0.recipientID == store.active?.id) && ($0.attachmentFile != nil || $0.postID != nil) } == true)
@@ -34,7 +37,7 @@ final class InboxController: LibraryController, UISearchResultsUpdating {
     required init?(coder: NSCoder) { fatalError("Use init(store:repository:)") }
     override func showEmpty(_ empty: EmptyStateView?) {
         tableView.isHidden = false
-        tableView.backgroundView = activityMode ? nil : empty
+        tableView.backgroundView = empty
     }
     override func viewDidLoad() {
         super.viewDidLoad()
@@ -43,20 +46,67 @@ final class InboxController: LibraryController, UISearchResultsUpdating {
         search.searchBar.placeholder = "Імʼя, @нікнейм або повідомлення"
         navigationItem.searchController = search
         navigationItem.hidesSearchBarWhenScrolling = false
-        navigationItem.rightBarButtonItem = UIBarButtonItem(image: AppSymbol.image("square.and.pencil"), primaryAction: UIAction { [weak self] _ in self?.onSearch?() })
-        let sections = UISegmentedControl(items: ["Повідомлення", "Активність"])
-        sections.selectedSegmentIndex = 0
-        sections.addAction(UIAction { [weak self, weak sections] _ in self?.activityMode = sections?.selectedSegmentIndex == 1; self?.showEmpty(nil); self?.tableView.reloadData() }, for: .valueChanged)
-        let filters = UISegmentedControl(items: ["Усі", "Закріплені", "Медіа"]); filters.selectedSegmentIndex = 0
-        filters.addAction(UIAction { [weak self, weak filters] _ in self?.chatFilter = filters?.selectedSegmentIndex ?? 0; self?.tableView.reloadData() }, for: .valueChanged)
-        let stack = UIStackView(arrangedSubviews: [sections, filters]); stack.axis = .vertical; stack.spacing = 12
-        let header = UIView(frame: CGRect(x: 0, y: 0, width: 320, height: 108)); stack.pin(to: header, insets: .init(top: 8, leading: 16, bottom: 12, trailing: 16)); tableView.tableHeaderView = header
+        let sections = GlassSectionPicker(titles: ["Розмови", "Активність"])
+        sections.accessibilityIdentifier = "inbox.sections"
+        sections.onIndexSelection = { [weak self] index in
+            self?.activityMode = index == 1; self?.filterButton.isEnabled = index == 0
+            self?.sectionHeading.text = index == 1 ? "Твоя активність" : "Твої розмови"; self?.reloadInbox()
+        }
+        let effect = UIGlassEffect(); effect.isInteractive = true
+        let island = UIVisualEffectView(effect: effect)
+        island.layer.cornerRadius = 22; island.clipsToBounds = true
+        sections.pin(to: island.contentView)
+        island.heightAnchor.constraint(equalToConstant: 44).isActive = true
+        let heading = sectionHeading
+        heading.font = heading.font.withTraits(.traitBold)
+        heading.accessibilityTraits.insert(.header)
+        filterButton.configuration?.image = AppSymbol.image("line.3.horizontal.decrease")
+        filterButton.configuration?.cornerStyle = .capsule
+        filterButton.accessibilityLabel = "Фільтр розмов"
+        filterButton.widthAnchor.constraint(equalToConstant: 44).isActive = true
+        filterButton.heightAnchor.constraint(equalToConstant: 44).isActive = true
+        updateFilterMenu()
+        let compose = UIButton(configuration: .glass())
+        compose.configuration?.image = AppSymbol.image("square.and.pencil"); compose.configuration?.cornerStyle = .capsule
+        compose.accessibilityLabel = "Нова розмова"
+        compose.widthAnchor.constraint(equalToConstant: 44).isActive = true; compose.heightAnchor.constraint(equalToConstant: 44).isActive = true
+        compose.addAction(UIAction { [weak self] _ in self?.onSearch?() }, for: .primaryActionTriggered)
+        let actions = UIStackView(arrangedSubviews: [heading, filterButton, compose]); actions.spacing = 10; actions.alignment = .center
+        let stack = UIStackView(arrangedSubviews: [island, actions]); stack.axis = .vertical; stack.spacing = 20
+        header.frame = CGRect(x: 0, y: 0, width: view.bounds.width, height: 140)
+        stack.pin(to: header, insets: .init(top: 12, leading: 16, bottom: 16, trailing: 16))
+        tableView.tableHeaderView = header
+        tableView.backgroundColor = .systemBackground
         tableView.rowHeight = UITableView.automaticDimension; tableView.estimatedRowHeight = 88
         tableView.keyboardDismissMode = .onDrag; tableView.topEdgeEffect.style = .soft
         tableView.separatorStyle = .none
         tableView.refreshControl = UIRefreshControl()
         tableView.refreshControl?.addAction(UIAction { [weak self] _ in self?.refresh() }, for: .valueChanged)
         refresh()
+    }
+    override func viewDidLayoutSubviews() {
+        super.viewDidLayoutSubviews()
+        let width = tableView.bounds.width
+        let size = header.systemLayoutSizeFitting(CGSize(width: width, height: 0), withHorizontalFittingPriority: .required, verticalFittingPriority: .fittingSizeLevel)
+        if abs(header.frame.height - size.height) > 0.5 || header.frame.width != width {
+            header.frame = CGRect(x: 0, y: 0, width: width, height: size.height); tableView.tableHeaderView = header
+        }
+    }
+    private func updateFilterMenu() {
+        filterButton.menu = UIMenu(title: "Розмови", options: .singleSelection, children: ["Усі", "Закріплені", "З медіа"].enumerated().map { index, title in
+            UIAction(title: title, image: AppSymbol.image(["bubble.left.and.bubble.right", "pin", "photo.stack"][index]), state: chatFilter == index ? .on : .off) { [weak self] _ in
+                self?.chatFilter = index; self?.updateFilterMenu(); self?.reloadInbox()
+            }
+        })
+        filterButton.showsMenuAsPrimaryAction = true
+    }
+    private func reloadInbox() {
+        showEmpty(nil); tableView.reloadData()
+        if store.active == nil {
+            showEmpty(EmptyStateView(title: "Твої повідомлення", message: "Увійди, щоб почати розмову.", symbol: "bubble.left.and.bubble.right", action: textButton("Увійти") { [weak self] in self?.onAccount?() }))
+        } else if activityMode ? activities.isEmpty : conversations.isEmpty {
+            showEmpty(EmptyStateView(title: activityMode ? "Активності поки немає" : "Розмов не знайдено", message: activityMode ? "Тут зʼявляться підписки, реакції та коментарі." : "Спробуй інший запит, зміни фільтр або почни нову розмову.", symbol: activityMode ? "bell" : "bubble.left.and.bubble.right"))
+        }
     }
     override func viewWillAppear(_ animated: Bool) {
         super.viewWillAppear(animated)
@@ -81,9 +131,7 @@ final class InboxController: LibraryController, UISearchResultsUpdating {
                 let rows = try await self.repository.conversations()
                 guard !Task.isCancelled, self.store.active?.id == accountID else { return }
                 self.rows = rows
-                self.showEmpty(rows.isEmpty ? EmptyStateView(title: "Почни розмову", message: "Знайди користувача за @нікнеймом, підпишись і напиши йому.",
-                    symbol: "bubble.left.and.bubble.right", action: textButton("Знайти користувача", symbol: "magnifyingglass") { [weak self] in self?.onSearch?() }) : nil)
-                self.tableView.reloadData()
+                self.reloadInbox()
             } catch {
                 if !Task.isCancelled { self.showMessage(error.localizedDescription) }
             }
@@ -93,6 +141,11 @@ final class InboxController: LibraryController, UISearchResultsUpdating {
     override func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
         if activityMode {
             let entry = activities[indexPath.row]
+            if let profile = store.profile(entry.actorID) {
+                let cell = tableView.dequeueReusableCell(withIdentifier: "activity") as? InboxConversationCell ?? InboxConversationCell(style: .default, reuseIdentifier: "activity")
+                cell.show(profile: profile, preview: entry.kind == "follow" ? "Підписався на тебе" : entry.kind == "like" ? "Уподобав публікацію" : "Залишив коментар", date: entry.createdAt, pinned: false, draft: false)
+                return cell
+            }
             let cell = UITableViewCell(style: .subtitle, reuseIdentifier: nil)
             cell.textLabel?.text = "@" + (store.profile(entry.actorID)?.handle ?? "користувач")
             cell.detailTextLabel?.text = entry.kind == "follow" ? "Підписався на тебе" : entry.kind == "like" ? "Уподобав публікацію" : "Залишив коментар"
@@ -100,20 +153,11 @@ final class InboxController: LibraryController, UISearchResultsUpdating {
             return cell
         }
         let row = conversations[indexPath.row]
-        let cell = tableView.dequeueReusableCell(withIdentifier: "conversation") ?? UITableViewCell(style: .subtitle, reuseIdentifier: "conversation")
-        var content = cell.defaultContentConfiguration()
+        let cell = tableView.dequeueReusableCell(withIdentifier: "conversation") as? InboxConversationCell ?? InboxConversationCell(style: .default, reuseIdentifier: "conversation")
         let pinned = store.studio.pinnedChats.contains(row.id)
         let draft = store.studio.chatDrafts[row.id.uuidString] ?? ""
-        content.text = (pinned ? "📌 " : "") + row.profile.name
         let preview = !draft.isEmpty ? "Чернетка: " + draft : row.lastMessage.text.isEmpty ? (row.lastMessage.postID != nil ? "Публікація" : "Вкладення") : row.lastMessage.text
-        content.secondaryText = "@\(row.profile.handle) · " + row.lastMessage.createdAt.formatted(date: .abbreviated, time: .shortened) + "\n" + preview
-        content.secondaryTextProperties.numberOfLines = 2
-        content.image = row.profile.avatar.flatMap { UIImage(data: $0) } ?? AppSymbol.image( "person.crop.circle.fill")
-        content.imageProperties.maximumSize = CGSize(width: 52, height: 52)
-        content.imageProperties.cornerRadius = 26
-        content.directionalLayoutMargins = .init(top: 16, leading: 16, bottom: 16, trailing: 16)
-        cell.contentConfiguration = content
-        cell.accessoryType = .disclosureIndicator
+        cell.show(profile: row.profile, preview: preview, date: row.lastMessage.createdAt, pinned: pinned, draft: !draft.isEmpty)
         return cell
     }
     override func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
@@ -123,7 +167,7 @@ final class InboxController: LibraryController, UISearchResultsUpdating {
             if let post = store.allClips.first(where: { $0.id == entry.postID }) { onPost?(post) } else { onProfile?(entry.actorID) }
         } else { onChat?(conversations[indexPath.row].profile) }
     }
-    func updateSearchResults(for searchController: UISearchController) { query = searchController.searchBar.text ?? ""; showEmpty(nil); tableView.reloadData() }
+    func updateSearchResults(for searchController: UISearchController) { query = searchController.searchBar.text ?? ""; reloadInbox() }
     func tableView(_ tableView: UITableView, trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath) -> UISwipeActionsConfiguration? {
         guard !activityMode else { return nil }
         let id = conversations[indexPath.row].id

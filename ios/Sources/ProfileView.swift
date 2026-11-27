@@ -211,11 +211,10 @@ final class ProfileController: UIViewController, UICollectionViewDataSource, UIC
             return
         }
         let headerHeight = heroHeight(for: profile)
-        let identityTop = AtmosphereProfile.photoHeight(profile, width: view.bounds.width, top: view.safeAreaInsets.top) - 100 - grid.contentOffset.y
+        let identityTop = AtmosphereProfile.photoHeight(profile, width: view.bounds.width, top: view.safeAreaInsets.top) - 94 - grid.contentOffset.y
         grid.topEdgeEffect.isHidden = atmosphere && identityTop > view.safeAreaInsets.top + 110
         if atmosphere {
-            let progress = min(1, max(0, (view.safeAreaInsets.top + 110 - identityTop) / 88))
-            (sectionToolbarHost as? ProfileScrollTitle)?.setScrollProgress(progress)
+            (sectionToolbarHost as? ProfileScrollTitle)?.setScrollProgress(0)
             sectionIsland.isHidden = true
             islandOverlay?.isHidden = true
             if compact { compact = false; onDocked?(false) }
@@ -893,7 +892,7 @@ private final class ProfileBackdrop: UIView {
         blurredBackdrop.contentMode = .scaleAspectFill; blurredBackdrop.clipsToBounds = true
         blurMask.colors = [UIColor.clear.cgColor, UIColor.clear.cgColor,
                            UIColor.black.withAlphaComponent(0.25).cgColor, UIColor.black.cgColor, UIColor.black.cgColor]
-        blurMask.locations = [0, 0.53, 0.62, 0.75, 1]
+        blurMask.locations = [0, 0.55, 0.65, 0.78, 1]
         blurredBackdrop.layer.mask = blurMask; addSubview(blurredBackdrop)
         let background = UIColor.systemBackground.resolvedColor(with: UITraitCollection(userInterfaceStyle: .dark))
         let alphas: [CGFloat] = [0, 0, 0.03, 0.10, 0.22, 0.38, 0.56, 0.73, 0.87, 0.96, 1]
