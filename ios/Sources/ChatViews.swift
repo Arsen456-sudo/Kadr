@@ -124,7 +124,7 @@ final class InboxController: LibraryController, UISearchResultsUpdating {
         } else { onChat?(conversations[indexPath.row].profile) }
     }
     func updateSearchResults(for searchController: UISearchController) { query = searchController.searchBar.text ?? ""; showEmpty(nil); tableView.reloadData() }
-    override func tableView(_ tableView: UITableView, trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath) -> UISwipeActionsConfiguration? {
+    func tableView(_ tableView: UITableView, trailingSwipeActionsConfigurationForRowAt indexPath: IndexPath) -> UISwipeActionsConfiguration? {
         guard !activityMode else { return nil }
         let id = conversations[indexPath.row].id
         let pinned = store.studio.pinnedChats.contains(id)
@@ -135,7 +135,7 @@ final class InboxController: LibraryController, UISearchResultsUpdating {
         }
         action.image = AppSymbol.image(pinned ? "pin.slash" : "pin"); return UISwipeActionsConfiguration(actions: [action])
     }
-    override func tableView(_ tableView: UITableView, contextMenuConfigurationForRowAt indexPath: IndexPath, point: CGPoint) -> UIContextMenuConfiguration? {
+    func tableView(_ tableView: UITableView, contextMenuConfigurationForRowAt indexPath: IndexPath, point: CGPoint) -> UIContextMenuConfiguration? {
         guard !activityMode else { return nil }; let peer = conversations[indexPath.row].profile
         return UIContextMenuConfiguration(identifier: nil, previewProvider: nil) { [weak self] _ in
             UIMenu(children: [UIAction(title: "Написати", image: AppSymbol.image("bubble.left")) { _ in self?.onChat?(peer) }, UIAction(title: "Відкрити профіль", image: AppSymbol.image("person.crop.circle")) { _ in self?.onProfile?(peer.id) }])
