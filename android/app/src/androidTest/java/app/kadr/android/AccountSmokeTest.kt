@@ -2,6 +2,8 @@ package app.kadr.android
 
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.text.TextLayoutResult
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import org.junit.Rule
 import org.junit.Test
@@ -15,6 +17,12 @@ class AccountSmokeTest {
     @Test fun guestGateAccountAndProcessRecreation() {
         compose.waitUntil(15000) { compose.onAllNodesWithText("Поки переглядатиму").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("Поки переглядатиму").performClick()
+        for (label in listOf("Для тебе", "Підписки", "Огляд")) {
+            val layouts = mutableListOf<TextLayoutResult>()
+            compose.onNodeWithText(label, useUnmergedTree = true).performSemanticsAction(SemanticsActions.GetTextLayoutResult) { it(layouts) }
+            assertTrue("Feed label must fit: $label", layouts.isNotEmpty() && layouts.none { it.hasVisualOverflow })
+        }
+        (0..3).forEach { compose.onNodeWithTag("tab:$it").assertIsDisplayed() }
         (0..3).forEach { compose.onNodeWithTag("tab:$it").assertIsDisplayed() }
         listOf("Для тебе", "Підписки", "Огляд").forEach { compose.onNodeWithText(it).assertIsDisplayed() }
         compose.onAllNodesWithContentDescription("Уподобати").onFirst().performClick()
@@ -43,6 +51,7 @@ class AccountSmokeTest {
         compose.onNodeWithTag("profile-category:1").performClick()
         compose.onNodeWithText("Поки немає кадрів").assertIsDisplayed()
         compose.onNodeWithTag("profile-category:0").performClick()
+        compose.onNodeWithTag("profile-scroll").performScrollToIndex(0)
         compose.waitUntil(10000) { compose.activity.filesDir.resolve("kadr-state.json").takeIf { it.exists() }?.readText()?.contains("android_tester") == true }
         compose.activityRule.scenario.recreate()
         compose.waitUntil(15000) { compose.onAllNodesWithText("Профіль").fetchSemanticsNodes().isNotEmpty() }

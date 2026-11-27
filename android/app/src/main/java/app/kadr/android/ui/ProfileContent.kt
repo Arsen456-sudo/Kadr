@@ -92,7 +92,7 @@ import java.io.File
             }
         )
     }) { padding ->
-        LazyColumn(Modifier.fillMaxSize().padding(top = padding.calculateTopPadding()).testTag("profile-scroll"), state = list, contentPadding = PaddingValues(bottom = 120.dp)) {
+        LazyColumn(Modifier.fillMaxSize().padding(top = padding.calculateTopPadding()).navigationBarsPadding().testTag("profile-scroll"), state = list, contentPadding = PaddingValues(bottom = 120.dp)) {
             item(key = "identity") {
                 Box(Modifier.fillMaxWidth().height(if (image == null) 224.dp else 360.dp)) {
                     if (image != null) AsyncImage(image, profile.name, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)

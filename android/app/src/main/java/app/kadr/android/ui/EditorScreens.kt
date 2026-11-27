@@ -92,7 +92,7 @@ import kotlinx.coroutines.delay
     var value by rememberSaveable { mutableStateOf("") }
     var createCollection by remember { mutableStateOf(false) }
     var selectedCollection by remember { mutableStateOf<SavedCollection?>(null) }
-    Column(Modifier.fillMaxSize().statusBarsPadding()) {
+    Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
         ScreenHeader(if (page == "home") "Студія" else when (page) { "drafts" -> "Чернетки"; "history" -> "Історія"; "collections" -> "Колекції"; else -> "Оформлення" }, { if (page == "home") back() else page = "home" })
         LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             if (page == "home") {

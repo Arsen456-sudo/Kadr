@@ -99,7 +99,7 @@ import java.io.File
 }
 
 @Composable fun QrScreen(profile: Profile?, onBack: () -> Unit) {
-    Column(Modifier.fillMaxSize().statusBarsPadding()) {
+    Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
         ScreenHeader("QR-код профілю", onBack)
         if (profile != null) {
             val bitmap by produceState<Bitmap?>(null, profile.handle) { value = withContext(Dispatchers.Default) {

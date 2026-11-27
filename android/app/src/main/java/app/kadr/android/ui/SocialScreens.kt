@@ -26,7 +26,7 @@ import app.kadr.android.data.*
     val term = query.trim().removePrefix("@").lowercase()
     val profiles = state.profiles.filter { (allowedIDs == null || it.id in allowedIDs) && it.id !in state.studio.preferences.blocked && (term.isBlank() || it.handle.contains(term) || it.name.contains(term, true)) }
     val posts = if (allowedIDs != null) emptyList() else (state.posts + AppState.samples).filter { !it.isDraft && (!it.options.onlyMe || it.authorID == state.activeID) && (it.caption.contains(query, true) || it.options.tags.contains(query, true)) }
-    Column(Modifier.fillMaxSize().statusBarsPadding()) {
+    Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
         ScreenHeader(title, back)
         OutlinedTextField(query, { query = it }, leadingIcon = { Icon(Icons.Outlined.Search, null) }, label = { Text("@нікнейм, відео або #тег") }, modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp), singleLine = true)
         LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
@@ -89,7 +89,7 @@ import app.kadr.android.data.*
 @Composable fun InboxScreen(vm: KadrViewModel, state: AppState, account: () -> Unit, chat: (String) -> Unit, search: () -> Unit) {
     var query by rememberSaveable { mutableStateOf("") }
     var mode by rememberSaveable { mutableIntStateOf(0) }
-    Column(Modifier.fillMaxSize().statusBarsPadding()) {
+    Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
         CenterAlignedTopAppBar(title = { Text("Вхідні") }, windowInsets = WindowInsets(0, 0, 0, 0), actions = { IconButton(search) { Icon(Icons.Outlined.PersonSearch, "Новий чат") } })
         if (state.active == null) { EmptyMessage("Розмови, що залишаються з тобою", "Увійди, щоб надсилати повідомлення авторам.", "Увійти", account); return }
         Choices(listOf("Повідомлення", "Активність"), mode, { mode = it }, Modifier.padding(horizontal = 20.dp))

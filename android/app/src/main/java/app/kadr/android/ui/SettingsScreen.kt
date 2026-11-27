@@ -32,7 +32,7 @@ import kotlinx.coroutines.withContext
     val busy by vm.busy.collectAsStateWithLifecycle()
     val export = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri -> if (uri != null) vm.act { withContext(Dispatchers.IO) { context.contentResolver.openOutputStream(uri)?.use { writeBackup(it) } ?: error("Файл недоступний") }; vm.notice.value = "Резервну копію збережено" } }
     val import = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { restore = it }
-    Column(Modifier.fillMaxSize().statusBarsPadding()) {
+    Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
         ScreenHeader("Налаштування", back)
         LazyColumn(contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item { Text("Взаємодія", style = MaterialTheme.typography.titleLarge) }
